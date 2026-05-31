@@ -14,17 +14,14 @@ const SB_HEADERS   = {
 
 const cloudLoad = async (): Promise<any|null> => {
   try {
-    const url=SUPABASE_URL+"/rest/v1/ordertrack_data?apikey="+SUPABASE_KEY+"&user_key=eq."+USER_KEY+"&select=payload&limit=1";
+    const url=SUPABASE_URL+"/rest/v1/ordertrack_data?apikey="+SUPABASE_KEY+"&user_key=eq."+USER_KEY+"&select=payload,updated_at&limit=1";
     const res = await fetch(url, {
       headers: {...SB_HEADERS, "Prefer": "return=representation"}
     });
-    if(!res.ok){
-      const err=await res.text();
-      console.warn("[CloudLoad] Error:", res.status, err);
-      return null;
-    }
+    if(!res.ok){ console.warn("[CloudLoad] Error:", res.status); return null; }
     const rows = await res.json();
-    return rows?.[0]?.payload ?? null;
+    if(!rows?.[0]) return null;
+    return {payload: rows[0].payload, updatedAt: rows[0].updated_at};
   } catch(e) { console.warn("[CloudLoad] Exception:",e); return null; }
 };
 
@@ -453,12 +450,12 @@ export default function App(){
       setSyncStatus("syncing");
       // 1. Try cloud first
       try {
-        const cloud = await cloudLoad();
-        if(cloud){
+        const result = await cloudLoad();
+        if(result?.payload){
+          const cloud=result.payload;
           setClients(cloud.clients||DEFAULT_CLIENTS);
           setData(migrateRDT(cloud.orders||{}));
           setConfigs(cloud.configs||migrateAccounts(cloud.accounts));
-          // Cache locally
           try{localStorage.setItem(KEY,JSON.stringify(cloud));}catch{}
           setSyncStatus("ok");
           setLastSync(new Date().toLocaleTimeString("fr-FR"));
@@ -506,21 +503,27 @@ export default function App(){
     return c;
   };
 
-  // ── Auto-sync: poll Supabase every 30s ──────────────────────────────────────
+  // ── Auto-sync: poll Supabase every 15s using updated_at timestamp ───────────
+  const lastCloudUpdate=React.useRef<string>("");
   useEffect(()=>{
     const interval=setInterval(async()=>{
       try{
-        const cloud=await cloudLoad();
-        if(!cloud||!cloud.orders)return;
-        // Always apply cloud data — it's the source of truth
-        setClients(cloud.clients||DEFAULT_CLIENTS);
+        const result=await cloudLoad();
+        if(!result?.payload||!result.updatedAt)return;
+        // Only update if cloud is newer than what we last loaded
+        if(result.updatedAt===lastCloudUpdate.current)return;
+        lastCloudUpdate.current=result.updatedAt;
+        const cloud=result.payload;
+        if(!cloud.orders)return;
+        setClients(c=>JSON.stringify(c)===JSON.stringify(cloud.clients)?c:(cloud.clients||DEFAULT_CLIENTS));
         setData(migrateRDT(cloud.orders||{}));
         setConfigs(cloud.configs||{});
         localStorage.setItem(KEY,JSON.stringify(cloud));
         setSyncStatus("ok");
         setLastSync(new Date().toLocaleTimeString("fr-FR"));
+        console.log("[Poll] Updated from cloud —",result.updatedAt);
       }catch(e){console.warn("[Poll]",e);}
-    },15000); // every 15 seconds
+    },15000);
     return()=>clearInterval(interval);
   },[]);
 
