@@ -27,17 +27,24 @@ const cloudLoad = async (): Promise<any|null> => {
 
 const cloudSave = async (payload: any): Promise<boolean> => {
   try {
-    const url=SUPABASE_URL+"/rest/v1/ordertrack_data?apikey="+SUPABASE_KEY;
-    const res = await fetch(url, {
+    // Step 1: try PATCH (update existing row)
+    const patchUrl=SUPABASE_URL+"/rest/v1/ordertrack_data?apikey="+SUPABASE_KEY+"&user_key=eq."+USER_KEY;
+    const patch = await fetch(patchUrl, {
+      method: "PATCH",
+      headers: {...SB_HEADERS, "Prefer": "return=minimal"},
+      body: JSON.stringify({ payload, updated_at: new Date().toISOString() }),
+    });
+    if(patch.ok || patch.status===204){ console.log("[CloudSave] PATCH ok"); return true; }
+    
+    // Step 2: if no row exists, INSERT
+    const postUrl=SUPABASE_URL+"/rest/v1/ordertrack_data?apikey="+SUPABASE_KEY;
+    const post = await fetch(postUrl, {
       method: "POST",
-      headers: {...SB_HEADERS, "Prefer": "resolution=merge-duplicates,return=minimal"},
+      headers: {...SB_HEADERS, "Prefer": "return=minimal"},
       body: JSON.stringify({ user_key: USER_KEY, payload }),
     });
-    if(!res.ok){
-      const err=await res.text();
-      console.warn("[CloudSave] Error:", res.status, err);
-    }
-    return res.ok || res.status===201 || res.status===204;
+    console.log("[CloudSave] POST status:", post.status);
+    return post.ok || post.status===201 || post.status===204;
   } catch(e) { console.warn("[CloudSave] Exception:",e); return false; }
 };
 
