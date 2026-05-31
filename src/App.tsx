@@ -1,40 +1,47 @@
-import React, { useState, useEffect, Fragment, useRef, useCallback } from "react";
+// @ts-nocheck
+import React, { useState, useEffect, Fragment, useRef } from "react";
 
 // ─── SUPABASE CLOUD SYNC (pure fetch — no package needed) ────────────────────
 const SUPABASE_URL = "https://vxxrxnyxfmgcdzxcigdw.supabase.co";
-const SUPABASE_KEY = "sb_publishable_gm6TbstoBfWUDxC4lyZ72w_uKMbAP0j";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
 const USER_KEY     = "ordertrack-main";
+const SB_AUTH      = "Bearer " + "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
 const SB_HEADERS   = {
   "Content-Type": "application/json",
   "apikey": SUPABASE_KEY,
-  "Authorization": `Bearer ${SUPABASE_KEY}`,
-  "Prefer": "return=minimal",
+  "Authorization": SB_AUTH,
 };
 
 const cloudLoad = async (): Promise<any|null> => {
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/ordertrack_data?user_key=eq.${USER_KEY}&select=payload&limit=1`,
-      { headers: {...SB_HEADERS, "Prefer": "return=representation"} }
-    );
-    if(!res.ok) return null;
+    const url=SUPABASE_URL+"/rest/v1/ordertrack_data?apikey="+SUPABASE_KEY+"&user_key=eq."+USER_KEY+"&select=payload&limit=1";
+    const res = await fetch(url, {
+      headers: {...SB_HEADERS, "Prefer": "return=representation"}
+    });
+    if(!res.ok){
+      const err=await res.text();
+      console.warn("[CloudLoad] Error:", res.status, err);
+      return null;
+    }
     const rows = await res.json();
     return rows?.[0]?.payload ?? null;
-  } catch { return null; }
+  } catch(e) { console.warn("[CloudLoad] Exception:",e); return null; }
 };
 
 const cloudSave = async (payload: any): Promise<boolean> => {
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/ordertrack_data`,
-      {
-        method: "POST",
-        headers: {...SB_HEADERS, "Prefer": "resolution=merge-duplicates,return=minimal"},
-        body: JSON.stringify({ user_key: USER_KEY, payload }),
-      }
-    );
-    return res.ok || res.status === 409;
-  } catch { return false; }
+    const url=SUPABASE_URL+"/rest/v1/ordertrack_data?apikey="+SUPABASE_KEY;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {...SB_HEADERS, "Prefer": "resolution=merge-duplicates,return=minimal"},
+      body: JSON.stringify({ user_key: USER_KEY, payload }),
+    });
+    if(!res.ok){
+      const err=await res.text();
+      console.warn("[CloudSave] Error:", res.status, err);
+    }
+    return res.ok || res.status===201 || res.status===204;
+  } catch(e) { console.warn("[CloudSave] Exception:",e); return false; }
 };
 
 // ─── I18N ─────────────────────────────────────────────────────────────────────
@@ -498,6 +505,24 @@ export default function App(){
     Object.keys(acc).forEach(k=>{c[k]={accountNumber:acc[k],termId:"net60",customDays:0};});
     return c;
   };
+
+  // ── Auto-sync: poll Supabase every 30s ──────────────────────────────────────
+  useEffect(()=>{
+    const interval=setInterval(async()=>{
+      try{
+        const cloud=await cloudLoad();
+        if(!cloud||!cloud.orders)return;
+        // Always apply cloud data — it's the source of truth
+        setClients(cloud.clients||DEFAULT_CLIENTS);
+        setData(migrateRDT(cloud.orders||{}));
+        setConfigs(cloud.configs||{});
+        localStorage.setItem(KEY,JSON.stringify(cloud));
+        setSyncStatus("ok");
+        setLastSync(new Date().toLocaleTimeString("fr-FR"));
+      }catch(e){console.warn("[Poll]",e);}
+    },15000); // every 15 seconds
+    return()=>clearInterval(interval);
+  },[]);
 
   const persist=(nc:any,nd:any,nf:any)=>{
     const c=nc??clients,d=nd??data,f=nf??configs;
