@@ -1990,11 +1990,12 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
         const hiddenCount=filterInvoices.length-DEFAULT_SHOWN;
         return(
           <div style={{display:"flex",flexDirection:"column",gap:0,background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",minWidth:750,borderCollapse:"collapse",fontSize:12}}>
               <thead>
                 <tr style={{background:"#F8FAFC",borderBottom:`1px solid ${C.b}`}}>
                   {["N° Facture","PO","Date","Montant","Payé","Reste","Échéance","Statut","Actions"].map((h,i)=>(
-                    <th key={h} style={{padding:"10px 14px",textAlign:["Montant","Payé","Reste"].includes(h)?"right":i>=7?"center":"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em",whiteSpace:"nowrap"}}>{h}</th>
+                    <th key={h} style={{padding:"8px 10px",textAlign:["Montant","Payé","Reste"].includes(h)?"right":i>=7?"center":"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -2006,15 +2007,15 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
                     <tr key={inv.id} style={{borderBottom:`1px solid ${C.b}`,background:ii%2===0?"#fff":"#FAFBFD",transition:"background .12s"}}
                       onMouseEnter={(e:any)=>e.currentTarget.style.background="#F0F9FF"}
                       onMouseLeave={(e:any)=>e.currentTarget.style.background=ii%2===0?"#fff":"#FAFBFD"}>
-                      <td style={{padding:"10px 14px",fontWeight:700,color:C.purple}}>{inv.invoiceNumber||"—"}</td>
-                      <td style={{padding:"10px 14px",fontSize:11,color:C.t2,fontFamily:"monospace"}}>{inv._po||"—"}</td>
-                      <td style={{padding:"10px 14px",color:C.t2}}>{fmtD(inv.date)}</td>
-                      <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:C.teal}}>{fmt(+inv.amount||0)} €</td>
-                      <td style={{padding:"10px 14px",textAlign:"right",color:C.green,fontWeight:ps.paid>0?600:400}}>{ps.paid>0?`${fmt(ps.paid)} €`:"—"}</td>
-                      <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:ps.rem>0?(["overdue","ov_part"].includes(ps.key)?C.redDk:C.amberDk):C.t3}}>{ps.rem>0?`${fmt(ps.rem)} €`:"—"}</td>
-                      <td style={{padding:"10px 14px",color:["overdue","ov_part"].includes(ps.key)?C.redDk:C.t2,fontWeight:["overdue","ov_part"].includes(ps.key)?700:400}}>{fmtD(inv.dueDate)}</td>
-                      <td style={{padding:"10px 14px",textAlign:"center"}}><Tag label={ps.label} c={ps.color} bg={ps.bg} sm/></td>
-                      <td style={{padding:"10px 14px"}}>
+                      <td style={{padding:"8px 10px",fontWeight:700,color:C.purple,whiteSpace:"nowrap"}}>{inv.invoiceNumber||"—"}</td>
+                      <td style={{padding:"8px 10px",fontSize:11,color:C.t2,fontFamily:"monospace"}}>{inv._po||"—"}</td>
+                      <td style={{padding:"8px 10px",color:C.t2,whiteSpace:"nowrap"}}>{fmtD(inv.date)}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:C.teal,whiteSpace:"nowrap"}}>{fmt(+inv.amount||0)} €</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:C.green,fontWeight:ps.paid>0?600:400,whiteSpace:"nowrap"}}>{ps.paid>0?`${fmt(ps.paid)} €`:"—"}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:ps.rem>0?(["overdue","ov_part"].includes(ps.key)?C.redDk:C.amberDk):C.t3,whiteSpace:"nowrap"}}>{ps.rem>0?`${fmt(ps.rem)} €`:"—"}</td>
+                      <td style={{padding:"8px 10px",color:["overdue","ov_part"].includes(ps.key)?C.redDk:C.t2,fontWeight:["overdue","ov_part"].includes(ps.key)?700:400,whiteSpace:"nowrap"}}>{fmtD(inv.dueDate)}</td>
+                      <td style={{padding:"8px 10px",textAlign:"center"}}><Tag label={ps.label} c={ps.color} bg={ps.bg} sm/></td>
+                      <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
                         <div style={{display:"flex",gap:3,justifyContent:"center"}}>
                           <IBtn icon="ti-coin" title="Paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(inv._order,inv)} small/>
                           <IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(inv._order,inv)} small/>
@@ -2026,6 +2027,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
                 })}
               </tbody>
             </table>
+            </div>
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#F8FAFC",border:"none",borderTop:`1px solid ${C.b}`,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",width:"100%"}}>
                 <i className="ti ti-chevrons-down" style={{fontSize:16}} aria-hidden="true"/> Afficher les {hiddenCount} facture{hiddenCount>1?"s":""} suivante{hiddenCount>1?"s":""}
@@ -2046,27 +2048,34 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
         const hiddenCount=filterPayments.length-DEFAULT_SHOWN;
         return(
           <div style={{display:"flex",flexDirection:"column",gap:0,background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",minWidth:700,borderCollapse:"collapse",fontSize:12}}>
               <thead>
                 <tr style={{background:"#F8FAFC",borderBottom:`1px solid ${C.b}`}}>
-                  {["Date","N° PO","N° Facture","Montant","Mode","Référence","Notes"].map((h,i)=>(
-                    <th key={h} style={{padding:"10px 14px",textAlign:h==="Montant"?"right":"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
+                  {["Date","N° PO","N° Facture","Montant","Mode","Référence","Notes","Actions"].map((h,i)=>(
+                    <th key={h} style={{padding:"8px 10px",textAlign:h==="Montant"?"right":h==="Actions"?"center":"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {visible.length===0&&<tr><td colSpan={7} style={{padding:"32px",textAlign:"center",color:C.t3,fontSize:12}}>Aucun paiement trouvé</td></tr>}
+                {visible.length===0&&<tr><td colSpan={8} style={{padding:"32px",textAlign:"center",color:C.t3,fontSize:12}}>Aucun paiement trouvé</td></tr>}
                 {visible.map((p:any,pi:number)=>(
                   <tr key={p.id} style={{borderBottom:`1px solid ${C.b}`,background:pi%2===0?"#fff":"#FAFBFD"}}
                     onMouseEnter={(e:any)=>e.currentTarget.style.background="#F0FDF4"}
                     onMouseLeave={(e:any)=>e.currentTarget.style.background=pi%2===0?"#fff":"#FAFBFD"}>
-                    <td style={{padding:"10px 14px",color:C.t2}}>{fmtD(p.date)}</td>
-                    <td style={{padding:"10px 14px",fontSize:11,color:C.blue,fontFamily:"monospace",fontWeight:600}}>{p._po||"—"}</td>
-                    <td style={{padding:"10px 14px",fontSize:11,color:C.purple,fontWeight:600}}>{p._invNum||"—"}</td>
-                    <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,color:C.green,fontSize:13}}>{fmt(+p.amount||0)} €</td>
-                    <td style={{padding:"10px 14px",color:C.t2}}>{p.method||"—"}</td>
-                    <td style={{padding:"10px 14px",color:C.t2,fontFamily:"monospace",fontSize:11}}>{p.reference||"—"}</td>
-                    <td style={{padding:"10px 14px",color:C.t3,fontSize:11}}>{p.notes||"—"}</td>
+                    <td style={{padding:"8px 10px",color:C.t2,whiteSpace:"nowrap"}}>{fmtD(p.date)}</td>
+                    <td style={{padding:"8px 10px",fontSize:11,color:C.blue,fontFamily:"monospace",fontWeight:600}}>{p._po||"—"}</td>
+                    <td style={{padding:"8px 10px",fontSize:11,color:C.purple,fontWeight:600}}>{p._invNum||"—"}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800,color:C.green,fontSize:13,whiteSpace:"nowrap"}}>{fmt(+p.amount||0)} €</td>
+                    <td style={{padding:"8px 10px",color:C.t2}}>{p.method||"—"}</td>
+                    <td style={{padding:"8px 10px",color:C.t2,fontFamily:"monospace",fontSize:11}}>{p.reference||"—"}</td>
+                    <td style={{padding:"8px 10px",color:C.t3,fontSize:11,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes||"—"}</td>
+                    <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
+                      <div style={{display:"flex",gap:3,justifyContent:"center"}}>
+                        <IBtn icon="ti-edit" title={tr("edit_payment")} c={C.blue} bg={C.blueL} onClick={()=>onEditPay(p._inv._order,p._inv,p)} small/>
+                        <IBtn icon="ti-trash" title={tr("delete")} c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_payment")))onDelPay(p._inv._oid,p._inv.id,p.id);}} small/>
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {/* Total row */}
@@ -2074,11 +2083,12 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
                   <tr style={{background:C.greenL,borderTop:`2px solid ${C.green}30`}}>
                     <td colSpan={3} style={{padding:"10px 14px",fontWeight:700,color:C.greenDk,fontSize:12}}>Total affiché</td>
                     <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,color:C.greenDk,fontSize:14}}>{fmt(visible.reduce((s:number,p:any)=>s+(+p.amount||0),0))} €</td>
-                    <td colSpan={3} style={{padding:"10px 14px",fontSize:11,color:C.greenDk}}>{visible.length} paiement{visible.length>1?"s":""} · Total global : <strong>{fmt(allPayments.reduce((s:number,p:any)=>s+(+p.amount||0),0))} €</strong></td>
+                    <td colSpan={4} style={{padding:"10px 14px",fontSize:11,color:C.greenDk}}>{visible.length} paiement{visible.length>1?"s":""} · Total global : <strong>{fmt(allPayments.reduce((s:number,p:any)=>s+(+p.amount||0),0))} €</strong></td>
                   </tr>
                 )}
               </tbody>
             </table>
+            </div>
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#F8FAFC",border:"none",borderTop:`1px solid ${C.b}`,color:C.green,fontWeight:600,fontSize:12,cursor:"pointer",width:"100%"}}>
                 <i className="ti ti-chevrons-down" style={{fontSize:16}} aria-hidden="true"/> Afficher les {hiddenCount} paiement{hiddenCount>1?"s":""} suivant{hiddenCount>1?"s":""}
