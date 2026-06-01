@@ -26,24 +26,29 @@ const cloudLoad = async (): Promise<any|null> => {
 };
 
 const cloudSave = async (payload: any): Promise<boolean> => {
-  const KEY_VAL = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
-  const BASE = "https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+  const K = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+  const B = "https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+  const H = {"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K};
   try {
-    const res = await fetch(BASE+"/rest/v1/ordertrack_data?apikey="+KEY_VAL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": KEY_VAL,
-        "Authorization": "Bearer "+KEY_VAL,
-        "Prefer": "resolution=merge-duplicates,return=minimal"
-      },
-      body: JSON.stringify({ user_key: "ordertrack-main", payload }),
+    // Try PATCH first (update existing row)
+    const patch = await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq.ordertrack-main",{
+      method:"PATCH", headers:{...H,"Prefer":"return=minimal"},
+      body:JSON.stringify({payload})
     });
-    const ok = res.ok || res.status===201 || res.status===204;
-    if(!ok){ const e=await res.text(); console.warn("[CloudSave] Failed:",res.status,e); }
-    else { console.log("[CloudSave] OK:", res.status); }
-    return ok;
-  } catch(e) { console.warn("[CloudSave] Exception:",e); return false; }
+    if(patch.status===204||patch.status===200){
+      console.log("[CloudSave] PATCH OK");
+      return true;
+    }
+    // If PATCH failed (no row), try INSERT
+    const post = await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
+      method:"POST", headers:{...H,"Prefer":"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify({user_key:"ordertrack-main", payload})
+    });
+    const ok2 = post.status===201||post.status===200||post.status===204;
+    console.log("[CloudSave] POST status:", post.status, ok2?"OK":"FAIL");
+    if(!ok2){ const e=await post.text(); console.warn("[CloudSave] Error:",e); }
+    return ok2;
+  } catch(e){ console.warn("[CloudSave] Exception:",e); return false; }
 };
 
 // ─── I18N ─────────────────────────────────────────────────────────────────────
@@ -463,7 +468,7 @@ export default function App(){
           const localStr=localStorage.getItem(KEY);
           const localParsed=localStr?JSON.parse(localStr):null;
           // Use local if it's newer than cloud (user made changes offline)
-          const localIsNewer=localTs&&cloudTs&&localTs>cloudTs;
+          const localIsNewer=localTs&&cloudTs&&(new Date(localTs)>new Date(cloudTs));
           const localHasData=localParsed?.orders&&Object.values(localParsed.orders).some((arr:any)=>arr?.length>0);
           const cloudHasData=cloud.orders&&Object.values(cloud.orders).some((arr:any)=>arr?.length>0);
           if(localIsNewer && localHasData){
@@ -487,7 +492,7 @@ export default function App(){
               localStorage.setItem(KEY,JSON.stringify(cloud));
               localStorage.setItem(KEY+"_ts",cloudTs);
             }catch{}
-            lastCloudUpdate.current=cloudTs;
+            lastCloudUpdate.current=new Date(cloudTs).toISOString();
             setSyncStatus("ok");
             setLastSync(new Date().toLocaleTimeString("fr-FR"));
             return;
@@ -543,8 +548,9 @@ export default function App(){
         const result=await cloudLoad();
         if(!result?.payload||!result.updatedAt)return;
         // Only update if cloud is newer than what we last loaded
-        if(result.updatedAt===lastCloudUpdate.current)return;
-        lastCloudUpdate.current=result.updatedAt;
+        // Compare as timestamps to handle different formats
+        if(result.updatedAt&&lastCloudUpdate.current&&new Date(result.updatedAt)<=new Date(lastCloudUpdate.current))return;
+        lastCloudUpdate.current=new Date(result.updatedAt).toISOString();
         const cloud=result.payload;
         if(!cloud.orders)return;
         setClients(c=>JSON.stringify(c)===JSON.stringify(cloud.clients)?c:(cloud.clients||DEFAULT_CLIENTS));
@@ -576,7 +582,7 @@ export default function App(){
         if(ok){
           setSyncStatus("ok");
           setLastSync(new Date().toLocaleTimeString("fr-FR"));
-          lastCloudUpdate.current=ts;
+          lastCloudUpdate.current=new Date(ts).toISOString();
         } else if(attempt<3){
           setTimeout(()=>trySave(attempt+1),3000*attempt);
         } else setSyncStatus("offline");
