@@ -26,25 +26,23 @@ const cloudLoad = async (): Promise<any|null> => {
 };
 
 const cloudSave = async (payload: any): Promise<boolean> => {
+  const KEY_VAL = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+  const BASE = "https://vxxrxnyxfmgcdzxcigdw.supabase.co";
   try {
-    // Step 1: try PATCH (update existing row)
-    const patchUrl=SUPABASE_URL+"/rest/v1/ordertrack_data?apikey="+SUPABASE_KEY+"&user_key=eq."+USER_KEY;
-    const patch = await fetch(patchUrl, {
-      method: "PATCH",
-      headers: {...SB_HEADERS, "Prefer": "return=minimal"},
-      body: JSON.stringify({ payload, updated_at: new Date().toISOString() }),
-    });
-    if(patch.ok || patch.status===204){ console.log("[CloudSave] PATCH ok"); return true; }
-    
-    // Step 2: if no row exists, INSERT
-    const postUrl=SUPABASE_URL+"/rest/v1/ordertrack_data?apikey="+SUPABASE_KEY;
-    const post = await fetch(postUrl, {
+    const res = await fetch(BASE+"/rest/v1/ordertrack_data?apikey="+KEY_VAL, {
       method: "POST",
-      headers: {...SB_HEADERS, "Prefer": "return=minimal"},
-      body: JSON.stringify({ user_key: USER_KEY, payload }),
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": KEY_VAL,
+        "Authorization": "Bearer "+KEY_VAL,
+        "Prefer": "resolution=merge-duplicates,return=minimal"
+      },
+      body: JSON.stringify({ user_key: "ordertrack-main", payload }),
     });
-    console.log("[CloudSave] POST status:", post.status);
-    return post.ok || post.status===201 || post.status===204;
+    const ok = res.ok || res.status===201 || res.status===204;
+    if(!ok){ const e=await res.text(); console.warn("[CloudSave] Failed:",res.status,e); }
+    else { console.log("[CloudSave] OK:", res.status); }
+    return ok;
   } catch(e) { console.warn("[CloudSave] Exception:",e); return false; }
 };
 
@@ -460,13 +458,22 @@ export default function App(){
         const result = await cloudLoad();
         if(result?.payload){
           const cloud=result.payload;
-          setClients(cloud.clients||DEFAULT_CLIENTS);
-          setData(migrateRDT(cloud.orders||{}));
-          setConfigs(cloud.configs||migrateAccounts(cloud.accounts));
-          try{localStorage.setItem(KEY,JSON.stringify(cloud));}catch{}
-          setSyncStatus("ok");
-          setLastSync(new Date().toLocaleTimeString("fr-FR"));
-          return;
+          // Only use cloud if it has actual order data (not test data)
+          const hasRealData=cloud.orders&&Object.values(cloud.orders).some((arr:any)=>arr?.length>0);
+          const localStr=localStorage.getItem(KEY);
+          const localParsed=localStr?JSON.parse(localStr):null;
+          const localHasData=localParsed?.orders&&Object.values(localParsed.orders).some((arr:any)=>arr?.length>0);
+          // Prefer whichever has more data
+          const useCloud=hasRealData||!localHasData;
+          if(useCloud){
+            setClients(cloud.clients||DEFAULT_CLIENTS);
+            setData(migrateRDT(cloud.orders||{}));
+            setConfigs(cloud.configs||migrateAccounts(cloud.accounts));
+            try{localStorage.setItem(KEY,JSON.stringify(cloud));}catch{}
+            setSyncStatus("ok");
+            setLastSync(new Date().toLocaleTimeString("fr-FR"));
+            return;
+          }
         }
       } catch { /* offline or table not ready */ }
       // 2. Fallback to localStorage
@@ -687,7 +694,7 @@ export default function App(){
             <SClientBtn key={c} label={c} active={page===c} open={sideOpen}
               onClick={()=>setPage(c)}
               onEdit={()=>setModal({type:"client",name:c,cfg:getConfig(c)})}
-              onDelete={()=>{if(confirm(`Supprimer "${c}" et toutes ses données ?`))delClient(c);}}
+              onDelete={()=>{if(window.confirm(c+(lang==="en"?" — delete all data?":" — supprimer toutes les données ?")))delClient(c);}}
             />
           ))}
         </nav>
@@ -741,7 +748,7 @@ export default function App(){
             onEditPay={(o:any,i:any,p:any)=>setModal({type:"payment",client:page,order:o,invoice:i,payment:p})}
             onDelPay={(oid:string,iid:string,pid:string)=>delPayment(page,oid,iid,pid)}
             onEditClient={()=>setModal({type:"client",name:page,cfg:getConfig(page)})}
-            onDelClient={()=>{if(confirm(`Supprimer le client "${page}" ?`))delClient(page);}}
+            onDelClient={()=>{if(window.confirm(`${t(lang,"confirm_del_client",{name:page})}`))delClient(page);}}
           />
         )}
         </main>
@@ -1920,7 +1927,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>Aucune commande trouvée</div>}
-            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus}/>)}
+            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
                 onMouseEnter={(e:any)=>{e.currentTarget.style.background=C.blueL;e.currentTarget.style.borderColor=C.blue;}}
@@ -1972,7 +1979,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
                         <div style={{display:"flex",gap:3,justifyContent:"center"}}>
                           <IBtn icon="ti-coin" title="Paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(inv._order,inv)} small/>
                           <IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(inv._order,inv)} small/>
-                          <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(confirm("Supprimer cette facture ?"))onDelInv(inv._oid,inv.id);}} small/>
+                          <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_invoice")))onDelInv(inv._oid,inv.id);}} small/>
                         </div>
                       </td>
                     </tr>
@@ -2051,7 +2058,8 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
 }
 
 // ─── ORDER CARD (extracted from ClientPage) ───────────────────────────────────
-function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus}:any){
+function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr"}:any){
+  const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
   const open=Math.max(0,(+order.amount||0)-invoiced);
   const pct=+order.amount>0?Math.min(100,(invoiced/+order.amount)*100):0;
@@ -2112,7 +2120,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
           <div style={{display:"flex",gap:4}} onClick={(e:any)=>e.stopPropagation()}>
             <IBtn icon="ti-plus" title="Ajouter facture" c={C.teal} bg={C.tealL} onClick={()=>onAddInv(order)}/>
             <IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditOrder(order)}/>
-            <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(confirm("Supprimer cette commande ?"))onDelOrder(order.id);}}/>
+            <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_order")))onDelOrder(order.id);}}/>
           </div>
         </div>
       </div>
@@ -2153,7 +2161,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
                       <div style={{display:"flex",gap:4}}>
                         <IBtn icon="ti-coin" title="Enregistrer paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(order,inv)}/>
                         <IBtn icon="ti-edit" title="Modifier facture" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(order,inv)}/>
-                        <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(confirm(tr("confirm_del_invoice")))onDelInv(order.id,inv.id);}}/>
+                        <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_invoice")))onDelInv(order.id,inv.id);}}/>
                       </div>
                     </div>
                     {(inv.payments||[]).length>0&&(
@@ -2167,7 +2175,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
                               <span style={{color:C.t2,flex:1}}>{p.method||"—"}{p.reference?` · Réf: ${p.reference}`:""}</span>
                               <div style={{display:"flex",gap:3}}>
                                 <IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditPay(order,inv,p)} small/>
-                                <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(confirm(tr("confirm_del_payment")))onDelPay(order.id,inv.id,p.id);}} small/>
+                                <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_payment")))onDelPay(order.id,inv.id,p.id);}} small/>
                               </div>
                             </div>
                           ))}
