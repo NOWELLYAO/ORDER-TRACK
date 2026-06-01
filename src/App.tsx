@@ -443,11 +443,18 @@ const getStatusMeta=(id:string,lang:Lang="fr")=>{
 // ─── APP ────────────────────────────────────────────────────────────────────
 export default function App(){
   const[page,setPage]=useState("kpi");
+  const[isMobile,setIsMobile]=useState(window.innerWidth<768);
+  useEffect(()=>{
+    const fn=()=>setIsMobile(window.innerWidth<768);
+    window.addEventListener("resize",fn);
+    return()=>window.removeEventListener("resize",fn);
+  },[]);
   const[data,setData]=useState<any>(null);
   const[clients,setClients]=useState<string[]|null>(null);
   const[configs,setConfigs]=useState<Record<string,any>>({});
   const[modal,setModal]=useState<any>(null);
   const[sideOpen,setSideOpen]=useState(true);
+  const[mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const[selYear,setSelYear]=useState<number>(new Date().getFullYear());
   const[showSearch,setShowSearch]=useState(false);
   const[lang,setLang]=useState<Lang>("fr");
@@ -697,7 +704,17 @@ export default function App(){
     <div style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:C.page,overflow:"hidden",position:"relative"}}>
 
       {/* ── SIDEBAR ─────────────────────────────────────────── */}
-      <aside style={{width:sideOpen?220:52,background:C.side,display:"flex",flexDirection:"column",flexShrink:0,transition:"width .25s cubic-bezier(.4,0,.2,1)",overflow:"hidden"}}>
+      {/* Mobile overlay backdrop */}
+      {isMobile&&mobileMenuOpen&&<div onClick={()=>setMobileMenuOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:49}}/>}
+      <aside style={{
+        width:isMobile?(mobileMenuOpen?280:0):(sideOpen?220:52),
+        background:C.side,display:"flex",flexDirection:"column",flexShrink:0,
+        transition:"width .25s cubic-bezier(.4,0,.2,1)",overflow:"hidden",
+        position:isMobile?"fixed":"relative",
+        top:0,left:0,height:"100vh",
+        zIndex:isMobile?50:1,
+        boxShadow:isMobile&&mobileMenuOpen?"4px 0 20px rgba(0,0,0,.3)":"none"
+      }}>
         {/* Logo */}
         <div style={{display:"flex",alignItems:"center",justifyContent:sideOpen?"space-between":"center",padding:"0 14px",height:56,borderBottom:"1px solid rgba(255,255,255,.06)",flexShrink:0}}>
           {sideOpen&&(
@@ -715,9 +732,9 @@ export default function App(){
         {/* Nav */}
         <nav style={{flex:1,overflowY:"auto",padding:"10px 8px",display:"flex",flexDirection:"column",gap:2}}>
           {sideOpen&&<p style={{fontSize:10,color:"#374151",fontWeight:600,letterSpacing:".07em",textTransform:"uppercase",padding:"8px 6px 4px",margin:0}}>Général</p>}
-          <SBtn icon="ti-layout-dashboard" label={t(lang,"nav_dashboard")} active={page==="kpi"} open={sideOpen} onClick={()=>setPage("kpi")}/>
-          <SBtn icon="ti-table-column" label={t(lang,"nav_compilation")} active={page==="dashboard"} open={sideOpen} onClick={()=>setPage("dashboard")}/>
-          <SBtn icon="ti-search" label={t(lang,"nav_search")} active={false} open={sideOpen} onClick={()=>setShowSearch(true)}/>
+          <SBtn icon="ti-layout-dashboard" label={t(lang,"nav_dashboard")} active={page==="kpi"} open={sideOpen} onClick={()=>{setPage("kpi");if(isMobile)setMobileMenuOpen(false);}}/>
+          <SBtn icon="ti-table-column" label={t(lang,"nav_compilation")} active={page==="dashboard"} open={sideOpen} onClick={()=>{setPage("dashboard");if(isMobile)setMobileMenuOpen(false);}}/>
+          <SBtn icon="ti-search" label={t(lang,"nav_search")} active={false} open={sideOpen} onClick={()=>{setShowSearch(true);if(isMobile)setMobileMenuOpen(false);}}/>
 
           {sideOpen&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 6px 4px",marginTop:4}}>
@@ -731,7 +748,7 @@ export default function App(){
 
           {clients.map(c=>(
             <SClientBtn key={c} label={c} active={page===c} open={sideOpen}
-              onClick={()=>setPage(c)}
+              onClick={()=>{setPage(c);if(isMobile)setMobileMenuOpen(false);}}
               onEdit={()=>setModal({type:"client",name:c,cfg:getConfig(c)})}
               onDelete={()=>{if(window.confirm(c+(lang==="en"?" — delete all data?":" — supprimer toutes les données ?")))delClient(c);}}
             />
@@ -768,15 +785,31 @@ export default function App(){
       </aside>
 
       {/* ── MAIN ────────────────────────────────────────────── */}
-      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",marginLeft:isMobile?0:undefined}}>
+        {/* Mobile top bar */}
+        {isMobile&&(
+          <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:C.side,flexShrink:0,zIndex:10}}>
+            <button onClick={()=>setMobileMenuOpen(!mobileMenuOpen)} style={{background:"transparent",border:"none",color:"#9CA3AF",cursor:"pointer",padding:4,display:"flex"}}>
+              <i className="ti ti-menu-2" style={{fontSize:22,color:"#F1F5F9"}} aria-hidden="true"/>
+            </button>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:24,height:24,borderRadius:6,background:"linear-gradient(135deg,#3B82F6,#8B5CF6)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <i className="ti ti-box" style={{fontSize:13,color:"#fff"}} aria-hidden="true"/>
+              </div>
+              <span style={{fontWeight:700,fontSize:14,color:"#F1F5F9"}}>OrderTrack</span>
+            </div>
+            <div style={{flex:1}}/>
+            <span style={{fontSize:11,color:"#6B7280"}}>{page==="kpi"?t(lang,"nav_dashboard"):page==="dashboard"?t(lang,"nav_compilation"):page}</span>
+          </div>
+        )}
         {/* Alert Ticker */}
         {tickerAlerts.length>0&&<AlertTicker alerts={tickerAlerts} lang={lang}/>}
-        <main style={{flex:1,overflow:"auto",padding:"28px 32px"}}>
-        {page==="kpi"&&<KpiPage clients={clients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrders} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang}/>}
-        {page==="dashboard"&&<CompilPage getStats={getStats} clients={clients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang}/>}
+        <main style={{flex:1,overflow:"auto",padding:isMobile?"16px":"28px 32px"}}>
+        {page==="kpi"&&<KpiPage clients={clients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrders} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
+        {page==="dashboard"&&<CompilPage getStats={getStats} clients={clients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
         {!special.includes(page)&&(
           <ClientPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
-            focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang}
+            focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
             onAdd={()=>setModal({type:"order",client:page})}
             onEditOrder={(o:any)=>setModal({type:"order",client:page,order:o})}
             onDelOrder={(id:string)=>delOrder(page,id)}
@@ -795,7 +828,7 @@ export default function App(){
 
       {/* ── MODALS ──────────────────────────────────────────── */}
       {modal&&(
-        <div style={{position:"absolute",inset:0,background:"rgba(15,23,42,.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,backdropFilter:"blur(2px)"}} onClick={(e:any)=>{if(e.target===e.currentTarget)setModal(null);}}>
+        <div style={{position:"absolute",inset:0,background:"rgba(15,23,42,.55)",display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center",zIndex:100,backdropFilter:"blur(2px)"}} onClick={(e:any)=>{if(e.target===e.currentTarget)setModal(null);}}>
           {modal.type==="client"&&<ClientModal name={modal.name} cfg={modal.cfg} lang={lang} onSave={(n:string,c:any)=>{const ok=modal.name?editClient(modal.name,n,c):addClient(n,c);if(ok)setModal(null);else alert(lang==="en"?"Invalid or duplicate name.":"Nom invalide ou déjà utilisé.");}} onClose={()=>setModal(null)}/>}
           {modal.type==="order"&&<OrderModal client={modal.client} order={modal.order} lang={lang} onSave={(f:any)=>saveOrder(modal.client,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="invoice"&&<InvoiceModal client={modal.client} order={modal.order} invoice={modal.invoice} cfg={modal.cfg} lang={lang} onSave={(f:any)=>saveInvoice(modal.client,modal.order.id,f)} onClose={()=>setModal(null)}/>}
@@ -908,7 +941,7 @@ function AlertTicker({alerts,lang="fr"}:any){
 }
 
 // ─── KPI PAGE ────────────────────────────────────────────────────────────────
-function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,selYear,setSelYear,lang="fr"}:any){
+function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,selYear,setSelYear,lang="fr",isMobile=false}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const all=getAllOrders();
   const totPO=all.reduce((s:number,o:any)=>s+(+o.amount||0),0);
@@ -985,7 +1018,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       </div>
 
       {/* KPI row */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:isMobile?10:14}}>
         <Kpi icon="ti-building-store" label={tr("kpi_clients")} val={clients.length} sub={`${clients.filter((c:string)=>(data?.[c]||[]).length>0).length} ${tr("kpi_active")}`} c={C.purple} bg={C.purpleL}/>
         <Kpi icon="ti-clipboard-list" label={tr("kpi_orders")} val={nbCmds} sub={`${noInv.length} ${tr("kpi_no_invoice")}`} c={C.blue} bg={C.blueL}/>
         <Kpi icon="ti-file-invoice" label={tr("kpi_po")} val={`${fmtK(totPO)} €`} sub={tr("commanded")} c={C.t2} bg="#F1F5F9"/>
@@ -995,7 +1028,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       </div>
 
       {/* Row 2 : jauges + alertes paiements */}
-      <div style={{display:"grid",gridTemplateColumns:"5fr 4fr",gap:16}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"5fr 4fr",gap:isMobile?12:16}}>
         {/* Jauge double */}
         <Card title="Progression globale" icon="ti-target">
           <div style={{display:"flex",gap:24,marginBottom:20}}>
@@ -1125,7 +1158,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       </div>
 
       {/* Row 3 : graphiques */}
-      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:16}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:isMobile?12:16}}>
         <Card title="Évolution mensuelle 2026" icon="ti-chart-bar">
           <div style={{display:"flex",gap:16,marginBottom:12}}>
             {[["#3B82F6","PO"],["#0D9488","Facturé"],["#059669","Encaissé"]].map(([col,lbl])=>(
@@ -1495,7 +1528,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
 }
 
 // ─── CLIENT PAGE ─────────────────────────────────────────────────────────────
-function ClientPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditClient,onDelClient,focusOrderId,onClearFocus,lang="fr"}:any){
+function ClientPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditClient,onDelClient,focusOrderId,onClearFocus,lang="fr",isMobile=false}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
   const tgl=(id:string)=>setExp(p=>({...p,[id]:!p[id]}));
@@ -1547,7 +1580,7 @@ function ClientPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddI
         const echuesAmt=clientEchues.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
         const enCoursAmt=clientEnCours.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
         return(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:isMobile?8:12}}>
             <Kpi icon="ti-file-invoice"    label="PO total"           val={`${fmtK(stats.totalPO)} €`}    sub="Commandé"                                   c={C.blue}   bg={C.blueL}/>
             <Kpi icon="ti-receipt"         label="Facturé"            val={`${fmtK(stats.totalInv)} €`}   sub={`${txFact.toFixed(1)}% du PO`}              c={C.teal}   bg={C.tealL}/>
             <Kpi icon="ti-coin"            label="Encaissé"           val={`${fmtK(stats.totalPaid)} €`}  sub={`${txPay.toFixed(1)}% des factures`}         c={C.green}  bg={C.greenL}/>
@@ -1697,7 +1730,7 @@ function Label({t}:any){return<label style={{fontSize:11,color:C.t3,fontWeight:6
 // ─── MODALS ──────────────────────────────────────────────────────────────────
 function Modal({title,sub,width,children,footer,onClose}:any){
   return(
-    <div style={{background:"#fff",borderRadius:C.rLg,width:width||480,maxWidth:"94vw",boxShadow:C.shMd,border:`1px solid ${C.b}`,display:"flex",flexDirection:"column",maxHeight:"92vh"}}>
+    <div style={{background:"#fff",borderRadius:window.innerWidth<768?`${C.rLg} ${C.rLg} 0 0`:C.rLg,width:window.innerWidth<768?"100vw":(width||480),maxWidth:window.innerWidth<768?"100vw":"94vw",boxShadow:C.shMd,border:`1px solid ${C.b}`,display:"flex",flexDirection:"column",maxHeight:window.innerWidth<768?"90vh":"92vh",marginTop:window.innerWidth<768?"auto":undefined}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 22px",borderBottom:`1px solid ${C.b}`,flexShrink:0}}>
         <div><h3 style={{margin:0,fontSize:16,fontWeight:700,color:C.t1}}>{title}</h3>{sub&&<p style={{margin:"3px 0 0",fontSize:12,color:C.t3}}>{sub}</p>}</div>
         <button onClick={onClose} style={{background:"#F1F5F9",border:"none",color:C.t3,cursor:"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center"}}><i className="ti ti-x" style={{fontSize:15}} aria-hidden="true"/></button>
