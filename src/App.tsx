@@ -51,6 +51,35 @@ const cloudSave = async (payload: any): Promise<boolean> => {
   } catch(e){ console.warn("[CloudSave] Exception:",e); return false; }
 };
 
+// ─── SUPABASE FILE STORAGE ────────────────────────────────────────────────────
+const SB_STORAGE_URL = "https://vxxrxnyxfmgcdzxcigdw.supabase.co/storage/v1";
+const SB_K = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+const BUCKET = "ordertrack-files";
+
+const uploadFile = async (file: File, path: string): Promise<string|null> => {
+  try {
+    const res = await fetch(`${SB_STORAGE_URL}/object/${BUCKET}/${path}`, {
+      method: "POST",
+      headers: { "apikey": SB_K, "Authorization": "Bearer "+SB_K, "Content-Type": file.type },
+      body: file,
+    });
+    if(!res.ok){ const e=await res.text(); console.warn("[Upload]",e); return null; }
+    return `${SB_STORAGE_URL}/object/public/${BUCKET}/${path}`;
+  } catch(e){ console.warn("[Upload]",e); return null; }
+};
+
+const deleteFile = async (path: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`${SB_STORAGE_URL}/object/${BUCKET}/${path}`, {
+      method: "DELETE",
+      headers: { "apikey": SB_K, "Authorization": "Bearer "+SB_K },
+    });
+    return res.ok;
+  } catch { return false; }
+};
+
+const getFileUrl = (path: string) => `${SB_STORAGE_URL}/object/public/${BUCKET}/${path}`;
+
 // ─── I18N ─────────────────────────────────────────────────────────────────────
 type Lang="fr"|"en";
 const T:Record<Lang,Record<string,string>>={
@@ -671,7 +700,7 @@ export default function App(){
 
   if(!data||!clients)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:C.t3,fontSize:14}}>Chargement…</div>;
 
-  const special=["kpi","dashboard"];
+  const special=["kpi","dashboard","tresorerie"];
   const getConfig=(c:string)=>configs[c]||{accountNumber:"",termId:"net60",customDays:0};
 
   // ── Compute global alerts (for ticker on all pages) ──────────────
@@ -735,6 +764,7 @@ export default function App(){
           <SBtn icon="ti-layout-dashboard" label={t(lang,"nav_dashboard")} active={page==="kpi"} open={sideOpen} onClick={()=>{setPage("kpi");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-table-column" label={t(lang,"nav_compilation")} active={page==="dashboard"} open={sideOpen} onClick={()=>{setPage("dashboard");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-search" label={t(lang,"nav_search")} active={false} open={sideOpen} onClick={()=>{setShowSearch(true);if(isMobile)setMobileMenuOpen(false);}}/>
+          <SBtn icon="ti-chart-area-line" label="Trésorerie" active={page==="tresorerie"} open={sideOpen} onClick={()=>{setPage("tresorerie");if(isMobile)setMobileMenuOpen(false);}}/>
 
           {sideOpen&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 6px 4px",marginTop:4}}>
@@ -807,6 +837,7 @@ export default function App(){
         <main style={{flex:1,overflow:"auto",padding:isMobile?"16px":"28px 32px"}}>
         {page==="kpi"&&<KpiPage clients={clients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrders} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
         {page==="dashboard"&&<CompilPage getStats={getStats} clients={clients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
+        {page==="tresorerie"&&<TresoreriePage getAllOrders={getAllOrders} clients={clients} lang={lang} isMobile={isMobile}/>}
         {!special.includes(page)&&(
           <ClientPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
@@ -2276,6 +2307,288 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── FILE ATTACHMENTS ────────────────────────────────────────────────────────
+function FileAttachments({files,entityId,entityType,onAdd,onDel}:any){
+  const[uploading,setUploading]=useState(false);
+  const[error,setError]=useState<string|null>(null);
+  const inputRef=useRef<HTMLInputElement>(null);
+
+  const handleUpload=async(e:any)=>{
+    const file=e.target.files?.[0];
+    if(!file)return;
+    if(file.size>10*1024*1024){setError("Fichier trop volumineux (max 10 Mo)");return;}
+    setUploading(true);setError(null);
+    const ext=file.name.split(".").pop();
+    const path=`${entityType}/${entityId}/${Date.now()}.${ext}`;
+    const url=await uploadFile(file,path);
+    if(url){
+      onAdd({name:file.name,url,path,size:file.size,type:file.type,date:new Date().toISOString()});
+    } else {
+      setError("Échec du téléchargement. Vérifiez la configuration du bucket Supabase.");
+    }
+    setUploading(false);
+    if(inputRef.current)inputRef.current.value="";
+  };
+
+  const handleDel=async(idx:number,path:string)=>{
+    if(!window.confirm("Supprimer cette pièce jointe ?"))return;
+    await deleteFile(path);
+    onDel(idx);
+  };
+
+  const fmtSize=(b:number)=>b>1024*1024?`${(b/1024/1024).toFixed(1)} Mo`:b>1024?`${(b/1024).toFixed(0)} Ko`:`${b} o`;
+  const fileIcon=(type:string)=>{
+    if(type?.includes("pdf"))return{icon:"ti-file-type-pdf",color:"#DC2626"};
+    if(type?.includes("image"))return{icon:"ti-photo",color:"#7C3AED"};
+    if(type?.includes("excel")||type?.includes("spreadsheet"))return{icon:"ti-file-type-xls",color:"#059669"};
+    if(type?.includes("word"))return{icon:"ti-file-type-doc",color:"#2563EB"};
+    return{icon:"ti-file",color:C.t3};
+  };
+
+  return(
+    <div style={{marginBottom:16,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"12px 14px"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:files?.length>0?10:0}}>
+        <span style={{fontSize:12,fontWeight:600,color:C.t1,display:"flex",alignItems:"center",gap:6}}>
+          <i className="ti ti-paperclip" style={{fontSize:14,color:C.t3}} aria-hidden="true"/>
+          Pièces jointes {files?.length>0&&<span style={{background:C.blueL,color:C.blueDk,borderRadius:99,fontSize:10,padding:"1px 7px",fontWeight:700}}>{files.length}</span>}
+        </span>
+        <div>
+          <input ref={inputRef} type="file" style={{display:"none"}} onChange={handleUpload}
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"/>
+          <button onClick={()=>inputRef.current?.click()} disabled={uploading}
+            style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:uploading?"not-allowed":"pointer",opacity:uploading?.6:1}}>
+            {uploading
+              ?<><i className="ti ti-loader-2 rotating" style={{fontSize:13}} aria-hidden="true"/> Envoi…</>
+              :<><i className="ti ti-upload" style={{fontSize:13}} aria-hidden="true"/> Joindre un fichier</>}
+          </button>
+        </div>
+      </div>
+      {error&&<div style={{fontSize:11,color:C.redDk,background:C.redL,borderRadius:4,padding:"4px 8px",marginBottom:8}}>{error}</div>}
+      {files?.length>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {files.map((f:any,i:number)=>{
+            const fi=fileIcon(f.type);
+            return(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",background:"#F8FAFC",borderRadius:5,border:`1px solid ${C.b}`}}>
+                <i className={`ti ${fi.icon}`} style={{fontSize:16,color:fi.color,flexShrink:0}} aria-hidden="true"/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:500,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</div>
+                  <div style={{fontSize:10,color:C.t3}}>{fmtSize(f.size)} · {fmtD(f.date)}</div>
+                </div>
+                <a href={f.url} target="_blank" rel="noreferrer"
+                  style={{background:C.blueL,color:C.blueDk,border:"none",borderRadius:4,padding:"3px 8px",fontSize:11,fontWeight:500,cursor:"pointer",textDecoration:"none",display:"flex",alignItems:"center",gap:4}}>
+                  <i className="ti ti-download" style={{fontSize:12}} aria-hidden="true"/> Ouvrir
+                </a>
+                <button onClick={()=>handleDel(i,f.path)}
+                  style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0}}>
+                  <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── TRÉSORERIE PAGE ──────────────────────────────────────────────────────────
+function TresoreriePage({getAllOrders,clients,lang,isMobile}:any){
+  const today=new Date();today.setHours(0,0,0,0);
+  const all=getAllOrders();
+
+  // Build 6-month forecast from today
+  const months=Array.from({length:6},(_,i)=>{
+    const d=new Date(today.getFullYear(),today.getMonth()+i,1);
+    return{year:d.getFullYear(),month:d.getMonth(),label:MONTHS[d.getMonth()]+" "+d.getFullYear()};
+  });
+
+  // For each month: sum of invoice remainders whose dueDate falls in that month
+  const forecast=months.map(({year,month,label})=>{
+    let expected=0,overdue=0,collected=0;
+    all.forEach((o:any)=>{
+      (o.invoices||[]).forEach((inv:any)=>{
+        const ps=payStatus(inv);
+        // Already collected this month
+        (inv.payments||[]).forEach((p:any)=>{
+          const pd=p.date?new Date(p.date+"T00:00:00"):null;
+          if(pd&&pd.getFullYear()===year&&pd.getMonth()===month) collected+=(+p.amount||0);
+        });
+        // Expected: remaining due this month
+        if(ps.rem>0&&inv.dueDate){
+          const dd=new Date(inv.dueDate+"T00:00:00");
+          if(dd.getFullYear()===year&&dd.getMonth()===month) expected+=ps.rem;
+          if(dd<today&&ps.rem>0){
+            const overD=new Date(today.getFullYear(),today.getMonth(),1);
+            if(year===overD.getFullYear()&&month===overD.getMonth()) overdue+=ps.rem;
+          }
+        }
+      });
+    });
+    return{label,year,month,expected,overdue,collected};
+  });
+
+  // Global stats
+  const allInvoices=all.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_client:o._client})));
+  const totalExpected=allInvoices.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+  const overdueTotal=allInvoices.filter((i:any)=>["overdue","ov_part"].includes(payStatus(i).key)).reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+  const next30=forecast.slice(0,2).reduce((s:number,m:any)=>s+m.expected,0);
+  const maxBar=Math.max(...forecast.map(m=>Math.max(m.expected+m.overdue,m.collected)),1);
+
+  // Upcoming payments list
+  const upcoming=allInvoices.filter((i:any)=>{
+    const ps=payStatus(i);
+    if(ps.rem<=0||!i.dueDate)return false;
+    const dd=new Date(i.dueDate+"T00:00:00");
+    const future=new Date(today.getFullYear(),today.getMonth()+6,0);
+    return dd<=future;
+  }).sort((a:any,b:any)=>new Date(a.dueDate).getTime()-new Date(b.dueDate).getTime());
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      {/* Header */}
+      <div>
+        <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Trésorerie prévisionnelle</h1>
+        <p style={{margin:0,color:C.t3,fontSize:13}}>Encaissements prévus sur les 6 prochains mois</p>
+      </div>
+
+      {/* KPI strip */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:14}}>
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 18px"}}>
+          <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>Total à encaisser</div>
+          <div style={{fontSize:20,fontWeight:800,color:C.blue}}>{fmtK(totalExpected)} €</div>
+          <div style={{fontSize:11,color:C.t3,marginTop:3}}>Toutes échéances confondues</div>
+        </div>
+        <div style={{background:C.redL,borderRadius:C.rLg,border:`1px solid ${C.red}30`,boxShadow:C.sh,padding:"16px 18px"}}>
+          <div style={{fontSize:10,color:C.redDk,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>Échu non réglé</div>
+          <div style={{fontSize:20,fontWeight:800,color:C.redDk}}>{fmtK(overdueTotal)} €</div>
+          <div style={{fontSize:11,color:C.redDk,marginTop:3}}>À recouvrer en priorité</div>
+        </div>
+        <div style={{background:C.amberL,borderRadius:C.rLg,border:`1px solid ${C.amber}30`,boxShadow:C.sh,padding:"16px 18px"}}>
+          <div style={{fontSize:10,color:C.amberDk,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>Prévu ce mois + suivant</div>
+          <div style={{fontSize:20,fontWeight:800,color:C.amberDk}}>{fmtK(next30)} €</div>
+          <div style={{fontSize:11,color:C.amberDk,marginTop:3}}>À encaisser sous 60 jours</div>
+        </div>
+        <div style={{background:C.greenL,borderRadius:C.rLg,border:`1px solid ${C.green}30`,boxShadow:C.sh,padding:"16px 18px"}}>
+          <div style={{fontSize:10,color:C.greenDk,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>Encaissé ce mois-ci</div>
+          <div style={{fontSize:20,fontWeight:800,color:C.greenDk}}>{fmtK(forecast[0]?.collected||0)} €</div>
+          <div style={{fontSize:11,color:C.greenDk,marginTop:3}}>{MONTHS[today.getMonth()]} {today.getFullYear()}</div>
+        </div>
+      </div>
+
+      {/* Bar chart + table side by side */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.2fr 1fr",gap:16,alignItems:"start"}}>
+
+        {/* Bar chart */}
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
+          <div style={{fontSize:13,fontWeight:600,color:C.t1,marginBottom:4}}>Projection mensuelle</div>
+          <div style={{display:"flex",gap:16,marginBottom:16}}>
+            {[[C.red,"Échu"],[C.amber,"À encaisser"],[C.green,"Encaissé"]].map(([c,l])=>(
+              <span key={l as string} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:C.t3}}>
+                <span style={{width:10,height:10,borderRadius:2,background:c as string,display:"inline-block"}}/>
+                {l}
+              </span>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end",height:160}}>
+            {forecast.map((m,i)=>(
+              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,height:"100%",justifyContent:"flex-end"}}>
+                <div style={{width:"100%",display:"flex",flexDirection:"column",gap:1,alignItems:"stretch",height:"100%",justifyContent:"flex-end"}}>
+                  {m.overdue>0&&<div title={`Échu: ${fmt(m.overdue)} €`} style={{background:C.red,borderRadius:i===0?"3px 3px 0 0":"0",height:`${(m.overdue/maxBar)*100}%`,minHeight:3,opacity:.85}}/>}
+                  {m.expected>0&&<div title={`À encaisser: ${fmt(m.expected)} €`} style={{background:C.amber,borderRadius:m.overdue>0?"0":i===0?"3px 3px 0 0":"0",height:`${(m.expected/maxBar)*100}%`,minHeight:3,opacity:.85}}/>}
+                  {m.collected>0&&<div title={`Encaissé: ${fmt(m.collected)} €`} style={{background:C.green,borderRadius:"3px 3px 0 0",height:`${(m.collected/maxBar)*100}%`,minHeight:3,position:"absolute",bottom:20,opacity:.9}}/>}
+                </div>
+                <div style={{fontSize:9,color:C.t3,textAlign:"center",lineHeight:1.2}}>{m.label}</div>
+              </div>
+            ))}
+          </div>
+          {/* Values below */}
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            {forecast.map((m,i)=>(
+              <div key={i} style={{flex:1,textAlign:"center"}}>
+                {(m.expected+m.overdue)>0&&<div style={{fontSize:9,color:m.overdue>0?C.redDk:C.amberDk,fontWeight:600}}>{fmtK(m.expected+m.overdue)}</div>}
+                {m.collected>0&&<div style={{fontSize:9,color:C.greenDk,fontWeight:600}}>{fmtK(m.collected)}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Upcoming payments list */}
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,fontWeight:600,fontSize:13,color:C.t1}}>
+            Prochaines échéances
+          </div>
+          <div style={{maxHeight:320,overflowY:"auto"}}>
+            {upcoming.length===0&&<div style={{padding:"24px",textAlign:"center",color:C.t3,fontSize:12}}>Aucune échéance à venir</div>}
+            {upcoming.slice(0,15).map((inv:any,i:number)=>{
+              const ps=payStatus(inv);
+              const dd=inv.dueDate?diffD(inv.dueDate):null;
+              const isOver=dd!==null&&dd<0;
+              const isSoon=dd!==null&&dd>=0&&dd<=7;
+              return(
+                <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 16px",borderBottom:`1px solid ${C.b}`,background:isOver?C.redL:isSoon?C.amberL:"#fff"}}>
+                  <div style={{width:36,height:36,borderRadius:8,background:isOver?C.red:isSoon?C.amber:C.blue,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <span style={{fontSize:10,fontWeight:800,color:"#fff",textAlign:"center",lineHeight:1.2}}>
+                      {isOver?`${Math.abs(dd!)}j`:dd===0?"AUJ":`${dd}j`}
+                    </span>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{inv._client}</div>
+                    <div style={{fontSize:10,color:C.t3}}>{inv.invoiceNumber} · Éch. {fmtD(inv.dueDate)}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:isOver?C.redDk:C.t1}}>{fmtK(ps.rem)} €</div>
+                    <Tag label={ps.label} c={ps.color} bg={ps.bg} sm/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Detailed table */}
+      <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,fontWeight:600,fontSize:13,color:C.t1}}>
+          Détail par mois
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:"#F8FAFC",borderBottom:`1px solid ${C.b}`}}>
+                {["Mois","Échu non réglé","À encaisser","Encaissé","Total prévu"].map((h,i)=>(
+                  <th key={h} style={{padding:"10px 16px",textAlign:i===0?"left":"right",color:C.t3,fontWeight:600,fontSize:11}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {forecast.map((m,i)=>{
+                const total=m.overdue+m.expected;
+                return(
+                  <tr key={i} style={{borderBottom:`1px solid ${C.b}`,background:i%2===0?"#fff":"#FAFBFD"}}>
+                    <td style={{padding:"10px 16px",fontWeight:600,color:C.t1}}>{m.label}</td>
+                    <td style={{padding:"10px 16px",textAlign:"right",fontWeight:m.overdue>0?700:400,color:m.overdue>0?C.redDk:C.t3}}>{m.overdue>0?`${fmt(m.overdue)} €`:"—"}</td>
+                    <td style={{padding:"10px 16px",textAlign:"right",fontWeight:m.expected>0?600:400,color:m.expected>0?C.amberDk:C.t3}}>{m.expected>0?`${fmt(m.expected)} €`:"—"}</td>
+                    <td style={{padding:"10px 16px",textAlign:"right",fontWeight:m.collected>0?600:400,color:m.collected>0?C.greenDk:C.t3}}>{m.collected>0?`${fmt(m.collected)} €`:"—"}</td>
+                    <td style={{padding:"10px 16px",textAlign:"right",fontWeight:700,color:total>0?C.blue:C.t3}}>{total>0?`${fmt(total)} €`:"—"}</td>
+                  </tr>
+                );
+              })}
+              <tr style={{background:C.blueL,borderTop:`2px solid ${C.blue}30`}}>
+                <td style={{padding:"10px 16px",fontWeight:700,color:C.blueDk}}>TOTAL 6 MOIS</td>
+                <td style={{padding:"10px 16px",textAlign:"right",fontWeight:700,color:C.redDk}}>{fmt(forecast.reduce((s,m)=>s+m.overdue,0))} €</td>
+                <td style={{padding:"10px 16px",textAlign:"right",fontWeight:700,color:C.amberDk}}>{fmt(forecast.reduce((s,m)=>s+m.expected,0))} €</td>
+                <td style={{padding:"10px 16px",textAlign:"right",fontWeight:700,color:C.greenDk}}>{fmt(forecast.reduce((s,m)=>s+m.collected,0))} €</td>
+                <td style={{padding:"10px 16px",textAlign:"right",fontWeight:800,color:C.blueDk,fontSize:14}}>{fmt(forecast.reduce((s,m)=>s+m.overdue+m.expected,0))} €</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
