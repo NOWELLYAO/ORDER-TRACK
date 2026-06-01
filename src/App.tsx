@@ -2249,6 +2249,14 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
             <div><span style={{color:C.t3,fontSize:11}}>Nb factures</span><br/><strong>{(order.invoices||[]).length}</strong></div>
             <div><span style={{color:C.t3,fontSize:11}}>Notes</span><br/><strong style={{wordBreak:"break-word"}}>{order.notes||"—"}</strong></div>
           </div>
+          {/* ── Pièces jointes ── */}
+          <FileAttachments
+            files={order.attachments||[]}
+            entityId={order.id}
+            entityType="order"
+            onAdd={(f:any)=>{const upd={...order,attachments:[...(order.attachments||[]),f]};onEditOrder(upd);}}
+            onDel={(idx:number)=>{const a=[...(order.attachments||[])];a.splice(idx,1);const upd={...order,attachments:a};onEditOrder(upd);}}
+          />
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
             <h4 style={{margin:0,fontSize:13,fontWeight:700,color:C.t1}}>Expéditions & Factures</h4>
             <Btn icon="ti-plus" label="Ajouter facture" onClick={()=>onAddInv(order)} variant="success" small/>
