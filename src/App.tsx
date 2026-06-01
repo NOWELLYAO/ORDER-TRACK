@@ -841,6 +841,7 @@ export default function App(){
         {!special.includes(page)&&(
           <ClientPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
+            onSaveOrder={(f:any)=>saveOrder(page,f)}
             onAdd={()=>setModal({type:"order",client:page})}
             onEditOrder={(o:any)=>setModal({type:"order",client:page,order:o})}
             onDelOrder={(id:string)=>delOrder(page,id)}
@@ -1559,7 +1560,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
 }
 
 // ─── CLIENT PAGE ─────────────────────────────────────────────────────────────
-function ClientPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditClient,onDelClient,focusOrderId,onClearFocus,lang="fr",isMobile=false}:any){
+function ClientPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditClient,onDelClient,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
   const tgl=(id:string)=>setExp(p=>({...p,[id]:!p[id]}));
@@ -1647,6 +1648,7 @@ function ClientPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddI
         onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay}
         onEditInv={onEditInv} onDelInv={onDelInv}
         focusOrderId={focusOrderId} onClearFocus={onClearFocus} onAdd={onAdd} lang={lang}
+        onSaveOrder={onSaveOrder}
       />
     </div>
     {/* Floating action button — always accessible */}
@@ -1952,7 +1954,7 @@ function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
 }
 
 // ─── ORDER TABS PANEL ────────────────────────────────────────────────────────
-function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr"}:any){
+function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[tab,setTab]=useState<"orders"|"invoices"|"payments">("orders");
   const[search,setSearch]=useState("");
@@ -2030,7 +2032,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>Aucune commande trouvée</div>}
-            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang}/>)}
+            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
                 onMouseEnter={(e:any)=>{e.currentTarget.style.background=C.blueL;e.currentTarget.style.borderColor=C.blue;}}
@@ -2171,7 +2173,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
 }
 
 // ─── ORDER CARD (extracted from ClientPage) ───────────────────────────────────
-function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr"}:any){
+function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
   const open=Math.max(0,(+order.amount||0)-invoiced);
@@ -2254,8 +2256,8 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
             files={order.attachments||[]}
             entityId={order.id}
             entityType="order"
-            onAdd={(f:any)=>{const upd={...order,attachments:[...(order.attachments||[]),f]};onEditOrder(upd);}}
-            onDel={(idx:number)=>{const a=[...(order.attachments||[])];a.splice(idx,1);const upd={...order,attachments:a};onEditOrder(upd);}}
+            onAdd={(f:any)=>{const upd={...order,attachments:[...(order.attachments||[]),f]};if(onSaveOrder)onSaveOrder(upd);else onEditOrder(upd);}}
+            onDel={(idx:number)=>{const a=[...(order.attachments||[])];a.splice(idx,1);const upd={...order,attachments:a};if(onSaveOrder)onSaveOrder(upd);else onEditOrder(upd);}}
           />
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
             <h4 style={{margin:0,fontSize:13,fontWeight:700,color:C.t1}}>Expéditions & Factures</h4>
