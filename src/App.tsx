@@ -453,23 +453,41 @@ export default function App(){
   useEffect(()=>{
     (async()=>{
       setSyncStatus("syncing");
-      // 1. Try cloud first
+      // 1. Try cloud first — compare timestamps
       try {
         const result = await cloudLoad();
         if(result?.payload){
           const cloud=result.payload;
-          // Only use cloud if it has actual order data (not test data)
-          const hasRealData=cloud.orders&&Object.values(cloud.orders).some((arr:any)=>arr?.length>0);
+          const cloudTs=result.updatedAt||"";
+          const localTs=localStorage.getItem(KEY+"_ts")||"";
           const localStr=localStorage.getItem(KEY);
           const localParsed=localStr?JSON.parse(localStr):null;
+          // Use local if it's newer than cloud (user made changes offline)
+          const localIsNewer=localTs&&cloudTs&&localTs>cloudTs;
           const localHasData=localParsed?.orders&&Object.values(localParsed.orders).some((arr:any)=>arr?.length>0);
-          // Prefer whichever has more data
-          const useCloud=hasRealData||!localHasData;
-          if(useCloud){
+          const cloudHasData=cloud.orders&&Object.values(cloud.orders).some((arr:any)=>arr?.length>0);
+          if(localIsNewer && localHasData){
+            // Local is newer — load local and push to cloud
+            setClients(localParsed.clients||DEFAULT_CLIENTS);
+            setData(migrateRDT(localParsed.orders||{}));
+            setConfigs(localParsed.configs||{});
+            setSyncStatus("syncing");
+            cloudSave(localParsed).then(ok=>{
+              setSyncStatus(ok?"ok":"offline");
+              if(ok)setLastSync(new Date().toLocaleTimeString("fr-FR"));
+            });
+            return;
+          }
+          if(cloudHasData||!localHasData){
+            // Cloud is newer or local is empty — use cloud
             setClients(cloud.clients||DEFAULT_CLIENTS);
             setData(migrateRDT(cloud.orders||{}));
             setConfigs(cloud.configs||migrateAccounts(cloud.accounts));
-            try{localStorage.setItem(KEY,JSON.stringify(cloud));}catch{}
+            try{
+              localStorage.setItem(KEY,JSON.stringify(cloud));
+              localStorage.setItem(KEY+"_ts",cloudTs);
+            }catch{}
+            lastCloudUpdate.current=cloudTs;
             setSyncStatus("ok");
             setLastSync(new Date().toLocaleTimeString("fr-FR"));
             return;
@@ -544,15 +562,30 @@ export default function App(){
   const persist=(nc:any,nd:any,nf:any)=>{
     const c=nc??clients,d=nd??data,f=nf??configs;
     setClients(c);setData(d);setConfigs(f);
+    const ts=new Date().toISOString();
     const payload={clients:c,orders:d,configs:f};
-    // Local save — instant
-    try{localStorage.setItem(KEY,JSON.stringify(payload));}catch{}
-    // Cloud save — background, non-blocking
+    // Local save — instant with timestamp
+    try{
+      localStorage.setItem(KEY,JSON.stringify(payload));
+      localStorage.setItem(KEY+"_ts",ts);
+    }catch{}
+    // Cloud save with auto-retry (3 attempts)
     setSyncStatus("syncing");
-    cloudSave(payload).then(ok=>{
-      setSyncStatus(ok?"ok":"offline");
-      if(ok) setLastSync(new Date().toLocaleTimeString("fr-FR"));
-    }).catch(()=>setSyncStatus("offline"));
+    const trySave=(attempt:number)=>{
+      cloudSave(payload).then(ok=>{
+        if(ok){
+          setSyncStatus("ok");
+          setLastSync(new Date().toLocaleTimeString("fr-FR"));
+          lastCloudUpdate.current=ts;
+        } else if(attempt<3){
+          setTimeout(()=>trySave(attempt+1),3000*attempt);
+        } else setSyncStatus("offline");
+      }).catch(()=>{
+        if(attempt<3)setTimeout(()=>trySave(attempt+1),3000*attempt);
+        else setSyncStatus("offline");
+      });
+    };
+    trySave(1);
   };
 
   const getOrders=(c:string)=>data?.[c]||[];
