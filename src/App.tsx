@@ -2409,6 +2409,50 @@ function FileAttachments({files,entityId,entityType,onAdd,onDel}:any){
 }
 
 // ─── WEEKLY REPORT PAGE ──────────────────────────────────────────────────────
+// ─── ACTIVITY TABLE (standalone to avoid focus loss on re-render) ─────────────
+const PRIORITIES_LIST=["HIGH","MEDIUM","LOW"];
+const STATUSES_LIST=["📋","🔄","✅","🎓","⚠️"];
+
+function ActivityTable({items,onAdd,onUpdate,onRemove,title,color,isMobile}:any){
+  return(
+    <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+      <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <span style={{fontWeight:600,fontSize:13,color:C.t1}}>{title}</span>
+        <button onClick={onAdd} style={{display:"flex",alignItems:"center",gap:5,background:color+"18",color,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+          <i className="ti ti-plus" style={{fontSize:13}} aria-hidden="true"/> Ajouter
+        </button>
+      </div>
+      <div style={{padding:"12px 18px",display:"flex",flexDirection:"column",gap:8}}>
+        {items.map((item:any,idx:number)=>(
+          <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"120px 1fr 2fr 80px 32px",gap:8,alignItems:"center"}}>
+            <select value={item.priority} onChange={e=>onUpdate(idx,"priority",e.target.value)}
+              style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:11,fontWeight:600,
+                background:item.priority==="HIGH"?C.redL:item.priority==="MEDIUM"?C.amberL:C.greenL,
+                color:item.priority==="HIGH"?C.redDk:item.priority==="MEDIUM"?C.amberDk:C.greenDk}}>
+              {PRIORITIES_LIST.map(p=><option key={p} value={p}>{p}</option>)}
+            </select>
+            <input value={item.client} onChange={e=>onUpdate(idx,"client",e.target.value)}
+              placeholder="Client / Prospect"
+              style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"}}/>
+            <input value={item.action} onChange={e=>onUpdate(idx,"action",e.target.value)}
+              placeholder="Description de l'activité…"
+              style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"}}/>
+            <select value={item.status} onChange={e=>onUpdate(idx,"status",e.target.value)}
+              style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:14,textAlign:"center"}}>
+              {STATUSES_LIST.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            <button onClick={()=>onRemove(idx)}
+              style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
+            </button>
+          </div>
+        ))}
+        {items.length===0&&<div style={{textAlign:"center",padding:"20px",color:C.t3,fontSize:12}}>Aucune activité — cliquez sur "+ Ajouter"</div>}
+      </div>
+    </div>
+  );
+}
+
 function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any){
   const today=new Date();
   // Get current week number
@@ -2483,8 +2527,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     try{localStorage.removeItem(DRAFT_KEY);}catch{}
   };
 
-  const PRIORITIES=["HIGH","MEDIUM","LOW"];
-  const STATUSES=["📋","🔄","✅","🎓","⚠️"];
+
 
   const all=getAllOrders();
   const allOrders=(clients||[]).flatMap((c:string)=>(data?.[c]||[]).map((o:any)=>({...o,_client:c})));
@@ -2541,9 +2584,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     invByClient[i._client]=(invByClient[i._client]||0)+(+i.amount||0);
   });
 
-  const addActivity=(setter:any)=>setter((p:any)=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}]);
-  const updateActivity=(setter:any,idx:number,field:string,val:string)=>setter((p:any)=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item));
-  const removeActivity=(setter:any,idx:number)=>setter((p:any)=>p.filter((_:any,i:number)=>i!==idx));
+
 
   const MONTH_NAMES=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
@@ -2870,41 +2911,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   };
 
   // ── UI ─────────────────────────────────────────────────────────────────────
-  const ActivityTable=({items,setItems,title,color}:any)=>(
-    <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
-      <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <span style={{fontWeight:600,fontSize:13,color:C.t1}}>{title}</span>
-        <button onClick={()=>addActivity(setItems)} style={{display:"flex",alignItems:"center",gap:5,background:color+"18",color,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
-          <i className="ti ti-plus" style={{fontSize:13}} aria-hidden="true"/> Ajouter
-        </button>
-      </div>
-      <div style={{padding:"12px 18px",display:"flex",flexDirection:"column",gap:8}}>
-        {items.map((item:any,idx:number)=>(
-          <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"120px 1fr 2fr 80px 32px",gap:8,alignItems:"center"}}>
-            <select value={item.priority} onChange={e=>updateActivity(setItems,idx,"priority",e.target.value)}
-              style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:11,fontWeight:600,
-                background:item.priority==="HIGH"?C.redL:item.priority==="MEDIUM"?C.amberL:C.greenL,
-                color:item.priority==="HIGH"?C.redDk:item.priority==="MEDIUM"?C.amberDk:C.greenDk}}>
-              {PRIORITIES.map(p=><option key={p} value={p}>{p}</option>)}
-            </select>
-            <input value={item.client} onChange={e=>updateActivity(setItems,idx,"client",e.target.value)}
-              placeholder="Client / Prospect" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
-            <input value={item.action} onChange={e=>updateActivity(setItems,idx,"action",e.target.value)}
-              placeholder="Description de l'activité…" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
-            <select value={item.status} onChange={e=>updateActivity(setItems,idx,"status",e.target.value)}
-              style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:14,textAlign:"center"}}>
-              {STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
-            </select>
-            <button onClick={()=>removeActivity(setItems,idx)}
-              style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
-            </button>
-          </div>
-        ))}
-        {items.length===0&&<div style={{textAlign:"center",padding:"20px",color:C.t3,fontSize:12}}>Aucune activité — cliquez sur "+ Ajouter"</div>}
-      </div>
-    </div>
-  );
+  // ActivityTable moved outside component — see below
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
@@ -3058,8 +3065,18 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
       </div>
 
       {/* Activity tables */}
-      <ActivityTable items={lastWeekItems} setItems={setLastWeekItems} title="📋 Semaine passée — Activités terrain" color={C.purple}/>
-      <ActivityTable items={thisWeekItems} setItems={setThisWeekItems} title="🚀 Semaine en cours — Activités terrain" color={C.green}/>
+      <ActivityTable
+        items={lastWeekItems}
+        onAdd={()=>setLastWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
+        onUpdate={(idx:number,field:string,val:string)=>setLastWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
+        onRemove={(idx:number)=>setLastWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
+        title="📋 Semaine passée — Activités terrain" color={C.purple} isMobile={isMobile}/>
+      <ActivityTable
+        items={thisWeekItems}
+        onAdd={()=>setThisWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
+        onUpdate={(idx:number,field:string,val:string)=>setThisWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
+        onRemove={(idx:number)=>setThisWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
+        title="🚀 Semaine en cours — Activités terrain" color={C.green} isMobile={isMobile}/>
 
       {/* Print button bottom */}
       <div style={{display:"flex",justifyContent:"center",paddingBottom:20}}>
