@@ -2432,6 +2432,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const [thisWeekItems,setThisWeekItems]=useState(draft?.thisWeekItems||[{priority:"HIGH",client:"",action:"",status:"📋"}]);
   const [expectedOrders,setExpectedOrders]=useState(draft?.expectedOrders||[{client:"",project:"",est:""}]);
   const [showPreview,setShowPreview]=useState(false);
+  const [orderPeriod,setOrderPeriod]=useState(7);
   const [savedReports,setSavedReports]=useState<any[]>(()=>{try{const r=localStorage.getItem(REPORT_KEY);return r?JSON.parse(r):[];}catch{return [];}});
   const [showHistory,setShowHistory]=useState(false);
   const [saveMsg,setSaveMsg]=useState("");
@@ -2490,12 +2491,13 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 
   // ── Auto-computed data ──────────────────────────────────────────────────
   // Orders received this week (last 7 days)
-  const sevenDaysAgo=new Date(today);sevenDaysAgo.setDate(today.getDate()-7);
+  const periodStart=new Date(today);periodStart.setDate(today.getDate()-orderPeriod);
   const recentOrders=allOrders.filter((o:any)=>{
     if(!o.date)return false;
-    return new Date(o.date+"T00:00:00")>=sevenDaysAgo;
+    return new Date(o.date+"T00:00:00")>=periodStart;
   });
   const recentOrdersAmt=recentOrders.reduce((s:number,o:any)=>s+(+o.amount||0),0);
+  const periodLabel=orderPeriod===7?"7 jours":orderPeriod===30?"1 mois":orderPeriod===60?"2 mois":"3 mois";
 
   // Monthly invoicing (current month)
   const thisMonth=today.getMonth();const thisYear=today.getFullYear();
@@ -2654,7 +2656,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div>
       <div style="font-size:10px;color:#2563EB;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">1 / 4</div>
       <div class="section-title">📦 ORDER INTAKE</div>
-      <div class="section-sub">— ${period}</div>
+      <div class="section-sub">— ${period} · Commandes reçues sur ${periodLabel}</div>
     </div>
     <div class="section-meta">
       <div class="section-badge">${weekLabel} · ${period}</div>
@@ -2664,9 +2666,9 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 
   <div class="kpi-row">
     <div class="kpi" style="border-left:4px solid #2563EB">
-      <div class="kpi-label">Orders Received (7 days)</div>
+      <div class="kpi-label">Orders Received (${periodLabel})</div>
       <div class="kpi-val" style="color:#2563EB">${fmtK(recentOrdersAmt)} €</div>
-      <div class="kpi-sub">${recentOrders.length} commande${recentOrders.length>1?"s":""} cette semaine</div>
+      <div class="kpi-sub">${recentOrders.length} commande${recentOrders.length>1?"s":""} sur ${periodLabel}</div>
     </div>
     <div class="kpi" style="border-left:4px solid #D97706">
       <div class="kpi-label">Expected Orders</div>
@@ -2995,10 +2997,27 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
         </div>
       </div>
 
+      {/* Period selector for orders */}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:12,fontWeight:600,color:C.t2}}>Période commandes reçues :</span>
+        <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
+          {[{v:7,l:"7 jours"},{v:30,l:"1 mois"},{v:60,l:"2 mois"},{v:90,l:"3 mois"}].map(({v,l})=>(
+            <button key={v} onClick={()=>setOrderPeriod(v)}
+              style={{padding:"7px 16px",border:"none",borderRight:`1px solid ${C.b}`,
+                background:orderPeriod===v?C.blue:"transparent",
+                color:orderPeriod===v?"#fff":C.t2,
+                fontWeight:orderPeriod===v?700:400,fontSize:12,cursor:"pointer",transition:"all .15s"}}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <span style={{fontSize:11,color:C.t3}}>Depuis le {periodStart.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}</span>
+      </div>
+
       {/* Auto data preview */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(4,1fr)",gap:12}}>
         {[
-          {label:"Orders reçus (7j)",val:`${fmtK(recentOrdersAmt)} €`,sub:`${recentOrders.length} commandes`,c:C.blue,bg:C.blueL},
+          {label:`Orders reçus (${periodLabel})`,val:`${fmtK(recentOrdersAmt)} €`,sub:`${recentOrders.length} commande${recentOrders.length>1?"s":""}`,c:C.blue,bg:C.blueL},
           {label:"Facturé "+MONTH_NAMES[thisMonth],val:`${fmtK(invoicedThisMonth)} €`,sub:"Ce mois-ci",c:C.teal,bg:C.tealL},
           {label:"Facturé "+MONTH_NAMES[prevMonth],val:`${fmtK(invoicedPrevMonth)} €`,sub:"Mois précédent",c:"#0D9488",bg:"#CCFBF1"},
           {label:"Open Orders",val:`${fmtK(openOrders)} €`,sub:"Reste à facturer",c:C.amberDk,bg:C.amberL},
