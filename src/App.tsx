@@ -2741,6 +2741,25 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
     td.setHours(23,59,59);
     const inRange=(d:string)=>{if(!d)return true;const dt=new Date(d+"T00:00:00");return dt>=fd&&dt<=td;};
     const allOrders=selClients.flatMap(c=>(data?.[c]||[]).map((o:any)=>({...o,_client:c})));
+    const multiClient=selClients.length>1;
+
+    // ── Generic subtotal builder ─────────────────────────────────────────────
+    // Inserts a subtotal row between client groups + grand total at the end
+    const withSubtotals=(items:any[],rowFn:(i:any)=>string,subtotalFn:(grp:any[],client:string)=>string,totalFn:(all:any[])=>string)=>{
+      if(!multiClient) return items.map(rowFn).join("")+totalFn(items);
+      const byClient:Record<string,any[]>={};
+      items.forEach(i=>{const c=i._client||"—";if(!byClient[c])byClient[c]=[];byClient[c].push(i);});
+      let out="";
+      Object.keys(byClient).forEach(client=>{
+        const grp=byClient[client];
+        // Client header row
+        out+=`<tr style="background:#1E3A5F"><td colspan="99" style="padding:8px 14px;color:#93C5FD;font-weight:700;font-size:12px;letter-spacing:.05em">📦 ${client}</td></tr>`;
+        out+=grp.map(rowFn).join("");
+        out+=subtotalFn(grp,client);
+      });
+      out+=totalFn(items);
+      return out;
+    };
 
     let rows="";
     let title="";
@@ -2748,9 +2767,10 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
     if(rtype==="open_orders"){
       title="Open Orders — Commandes non entièrement facturées";
       const items=allOrders.filter(o=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return inv<(+o.amount||0)*0.999&&o.status!=="annule";});
-      rows=items.map(o=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);const open=Math.max(0,(+o.amount||0)-inv);return `<tr><td>${o._client}</td><td>${o.poNumber||"—"}</td><td>${o.soNumber||"—"}</td><td>${fmtD(o.date)}</td><td>${o.status||"—"}</td><td style="text-align:right">${fmt(+o.amount||0)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;}).join("");
-      const tot=items.reduce((s,o)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return s+Math.max(0,(+o.amount||0)-inv);},0);
-      rows+=`<tr style="background:#FEF3C7;font-weight:700"><td colspan="7" style="text-align:right">TOTAL OPEN ORDERS</td><td style="text-align:right">${fmt(tot)} €</td></tr>`;
+      const rowOpen=(o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);const open=Math.max(0,(+o.amount||0)-inv);return `<tr><td>${multiClient?"":o._client}</td><td>${o.poNumber||"—"}</td><td>${o.soNumber||"—"}</td><td>${fmtD(o.date)}</td><td>${o.status||"—"}</td><td style="text-align:right">${fmt(+o.amount||0)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;};
+      const subtotalOpen=(grp:any[],c:string)=>{const s=grp.reduce((acc,o)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return acc+Math.max(0,(+o.amount||0)-inv);},0);return `<tr style="background:#FEF9EC;font-weight:700"><td colspan="7" style="text-align:right;color:#B45309;font-style:italic">Sous-total ${c}</td><td style="text-align:right;color:#B45309">${fmt(s)} €</td></tr>`;};
+      const totalOpen=(all:any[])=>{const t=all.reduce((acc,o)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return acc+Math.max(0,(+o.amount||0)-inv);},0);return `<tr style="background:#FEF3C7;font-weight:700"><td colspan="7" style="text-align:right">TOTAL OPEN ORDERS</td><td style="text-align:right">${fmt(t)} €</td></tr>`;};
+      rows=withSubtotals(items,rowOpen,subtotalOpen,totalOpen);
       const headers="<tr><th>Client</th><th>N° PO</th><th>N° S/O</th><th>Date</th><th>Statut</th><th>PO (€)</th><th>Facturé (€)</th><th>Reste (€)</th></tr>";
       printReport(title,fromDate,toDate,headers,rows);
     } else if(rtype==="overdue"){
@@ -2766,10 +2786,10 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
       // Sort: most overdue first
       items.sort((a:any,b:any)=>b.daysLate-a.daysLate);
       const rowColor=(days:number)=>days>90?"#B91C1C":days>30?"#DC2626":"#EF4444";
-      rows=items.map((i:any)=>`<tr style="border-left:3px solid ${rowColor(i.daysLate)}"><td style="font-weight:700">${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td style="color:#B91C1C;font-weight:700">${fmtD(i.dueDate)}</td><td style="text-align:center;background:#FEE2E2;color:#B91C1C;font-weight:800">${i.daysLate}j</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#B91C1C">${fmt(i.rem)} €</td></tr>`).join("");
-      const tot=items.reduce((s:number,i:any)=>s+i.rem,0);
-      const totAmt=items.reduce((s:number,i:any)=>s+(+i.amount||0),0);
-      rows+=`<tr style="background:#FEE2E2;font-weight:700"><td colspan="8" style="text-align:right;color:#B91C1C">TOTAL ÉCHU</td><td style="text-align:right;color:#B91C1C">${fmt(tot)} €</td></tr>`;
+      const rowOver=(i:any)=>`<tr style="border-left:3px solid ${rowColor(i.daysLate)}"><td style="font-weight:700">${multiClient?"":i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td style="color:#B91C1C;font-weight:700">${fmtD(i.dueDate)}</td><td style="text-align:center;background:#FEE2E2;color:#B91C1C;font-weight:800">${i.daysLate}j</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#B91C1C">${fmt(i.rem)} €</td></tr>`;
+      const subtotalOver=(grp:any[],c:string)=>`<tr style="background:#FFF0F0;font-weight:700"><td colspan="8" style="text-align:right;color:#B91C1C;font-style:italic">Sous-total ${c}</td><td style="text-align:right;color:#B91C1C">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      const totalOver=(all:any[])=>`<tr style="background:#FEE2E2;font-weight:700"><td colspan="8" style="text-align:right;color:#B91C1C">TOTAL ÉCHU</td><td style="text-align:right;color:#B91C1C">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      rows=withSubtotals(items,rowOver,subtotalOver,totalOver);
       const headers="<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date Facture</th><th>Échéance</th><th>Retard</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste Dû (€)</th></tr>";
       printReport(title,fromDate,toDate,headers,rows);
     } else if(rtype==="upcoming"){
@@ -2824,10 +2844,10 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
     } else if(rtype==="all_invoices"){
       title="Toutes les factures sur la période";
       const items=allOrders.flatMap(o=>(o.invoices||[]).filter((i:any)=>inRange(i.date)).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);return{...i,_client:o._client,_po:o.poNumber,paid};}) );
-      rows=items.map(i=>`<tr><td>${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td>${fmtD(i.dueDate)}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right">${fmt(Math.max(0,(+i.amount||0)-i.paid))} €</td></tr>`).join("");
-      const totInv=items.reduce((s:number,i:any)=>s+(+i.amount||0),0);
-      const totPaid=items.reduce((s:number,i:any)=>s+i.paid,0);
-      rows+=`<tr style="background:#CCFBF1;font-weight:700"><td colspan="5" style="text-align:right">TOTAUX</td><td style="text-align:right">${fmt(totInv)} €</td><td style="text-align:right">${fmt(totPaid)} €</td><td style="text-align:right">${fmt(totInv-totPaid)} €</td></tr>`;
+      const rowAllInv=(i:any)=>`<tr><td>${multiClient?"":i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td>${fmtD(i.dueDate)}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right">${fmt(Math.max(0,(+i.amount||0)-i.paid))} €</td></tr>`;
+      const subtotalAllInv=(grp:any[],c:string)=>{const si=grp.reduce((s:number,i:any)=>s+(+i.amount||0),0);const sp=grp.reduce((s:number,i:any)=>s+i.paid,0);return `<tr style="background:#F0FDFA;font-weight:700"><td colspan="5" style="text-align:right;color:#0D9488;font-style:italic">Sous-total ${c}</td><td style="text-align:right;color:#0D9488">${fmt(si)} €</td><td style="text-align:right;color:#059669">${fmt(sp)} €</td><td style="text-align:right;color:#B45309">${fmt(si-sp)} €</td></tr>`;};
+      const totalAllInv=(all:any[])=>{const ti=all.reduce((s:number,i:any)=>s+(+i.amount||0),0);const tp=all.reduce((s:number,i:any)=>s+i.paid,0);return `<tr style="background:#CCFBF1;font-weight:700"><td colspan="5" style="text-align:right">TOTAUX</td><td style="text-align:right">${fmt(ti)} €</td><td style="text-align:right">${fmt(tp)} €</td><td style="text-align:right">${fmt(ti-tp)} €</td></tr>`;};
+      rows=withSubtotals(items,rowAllInv,subtotalAllInv,totalAllInv);
       const headers="<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th></tr>";
       printReport(title,fromDate,toDate,headers,rows);
     } else {
