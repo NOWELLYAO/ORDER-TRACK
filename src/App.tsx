@@ -700,7 +700,7 @@ export default function App(){
 
   if(!data||!clients)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:C.t3,fontSize:14}}>Chargement…</div>;
 
-  const special=["kpi","dashboard","tresorerie"];
+  const special=["kpi","dashboard","tresorerie","rapport"];
   const getConfig=(c:string)=>configs[c]||{accountNumber:"",termId:"net60",customDays:0};
 
   // ── Compute global alerts (for ticker on all pages) ──────────────
@@ -765,6 +765,7 @@ export default function App(){
           <SBtn icon="ti-table-column" label={t(lang,"nav_compilation")} active={page==="dashboard"} open={sideOpen} onClick={()=>{setPage("dashboard");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-search" label={t(lang,"nav_search")} active={false} open={sideOpen} onClick={()=>{setShowSearch(true);if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-chart-area-line" label="Trésorerie" active={page==="tresorerie"} open={sideOpen} onClick={()=>{setPage("tresorerie");if(isMobile)setMobileMenuOpen(false);}}/>
+          <SBtn icon="ti-file-report" label="Rapport Hebdo" active={page==="rapport"} open={sideOpen} onClick={()=>{setPage("rapport");if(isMobile)setMobileMenuOpen(false);}}/>
 
           {sideOpen&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 6px 4px",marginTop:4}}>
@@ -838,6 +839,7 @@ export default function App(){
         {page==="kpi"&&<KpiPage clients={clients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrders} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
         {page==="dashboard"&&<CompilPage getStats={getStats} clients={clients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
         {page==="tresorerie"&&<TresoreriePage getAllOrders={getAllOrders} clients={clients} lang={lang} isMobile={isMobile}/>}
+        {page==="rapport"&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
         {!special.includes(page)&&(
           <ClientPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
@@ -2402,6 +2404,538 @@ function FileAttachments({files,entityId,entityType,onAdd,onDel}:any){
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── WEEKLY REPORT PAGE ──────────────────────────────────────────────────────
+function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any){
+  const today=new Date();
+  // Get current week number
+  const getWeekNum=(d:Date)=>{const s=new Date(d.getFullYear(),0,1);return Math.ceil(((d.getTime()-s.getTime())/86400000+s.getDay()+1)/7);};
+  const weekNum=getWeekNum(today);
+  const year=today.getFullYear();
+  const [weekLabel,setWeekLabel]=useState(`S${weekNum}`);
+  const [period,setPeriod]=useState(()=>{
+    const m=today.toLocaleDateString("fr-FR",{month:"long"});
+    return m.charAt(0).toUpperCase()+m.slice(1)+" "+year;
+  });
+  const [lastWeekItems,setLastWeekItems]=useState([{priority:"HIGH",client:"",action:"",status:"📋"}]);
+  const [thisWeekItems,setThisWeekItems]=useState([{priority:"HIGH",client:"",action:"",status:"📋"}]);
+  const [expectedOrders,setExpectedOrders]=useState([{client:"",project:"",est:""}]);
+  const [showPreview,setShowPreview]=useState(false);
+
+  const PRIORITIES=["HIGH","MEDIUM","LOW"];
+  const STATUSES=["📋","🔄","✅","🎓","⚠️"];
+
+  const all=getAllOrders();
+  const allOrders=(clients||[]).flatMap((c:string)=>(data?.[c]||[]).map((o:any)=>({...o,_client:c})));
+
+  // ── Auto-computed data ──────────────────────────────────────────────────
+  // Orders received this week (last 7 days)
+  const sevenDaysAgo=new Date(today);sevenDaysAgo.setDate(today.getDate()-7);
+  const recentOrders=allOrders.filter((o:any)=>{
+    if(!o.date)return false;
+    return new Date(o.date+"T00:00:00")>=sevenDaysAgo;
+  });
+  const recentOrdersAmt=recentOrders.reduce((s:number,o:any)=>s+(+o.amount||0),0);
+
+  // Monthly invoicing (current month)
+  const thisMonth=today.getMonth();const thisYear=today.getFullYear();
+  const prevMonth=thisMonth===0?11:thisMonth-1;const prevMonthYear=thisMonth===0?thisYear-1:thisYear;
+  const allInvoices=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_client:o._client,_po:o.poNumber})));
+  
+  const invoicesThisMonth=allInvoices.filter((i:any)=>{
+    if(!i.date)return false;
+    const d=new Date(i.date+"T00:00:00");
+    return d.getMonth()===thisMonth&&d.getFullYear()===thisYear;
+  });
+  const invoicesPrevMonth=allInvoices.filter((i:any)=>{
+    if(!i.date)return false;
+    const d=new Date(i.date+"T00:00:00");
+    return d.getMonth()===prevMonth&&d.getFullYear()===prevMonthYear;
+  });
+  const invoicedThisMonth=invoicesThisMonth.reduce((s:number,i:any)=>s+(+i.amount||0),0);
+  const invoicedPrevMonth=invoicesPrevMonth.reduce((s:number,i:any)=>s+(+i.amount||0),0);
+  
+  // YTD invoiced
+  const ytdInvoiced=allInvoices.filter((i:any)=>{
+    if(!i.date)return false;
+    return new Date(i.date+"T00:00:00").getFullYear()===thisYear;
+  }).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+
+  // Open orders
+  const openOrders=allOrders.reduce((s:number,o:any)=>{
+    const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);
+    return s+Math.max(0,(+o.amount||0)-inv);
+  },0);
+
+  // Expected invoicing (invoices not yet created on open orders)
+  const expectedInvoicing=allOrders.filter((o:any)=>o.status!=="annule").reduce((s:number,o:any)=>{
+    const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);
+    return s+Math.max(0,(+o.amount||0)-inv);
+  },0);
+
+  // Group invoices by client
+  const invByClient:Record<string,number>={};
+  [...invoicesThisMonth,...invoicesPrevMonth].forEach((i:any)=>{
+    invByClient[i._client]=(invByClient[i._client]||0)+(+i.amount||0);
+  });
+
+  const addActivity=(setter:any)=>setter((p:any)=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}]);
+  const updateActivity=(setter:any,idx:number,field:string,val:string)=>setter((p:any)=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item));
+  const removeActivity=(setter:any,idx:number)=>setter((p:any)=>p.filter((_:any,i:number)=>i!==idx));
+
+  const MONTH_NAMES=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+
+  // ── Print function ─────────────────────────────────────────────────────────
+  const printReport=()=>{
+    const prevMonthName=MONTH_NAMES[prevMonth];
+    const thisMonthName=MONTH_NAMES[thisMonth];
+    const priorityColor=(p:string)=>p==="HIGH"?"#DC2626":p==="MEDIUM"?"#D97706":"#059669";
+    const priorityBg=(p:string)=>p==="HIGH"?"#FEE2E2":p==="MEDIUM"?"#FEF3C7":"#D1FAE5";
+
+    const w=window.open("","_blank","width=1200,height=900");
+    if(!w)return;
+    w.document.write(`<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<title>Weekly Report ${weekLabel} — ${period}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;background:#fff;}
+  .page{width:297mm;min-height:210mm;padding:12mm 14mm;display:flex;flex-direction:column;page-break-after:always;position:relative;}
+  
+  /* Cover page */
+  .cover{background:linear-gradient(135deg,#0D1B2A 0%,#1E3A5F 60%,#2563EB 100%);color:#fff;justify-content:space-between;}
+  .cover-logo{font-size:11px;opacity:.5;letter-spacing:.1em;text-transform:uppercase;}
+  .cover-title{font-size:42px;font-weight:900;letter-spacing:-.02em;line-height:1;}
+  .cover-sub{font-size:16px;opacity:.75;margin-top:8px;}
+  .cover-week{font-size:72px;font-weight:900;color:rgba(255,255,255,.1);position:absolute;right:14mm;top:50%;transform:translateY(-50%);}
+  .cover-meta{display:flex;gap:24px;align-items:center;}
+  .cover-badge{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:6px 14px;font-size:13px;font-weight:600;}
+  .cover-toc{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:0;}
+  .toc-item{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;}
+  .toc-num{font-size:24px;font-weight:900;opacity:.3;}
+  .toc-label{font-size:12px;font-weight:600;}
+
+  /* Section pages */
+  .section-header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:10px;border-bottom:3px solid #0D1B2A;margin-bottom:16px;}
+  .section-title{font-size:22px;font-weight:900;color:#0D1B2A;letter-spacing:-.01em;}
+  .section-sub{font-size:12px;color:#8FA0B3;margin-top:2px;}
+  .section-meta{text-align:right;font-size:10px;color:#8FA0B3;}
+  .section-badge{font-size:11px;font-weight:600;color:#2563EB;background:#DBEAFE;padding:3px 10px;border-radius:4px;}
+
+  /* KPI cards */
+  .kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}
+  .kpi{background:#F8FAFC;border:1px solid #E5EAF0;border-radius:8px;padding:10px 14px;}
+  .kpi-label{font-size:9px;color:#8FA0B3;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+  .kpi-val{font-size:20px;font-weight:800;color:#0D1B2A;}
+  .kpi-sub{font-size:9px;color:#8FA0B3;margin-top:2px;}
+
+  /* Tables */
+  table{width:100%;border-collapse:collapse;font-size:10px;}
+  th{background:#0D1B2A;color:#fff;padding:7px 10px;text-align:left;font-weight:600;font-size:9px;text-transform:uppercase;letter-spacing:.05em;}
+  td{padding:7px 10px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
+  tr:nth-child(even) td{background:#F8FAFC;}
+  .subtotal td{background:#EFF6FF!important;font-weight:700;color:#1D4ED8;}
+  .total-row td{background:#0D1B2A!important;color:#fff!important;font-weight:700;}
+
+  /* Activity */
+  .activity-row{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #F1F5F9;}
+  .priority-badge{padding:3px 8px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
+  .status-icon{font-size:14px;flex-shrink:0;}
+  .activity-content{flex:1;}
+  .activity-client{font-weight:700;font-size:11px;color:#0D1B2A;}
+  .activity-desc{font-size:10px;color:#4A5568;margin-top:1px;}
+
+  /* Two column layout */
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .col-header{font-size:11px;font-weight:700;color:#0D1B2A;padding:6px 0;border-bottom:2px solid #0D1B2A;margin-bottom:10px;}
+
+  /* Footer */
+  .footer{position:absolute;bottom:8mm;left:14mm;right:14mm;display:flex;justify-content:space-between;font-size:9px;color:#8FA0B3;border-top:1px solid #E5EAF0;padding-top:6px;}
+
+  @media print{
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .page{page-break-after:always;}
+  }
+</style>
+</head><body>
+
+<!-- ══ PAGE 1: COVER ══ -->
+<div class="page cover">
+  <div>
+    <div class="cover-logo">OrderTrack — Commercial Report</div>
+    <div style="margin-top:20px">
+      <div class="cover-title">WEEKLY<br>REPORT</div>
+      <div class="cover-sub">Commercial Activity Summary</div>
+    </div>
+  </div>
+  <div class="cover-week">${weekLabel}</div>
+  <div>
+    <div class="cover-meta" style="margin-bottom:16px">
+      <div class="cover-badge">📅 ${period}</div>
+      <div class="cover-badge">📍 West Africa — Côte d'Ivoire</div>
+      <div class="cover-badge">Semaine ${weekLabel}</div>
+    </div>
+    <div class="cover-toc">
+      <div class="toc-item"><span class="toc-num">1</span><span class="toc-label">Order Intake<br><small style="opacity:.6">Commandes reçues</small></span></div>
+      <div class="toc-item"><span class="toc-num">2</span><span class="toc-label">Invoicing<br><small style="opacity:.6">Facturation mensuelle</small></span></div>
+      <div class="toc-item"><span class="toc-num">3</span><span class="toc-label">Last Week<br><small style="opacity:.6">Activités semaine passée</small></span></div>
+      <div class="toc-item"><span class="toc-num">4</span><span class="toc-label">This Week<br><small style="opacity:.6">Activités semaine en cours</small></span></div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>CONFIDENTIEL — Usage interne</span>
+    <span>Généré le ${today.toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</span>
+  </div>
+</div>
+
+<!-- ══ PAGE 2: ORDER INTAKE ══ -->
+<div class="page">
+  <div class="section-header">
+    <div>
+      <div style="font-size:10px;color:#2563EB;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">1 / 4</div>
+      <div class="section-title">📦 ORDER INTAKE</div>
+      <div class="section-sub">— ${period}</div>
+    </div>
+    <div class="section-meta">
+      <div class="section-badge">${weekLabel} · ${period}</div>
+      <div style="margin-top:4px">West Africa</div>
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi" style="border-left:4px solid #2563EB">
+      <div class="kpi-label">Orders Received (7 days)</div>
+      <div class="kpi-val" style="color:#2563EB">${fmtK(recentOrdersAmt)} €</div>
+      <div class="kpi-sub">${recentOrders.length} commande${recentOrders.length>1?"s":""} cette semaine</div>
+    </div>
+    <div class="kpi" style="border-left:4px solid #D97706">
+      <div class="kpi-label">Expected Orders</div>
+      <div class="kpi-val" style="color:#D97706">${fmtK(expectedInvoicing)} €</div>
+      <div class="kpi-sub">Commandes attendues</div>
+    </div>
+    <div class="kpi" style="border-left:4px solid #059669">
+      <div class="kpi-label">Total ${year} (YTD)</div>
+      <div class="kpi-val" style="color:#059669">${fmtK(allOrders.reduce((s:number,o:any)=>{const d=o.date?new Date(o.date+"T00:00:00"):null;return d&&d.getFullYear()===thisYear?s+(+o.amount||0):s;},0))} €</div>
+      <div class="kpi-sub">Depuis le 1er janvier ${year}</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <div class="col-header">📦 ORDERS RECEIVED — ${period}</div>
+      <table>
+        <thead><tr><th>Customer</th><th>S/O</th><th style="text-align:right">Amount (K€)</th></tr></thead>
+        <tbody>
+          ${recentOrders.length===0
+            ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande cette semaine</td></tr>'
+            :recentOrders.map((o:any)=>`<tr><td style="font-weight:600">${o._client}</td><td style="font-family:monospace;font-size:9px">${o.soNumber||o.poNumber||"—"}</td><td style="text-align:right;font-weight:600;color:#2563EB">${fmtK(+o.amount||0)}</td></tr>`).join("")
+          }
+          <tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtK(recentOrdersAmt)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <div class="col-header">🎯 EXPECTED ORDERS</div>
+      <table>
+        <thead><tr><th>Client</th><th>Project</th><th style="text-align:right">Est. (K€)</th></tr></thead>
+        <tbody>
+          ${expectedOrders.filter((e:any)=>e.client||e.project).length===0
+            ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">— à compléter —</td></tr>'
+            :expectedOrders.filter((e:any)=>e.client||e.project).map((e:any)=>`<tr><td style="font-weight:600">${e.client||"—"}</td><td>${e.project||"—"}</td><td style="text-align:right;font-weight:600;color:#D97706">${e.est?fmtK(+e.est*1000):"—"}</td></tr>`).join("")
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>Order Intake — ${weekLabel} · ${period}</span>
+    <span>1 / 4</span>
+  </div>
+</div>
+
+<!-- ══ PAGE 3: INVOICING ══ -->
+<div class="page">
+  <div class="section-header">
+    <div>
+      <div style="font-size:10px;color:#0D9488;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">2 / 4</div>
+      <div class="section-title">🧾 MONTHLY INVOICING</div>
+      <div class="section-sub">— ${prevMonthName} / ${thisMonthName} ${year}</div>
+    </div>
+    <div class="section-meta">
+      <div class="section-badge" style="background:#CCFBF1;color:#0D9488">${weekLabel} · ${period}</div>
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi" style="border-left:4px solid #0D9488">
+      <div class="kpi-label">Already Invoiced in ${year}</div>
+      <div class="kpi-val" style="color:#0D9488">${fmtK(ytdInvoiced)} €</div>
+      <div class="kpi-sub">Depuis le 1er janvier</div>
+    </div>
+    <div class="kpi" style="border-left:4px solid #D97706">
+      <div class="kpi-label">Expected Invoicing</div>
+      <div class="kpi-val" style="color:#D97706">${fmtK(expectedInvoicing)} €</div>
+      <div class="kpi-sub">Open orders à facturer</div>
+    </div>
+    <div class="kpi" style="border-left:4px solid #7C3AED">
+      <div class="kpi-label">Open Orders</div>
+      <div class="kpi-val" style="color:#7C3AED">${fmtK(openOrders)} €</div>
+      <div class="kpi-sub">Reste à facturer</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <div class="col-header">✅ INVOICED — ${prevMonthName.toUpperCase()} / ${thisMonthName.toUpperCase()}</div>
+      <table>
+        <thead><tr><th>Customer</th><th>S/O</th><th style="text-align:right">Amount (K€)</th></tr></thead>
+        <tbody>
+          ${[...invoicesThisMonth,...invoicesPrevMonth].length===0
+            ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">Aucune facture sur la période</td></tr>'
+            :(() => {
+              const byClient2:Record<string,any[]>={};
+              [...invoicesThisMonth,...invoicesPrevMonth].forEach((i:any)=>{
+                if(!byClient2[i._client])byClient2[i._client]=[];
+                byClient2[i._client].push(i);
+              });
+              let rows2="";
+              Object.keys(byClient2).forEach(c=>{
+                const tot=byClient2[c].reduce((s:number,i:any)=>s+(+i.amount||0),0);
+                rows2+=`<tr><td style="font-weight:700">${c}</td><td style="font-family:monospace;font-size:9px">${byClient2[c].map((i:any)=>i._po||i.invoiceNumber).slice(0,2).join(", ")}</td><td style="text-align:right;font-weight:600;color:#0D9488">${fmtK(tot)}</td></tr>`;
+              });
+              const gt=[...invoicesThisMonth,...invoicesPrevMonth].reduce((s:number,i:any)=>s+(+i.amount||0),0);
+              rows2+=`<tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtK(gt)}</td></tr>`;
+              return rows2;
+            })()
+          }
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <div class="col-header">📅 EXPECTED INVOICING — ${thisMonthName.toUpperCase()}/${MONTH_NAMES[thisMonth===11?0:thisMonth+1].toUpperCase()}</div>
+      <table>
+        <thead><tr><th>Customer</th><th>S/O</th><th style="text-align:right">Amount (K€)</th></tr></thead>
+        <tbody>
+          ${(()=>{
+            const expInvRows=allOrders.filter((o:any)=>o.status!=="annule"&&o.status!=="livree").slice(0,8);
+            if(expInvRows.length===0) return '<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">— à compléter —</td></tr>';
+            let r="";
+            const byC:Record<string,number>={};
+            expInvRows.forEach((o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);const rem=Math.max(0,(+o.amount||0)-inv);if(rem>0)byC[o._client]=(byC[o._client]||0)+rem;});
+            Object.keys(byC).forEach(c=>{r+=`<tr><td style="font-weight:600">${c}</td><td></td><td style="text-align:right;font-weight:600;color:#D97706">${fmtK(byC[c])}</td></tr>`;});
+            r+=`<tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtK(Object.values(byC).reduce((s:number,v:any)=>s+v,0))}</td></tr>`;
+            return r;
+          })()}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>Monthly Invoicing — ${weekLabel} · ${period}</span>
+    <span>2 / 4</span>
+  </div>
+</div>
+
+<!-- ══ PAGE 4: LAST WEEK ══ -->
+<div class="page">
+  <div class="section-header">
+    <div>
+      <div style="font-size:10px;color:#7C3AED;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">3 / 4</div>
+      <div class="section-title">📋 LAST WEEK — Field Activity</div>
+      <div class="section-sub">Activités de la semaine passée</div>
+    </div>
+    <div class="section-meta">
+      <div class="section-badge" style="background:#EDE9FE;color:#7C3AED">${weekLabel} · ${period}</div>
+    </div>
+  </div>
+  <div>
+    ${lastWeekItems.filter((item:any)=>item.client||item.action).length===0
+      ?'<div style="text-align:center;padding:40px;color:#8FA0B3">Aucune activité saisie pour la semaine passée</div>'
+      :lastWeekItems.filter((item:any)=>item.client||item.action).map((item:any)=>`
+        <div class="activity-row">
+          <span class="priority-badge" style="background:${priorityBg(item.priority)};color:${priorityColor(item.priority)}">${item.priority}</span>
+          <span class="status-icon">${item.status}</span>
+          <div class="activity-content">
+            ${item.client?`<div class="activity-client">${item.client}</div>`:""}
+            ${item.action?`<div class="activity-desc">${item.action}</div>`:""}
+          </div>
+        </div>`).join("")
+    }
+  </div>
+  <div class="footer">
+    <span>Last Week Activity — ${weekLabel}</span>
+    <span>3 / 4</span>
+  </div>
+</div>
+
+<!-- ══ PAGE 5: THIS WEEK ══ -->
+<div class="page">
+  <div class="section-header">
+    <div>
+      <div style="font-size:10px;color:#059669;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">4 / 4</div>
+      <div class="section-title">🚀 THIS WEEK — Field Activity</div>
+      <div class="section-sub">Activités de la semaine en cours</div>
+    </div>
+    <div class="section-meta">
+      <div class="section-badge" style="background:#D1FAE5;color:#059669">${weekLabel} · ${period}</div>
+    </div>
+  </div>
+  <div>
+    ${thisWeekItems.filter((item:any)=>item.client||item.action).length===0
+      ?'<div style="text-align:center;padding:40px;color:#8FA0B3">Aucune activité saisie pour la semaine en cours</div>'
+      :thisWeekItems.filter((item:any)=>item.client||item.action).map((item:any)=>`
+        <div class="activity-row">
+          <span class="priority-badge" style="background:${priorityBg(item.priority)};color:${priorityColor(item.priority)}">${item.priority}</span>
+          <span class="status-icon">${item.status}</span>
+          <div class="activity-content">
+            ${item.client?`<div class="activity-client">${item.client}</div>`:""}
+            ${item.action?`<div class="activity-desc">${item.action}</div>`:""}
+          </div>
+        </div>`).join("")
+    }
+  </div>
+  <div class="footer">
+    <span>This Week Activity — ${weekLabel}</span>
+    <span>4 / 4</span>
+  </div>
+</div>
+
+<script>setTimeout(()=>window.print(),500);</script>
+</body></html>`);
+    w.document.close();
+  };
+
+  // ── UI ─────────────────────────────────────────────────────────────────────
+  const ActivityTable=({items,setItems,title,color}:any)=>(
+    <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+      <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <span style={{fontWeight:600,fontSize:13,color:C.t1}}>{title}</span>
+        <button onClick={()=>addActivity(setItems)} style={{display:"flex",alignItems:"center",gap:5,background:color+"18",color,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+          <i className="ti ti-plus" style={{fontSize:13}} aria-hidden="true"/> Ajouter
+        </button>
+      </div>
+      <div style={{padding:"12px 18px",display:"flex",flexDirection:"column",gap:8}}>
+        {items.map((item:any,idx:number)=>(
+          <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"120px 1fr 2fr 80px 32px",gap:8,alignItems:"center"}}>
+            <select value={item.priority} onChange={e=>updateActivity(setItems,idx,"priority",e.target.value)}
+              style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:11,fontWeight:600,
+                background:item.priority==="HIGH"?C.redL:item.priority==="MEDIUM"?C.amberL:C.greenL,
+                color:item.priority==="HIGH"?C.redDk:item.priority==="MEDIUM"?C.amberDk:C.greenDk}}>
+              {PRIORITIES.map(p=><option key={p} value={p}>{p}</option>)}
+            </select>
+            <input value={item.client} onChange={e=>updateActivity(setItems,idx,"client",e.target.value)}
+              placeholder="Client / Prospect" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
+            <input value={item.action} onChange={e=>updateActivity(setItems,idx,"action",e.target.value)}
+              placeholder="Description de l'activité…" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
+            <select value={item.status} onChange={e=>updateActivity(setItems,idx,"status",e.target.value)}
+              style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:14,textAlign:"center"}}>
+              {STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            <button onClick={()=>removeActivity(setItems,idx)}
+              style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
+            </button>
+          </div>
+        ))}
+        {items.length===0&&<div style={{textAlign:"center",padding:"20px",color:C.t3,fontSize:12}}>Aucune activité — cliquez sur "+ Ajouter"</div>}
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div>
+          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Rapport Hebdomadaire</h1>
+          <p style={{margin:0,color:C.t3,fontSize:13}}>Saisie des activités · données commerciales auto-générées</p>
+        </div>
+        <button onClick={printReport}
+          style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",border:"none",borderRadius:C.r,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 15px rgba(37,99,235,.35)"}}>
+          <i className="ti ti-printer" style={{fontSize:16}} aria-hidden="true"/>
+          Générer & Imprimer le rapport
+        </button>
+      </div>
+
+      {/* Report settings */}
+      <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 20px"}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.t1,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+          <i className="ti ti-settings" style={{fontSize:14,color:C.t3}} aria-hidden="true"/> Paramètres du rapport
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr",gap:12}}>
+          <div>
+            <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>Semaine</label>
+            <input value={weekLabel} onChange={e=>setWeekLabel(e.target.value)} placeholder="ex: S23"
+              style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>Période</label>
+            <input value={period} onChange={e=>setPeriod(e.target.value)} placeholder="ex: Mai 2026"
+              style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+        </div>
+      </div>
+
+      {/* Auto data preview */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(4,1fr)",gap:12}}>
+        {[
+          {label:"Orders reçus (7j)",val:`${fmtK(recentOrdersAmt)} €`,sub:`${recentOrders.length} commandes`,c:C.blue,bg:C.blueL},
+          {label:"Facturé "+MONTH_NAMES[thisMonth],val:`${fmtK(invoicedThisMonth)} €`,sub:"Ce mois-ci",c:C.teal,bg:C.tealL},
+          {label:"Facturé "+MONTH_NAMES[prevMonth],val:`${fmtK(invoicedPrevMonth)} €`,sub:"Mois précédent",c:"#0D9488",bg:"#CCFBF1"},
+          {label:"Open Orders",val:`${fmtK(openOrders)} €`,sub:"Reste à facturer",c:C.amberDk,bg:C.amberL},
+        ].map((k,i)=>(
+          <div key={i} style={{background:"#fff",borderRadius:C.r,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
+            <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>{k.label}</div>
+            <div style={{fontSize:18,fontWeight:800,color:k.c}}>{k.val}</div>
+            <div style={{fontSize:11,color:C.t3,marginTop:3}}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Expected orders */}
+      <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontWeight:600,fontSize:13,color:C.t1}}>🎯 Commandes attendues (Expected Orders)</span>
+          <button onClick={()=>setExpectedOrders(p=>[...p,{client:"",project:"",est:""}])}
+            style={{display:"flex",alignItems:"center",gap:5,background:C.amberL,color:C.amberDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+            <i className="ti ti-plus" style={{fontSize:13}} aria-hidden="true"/> Ajouter
+          </button>
+        </div>
+        <div style={{padding:"12px 18px",display:"flex",flexDirection:"column",gap:8}}>
+          {expectedOrders.map((item:any,idx:number)=>(
+            <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr 120px 32px",gap:8,alignItems:"center"}}>
+              <input value={item.client} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,client:e.target.value}:x))}
+                placeholder="Client" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
+              <input value={item.project} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,project:e.target.value}:x))}
+                placeholder="Projet / Description" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
+              <input type="number" value={item.est} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,est:e.target.value}:x))}
+                placeholder="K€" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
+              <button onClick={()=>setExpectedOrders((p:any)=>p.filter((_:any,i:number)=>i!==idx))}
+                style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Activity tables */}
+      <ActivityTable items={lastWeekItems} setItems={setLastWeekItems} title="📋 Semaine passée — Activités terrain" color={C.purple}/>
+      <ActivityTable items={thisWeekItems} setItems={setThisWeekItems} title="🚀 Semaine en cours — Activités terrain" color={C.green}/>
+
+      {/* Print button bottom */}
+      <div style={{display:"flex",justifyContent:"center",paddingBottom:20}}>
+        <button onClick={printReport}
+          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(37,99,235,.4)"}}>
+          <i className="ti ti-printer" style={{fontSize:18}} aria-hidden="true"/>
+          Générer & Imprimer le rapport PDF (5 pages)
+        </button>
+      </div>
     </div>
   );
 }
