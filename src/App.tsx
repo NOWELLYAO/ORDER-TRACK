@@ -2415,15 +2415,72 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const getWeekNum=(d:Date)=>{const s=new Date(d.getFullYear(),0,1);return Math.ceil(((d.getTime()-s.getTime())/86400000+s.getDay()+1)/7);};
   const weekNum=getWeekNum(today);
   const year=today.getFullYear();
-  const [weekLabel,setWeekLabel]=useState(`S${weekNum}`);
-  const [period,setPeriod]=useState(()=>{
-    const m=today.toLocaleDateString("fr-FR",{month:"long"});
-    return m.charAt(0).toUpperCase()+m.slice(1)+" "+year;
-  });
-  const [lastWeekItems,setLastWeekItems]=useState([{priority:"HIGH",client:"",action:"",status:"📋"}]);
-  const [thisWeekItems,setThisWeekItems]=useState([{priority:"HIGH",client:"",action:"",status:"📋"}]);
-  const [expectedOrders,setExpectedOrders]=useState([{client:"",project:"",est:""}]);
+  const REPORT_KEY="ordertrack_reports";
+  const DRAFT_KEY="ordertrack_report_draft";
+
+  // Load draft from localStorage on init
+  const loadDraft=()=>{
+    try{const d=localStorage.getItem(DRAFT_KEY);if(d)return JSON.parse(d);}catch{}
+    return null;
+  };
+  const draft=loadDraft();
+  const defaultPeriod=()=>{const m=today.toLocaleDateString("fr-FR",{month:"long"});return m.charAt(0).toUpperCase()+m.slice(1)+" "+year;};
+
+  const [weekLabel,setWeekLabel]=useState(draft?.weekLabel||`S${weekNum}`);
+  const [period,setPeriod]=useState(draft?.period||defaultPeriod());
+  const [lastWeekItems,setLastWeekItems]=useState(draft?.lastWeekItems||[{priority:"HIGH",client:"",action:"",status:"📋"}]);
+  const [thisWeekItems,setThisWeekItems]=useState(draft?.thisWeekItems||[{priority:"HIGH",client:"",action:"",status:"📋"}]);
+  const [expectedOrders,setExpectedOrders]=useState(draft?.expectedOrders||[{client:"",project:"",est:""}]);
   const [showPreview,setShowPreview]=useState(false);
+  const [savedReports,setSavedReports]=useState<any[]>(()=>{try{const r=localStorage.getItem(REPORT_KEY);return r?JSON.parse(r):[];}catch{return [];}});
+  const [showHistory,setShowHistory]=useState(false);
+  const [saveMsg,setSaveMsg]=useState("");
+
+  // Auto-save draft on every change
+  useEffect(()=>{
+    const draft={weekLabel,period,lastWeekItems,thisWeekItems,expectedOrders};
+    try{localStorage.setItem(DRAFT_KEY,JSON.stringify(draft));}catch{}
+  },[weekLabel,period,lastWeekItems,thisWeekItems,expectedOrders]);
+
+  const saveReport=()=>{
+    const report={
+      id:Date.now().toString(),
+      weekLabel,period,
+      lastWeekItems,thisWeekItems,expectedOrders,
+      savedAt:new Date().toISOString(),
+      label:`${weekLabel} — ${period}`
+    };
+    const updated=[report,...savedReports.filter((r:any)=>r.weekLabel!==weekLabel)].slice(0,20);
+    setSavedReports(updated);
+    try{localStorage.setItem(REPORT_KEY,JSON.stringify(updated));}catch{}
+    setSaveMsg(`✓ Rapport ${weekLabel} sauvegardé`);
+    setTimeout(()=>setSaveMsg(""),3000);
+  };
+
+  const loadReport=(r:any)=>{
+    setWeekLabel(r.weekLabel);setPeriod(r.period);
+    setLastWeekItems(r.lastWeekItems||[]);
+    setThisWeekItems(r.thisWeekItems||[]);
+    setExpectedOrders(r.expectedOrders||[]);
+    setShowHistory(false);
+    setSaveMsg(`✓ Rapport ${r.weekLabel} chargé`);
+    setTimeout(()=>setSaveMsg(""),3000);
+  };
+
+  const deleteReport=(id:string)=>{
+    const updated=savedReports.filter((r:any)=>r.id!==id);
+    setSavedReports(updated);
+    try{localStorage.setItem(REPORT_KEY,JSON.stringify(updated));}catch{}
+  };
+
+  const newReport=()=>{
+    if(!window.confirm("Créer un nouveau rapport ? Le brouillon actuel sera effacé."))return;
+    setWeekLabel(`S${weekNum}`);setPeriod(defaultPeriod());
+    setLastWeekItems([{priority:"HIGH",client:"",action:"",status:"📋"}]);
+    setThisWeekItems([{priority:"HIGH",client:"",action:"",status:"📋"}]);
+    setExpectedOrders([{client:"",project:"",est:""}]);
+    try{localStorage.removeItem(DRAFT_KEY);}catch{}
+  };
 
   const PRIORITIES=["HIGH","MEDIUM","LOW"];
   const STATUSES=["📋","🔄","✅","🎓","⚠️"];
@@ -2855,17 +2912,74 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
           <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Rapport Hebdomadaire</h1>
           <p style={{margin:0,color:C.t3,fontSize:13}}>Saisie des activités · données commerciales auto-générées</p>
         </div>
-        <button onClick={printReport}
-          style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",border:"none",borderRadius:C.r,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 15px rgba(37,99,235,.35)"}}>
-          <i className="ti ti-printer" style={{fontSize:16}} aria-hidden="true"/>
-          Générer & Imprimer le rapport
-        </button>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          {saveMsg&&<span style={{background:C.greenL,color:C.greenDk,padding:"8px 14px",borderRadius:C.r,fontSize:12,fontWeight:600,display:"flex",alignItems:"center"}}>{saveMsg}</span>}
+          <button onClick={newReport} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",color:C.t2,border:`1px solid ${C.b}`,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            <i className="ti ti-file-plus" style={{fontSize:15}} aria-hidden="true"/> Nouveau
+          </button>
+          <button onClick={()=>setShowHistory(!showHistory)} style={{display:"flex",alignItems:"center",gap:6,background:C.blueL,color:C.blueDk,border:`1px solid ${C.blue}30`,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",position:"relative"}}>
+            <i className="ti ti-history" style={{fontSize:15}} aria-hidden="true"/> Historique
+            {savedReports.length>0&&<span style={{background:C.blue,color:"#fff",borderRadius:99,fontSize:10,fontWeight:700,padding:"1px 6px",marginLeft:2}}>{savedReports.length}</span>}
+          </button>
+          <button onClick={saveReport} style={{display:"flex",alignItems:"center",gap:6,background:C.greenL,color:C.greenDk,border:`1px solid ${C.green}30`,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            <i className="ti ti-device-floppy" style={{fontSize:15}} aria-hidden="true"/> Sauvegarder
+          </button>
+          <button onClick={printReport} style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",border:"none",borderRadius:C.r,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 15px rgba(37,99,235,.35)"}}>
+            <i className="ti ti-printer" style={{fontSize:16}} aria-hidden="true"/>
+            Imprimer
+          </button>
+        </div>
       </div>
+
+      {/* History panel */}
+      {showHistory&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.shMd,overflow:"hidden"}}>
+          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span style={{fontWeight:600,fontSize:13,color:C.t1,display:"flex",alignItems:"center",gap:6}}>
+              <i className="ti ti-history" style={{fontSize:14,color:C.blue}} aria-hidden="true"/>
+              Rapports sauvegardés ({savedReports.length})
+            </span>
+            <button onClick={()=>setShowHistory(false)} style={{background:"#F1F5F9",border:"none",color:C.t3,cursor:"pointer",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <i className="ti ti-x" style={{fontSize:13}} aria-hidden="true"/>
+            </button>
+          </div>
+          {savedReports.length===0&&<div style={{padding:"24px",textAlign:"center",color:C.t3,fontSize:12}}>Aucun rapport sauvegardé</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:0}}>
+            {savedReports.map((r:any,i:number)=>(
+              <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",borderBottom:`1px solid ${C.b}`,background:i%2===0?"#fff":"#FAFBFD",transition:"background .12s"}}
+                onMouseEnter={(e:any)=>e.currentTarget.style.background="#EFF6FF"}
+                onMouseLeave={(e:any)=>e.currentTarget.style.background=i%2===0?"#fff":"#FAFBFD"}>
+                <div style={{width:40,height:40,borderRadius:8,background:C.blueL,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <i className="ti ti-file-report" style={{fontSize:18,color:C.blue}} aria-hidden="true"/>
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.t1}}>{r.label}</div>
+                  <div style={{fontSize:11,color:C.t3,marginTop:2}}>
+                    Sauvegardé le {new Date(r.savedAt).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"})}
+                    {" · "}{(r.lastWeekItems?.filter((x:any)=>x.client||x.action).length||0)} activités semaine passée
+                    {" · "}{(r.thisWeekItems?.filter((x:any)=>x.client||x.action).length||0)} activités semaine en cours
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <button onClick={()=>loadReport(r)} style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                    <i className="ti ti-folder-open" style={{fontSize:13}} aria-hidden="true"/> Charger
+                  </button>
+                  <button onClick={()=>{if(window.confirm(`Supprimer le rapport ${r.weekLabel} ?`))deleteReport(r.id);}}
+                    style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                    <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Report settings */}
       <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 20px"}}>
-        <div style={{fontSize:12,fontWeight:600,color:C.t1,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
-          <i className="ti ti-settings" style={{fontSize:14,color:C.t3}} aria-hidden="true"/> Paramètres du rapport
+        <div style={{fontSize:12,fontWeight:600,color:C.t1,marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{display:"flex",alignItems:"center",gap:6}}><i className="ti ti-settings" style={{fontSize:14,color:C.t3}} aria-hidden="true"/> Paramètres du rapport</span>
+          <span style={{fontSize:10,color:C.t3,fontStyle:"italic"}}>💾 Brouillon auto-sauvegardé</span>
         </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr",gap:12}}>
           <div>
