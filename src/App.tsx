@@ -2603,45 +2603,46 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
   body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;background:#fff;}
-  .page{width:297mm;min-height:210mm;padding:12mm 14mm;display:flex;flex-direction:column;page-break-after:always;position:relative;}
+  .page{width:297mm;padding:10mm 12mm 14mm;display:flex;flex-direction:column;page-break-after:always;position:relative;break-after:page;}
+  .page:last-child{page-break-after:avoid;break-after:avoid;}
   
   /* Cover page */
   .cover{background:linear-gradient(135deg,#0D1B2A 0%,#1E3A5F 60%,#2563EB 100%);color:#fff;justify-content:space-between;}
   .cover-logo{font-size:11px;opacity:.5;letter-spacing:.1em;text-transform:uppercase;}
-  .cover-title{font-size:42px;font-weight:900;letter-spacing:-.02em;line-height:1;}
+  .cover-title{font-size:34px;font-weight:900;letter-spacing:-.02em;line-height:1;}
   .cover-sub{font-size:16px;opacity:.75;margin-top:8px;}
-  .cover-week{font-size:72px;font-weight:900;color:rgba(255,255,255,.1);position:absolute;right:14mm;top:50%;transform:translateY(-50%);}
+  .cover-week{font-size:56px;font-weight:900;color:rgba(255,255,255,.1);position:absolute;right:12mm;top:50%;transform:translateY(-50%);}
   .cover-meta{display:flex;gap:24px;align-items:center;}
   .cover-badge{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:6px 14px;font-size:13px;font-weight:600;}
   .cover-toc{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:0;}
-  .toc-item{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;}
+  .toc-item{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:7px 12px;display:flex;align-items:center;gap:8px;}
   .toc-num{font-size:24px;font-weight:900;opacity:.3;}
   .toc-label{font-size:12px;font-weight:600;}
 
   /* Section pages */
-  .section-header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:10px;border-bottom:3px solid #0D1B2A;margin-bottom:16px;}
-  .section-title{font-size:22px;font-weight:900;color:#0D1B2A;letter-spacing:-.01em;}
+  .section-header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:7px;border-bottom:3px solid #0D1B2A;margin-bottom:10px;}
+  .section-title{font-size:18px;font-weight:900;color:#0D1B2A;letter-spacing:-.01em;}
   .section-sub{font-size:12px;color:#8FA0B3;margin-top:2px;}
   .section-meta{text-align:right;font-size:10px;color:#8FA0B3;}
   .section-badge{font-size:11px;font-weight:600;color:#2563EB;background:#DBEAFE;padding:3px 10px;border-radius:4px;}
 
   /* KPI cards */
-  .kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}
-  .kpi{background:#F8FAFC;border:1px solid #E5EAF0;border-radius:8px;padding:10px 14px;}
+  .kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;}
+  .kpi{background:#F8FAFC;border:1px solid #E5EAF0;border-radius:8px;padding:8px 12px;}
   .kpi-label{font-size:9px;color:#8FA0B3;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
-  .kpi-val{font-size:20px;font-weight:800;color:#0D1B2A;}
+  .kpi-val{font-size:18px;font-weight:800;color:#0D1B2A;}
   .kpi-sub{font-size:9px;color:#8FA0B3;margin-top:2px;}
 
   /* Tables */
   table{width:100%;border-collapse:collapse;font-size:10px;}
-  th{background:#0D1B2A;color:#fff;padding:7px 10px;text-align:left;font-weight:600;font-size:9px;text-transform:uppercase;letter-spacing:.05em;}
-  td{padding:7px 10px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
+  th{background:#0D1B2A;color:#fff;padding:5px 8px;text-align:left;font-weight:600;font-size:9px;text-transform:uppercase;letter-spacing:.05em;}
+  td{padding:5px 8px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
   tr:nth-child(even) td{background:#F8FAFC;}
   .subtotal td{background:#EFF6FF!important;font-weight:700;color:#1D4ED8;}
   .total-row td{background:#0D1B2A!important;color:#fff!important;font-weight:700;}
 
   /* Activity */
-  .activity-row{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #F1F5F9;}
+  .activity-row{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid #F1F5F9;}
   .priority-badge{padding:3px 8px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
   .status-icon{font-size:14px;flex-shrink:0;}
   .activity-content{flex:1;}
@@ -2649,15 +2650,16 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   .activity-desc{font-size:10px;color:#4A5568;margin-top:1px;}
 
   /* Two column layout */
-  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-  .col-header{font-size:11px;font-weight:700;color:#0D1B2A;padding:6px 0;border-bottom:2px solid #0D1B2A;margin-bottom:10px;}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .col-header{font-size:10px;font-weight:700;color:#0D1B2A;padding:4px 0;border-bottom:2px solid #0D1B2A;margin-bottom:6px;}
 
   /* Footer */
   .footer{position:absolute;bottom:8mm;left:14mm;right:14mm;display:flex;justify-content:space-between;font-size:9px;color:#8FA0B3;border-top:1px solid #E5EAF0;padding-top:6px;}
 
   @media print{
-    body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .page{page-break-after:always;}
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:10px;}
+    .page{page-break-after:always;break-after:page;}
+    .page:last-child{page-break-after:avoid;}
   }
 </style>
 </head><body>
@@ -2666,14 +2668,14 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 <div class="page cover">
   <div>
     <div class="cover-logo">OrderTrack — Commercial Report</div>
-    <div style="margin-top:20px">
+    <div style="margin-top:10px">
       <div class="cover-title">WEEKLY<br>REPORT</div>
       <div class="cover-sub">Commercial Activity Summary</div>
     </div>
   </div>
   <div class="cover-week">${weekLabel}</div>
   <div>
-    <div class="cover-meta" style="margin-bottom:16px">
+    <div class="cover-meta" style="margin-bottom:10px">
       <div class="cover-badge">📅 ${period}</div>
       <div class="cover-badge">📍 West Africa — Côte d'Ivoire</div>
       <div class="cover-badge">Semaine ${weekLabel}</div>
@@ -3556,7 +3558,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
       .period{font-size:11px;color:#8FA0B3;margin-bottom:20px;}
       table{width:100%;border-collapse:collapse;font-size:11px;}
       th{background:#0D1B2A;color:#fff;padding:8px 10px;text-align:left;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.05em;}
-      td{padding:7px 10px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
+      td{padding:5px 8px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
       tr:nth-child(even){background:#F8FAFC;}
       .footer{margin-top:20px;padding-top:12px;border-top:1px solid #E5EAF0;font-size:10px;color:#8FA0B3;display:flex;justify-content:space-between;}
       @media print{body{padding:16px;}}
