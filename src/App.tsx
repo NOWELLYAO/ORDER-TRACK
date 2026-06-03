@@ -984,7 +984,6 @@ export default function App(){
                 ))}
               </div>
             </div>
-            </div>
             <SyncBadge status={syncStatus} lastSync={lastSync} lang={lang}
               onRefresh={async()=>{
                 setSyncStatus("syncing");
