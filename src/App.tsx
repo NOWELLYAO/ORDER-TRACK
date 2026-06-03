@@ -3691,12 +3691,15 @@ function CataloguePage({clients,lang,isMobile}:any){
     const opts=found.flatMap((p:any)=>(p.prices||[]).map((pr:any)=>({...pr,pn:p.pn,desc:p.description})));
     // Sort by date descending
     opts.sort((a:any,b:any)=>new Date(b.date).getTime()-new Date(a.date).getTime());
+    const newDesc=bestMatch?.description&&bestMatch.description.trim()&&bestMatch.description!==pn
+      ?bestMatch.description
+      :"";
     setQLines(lines=>lines.map((l:any,i:number)=>i===idx?{...l,
       pn,
-      desc:bestMatch?.description||l.desc, // Auto-fill description
+      desc:newDesc, // Auto-fill description from catalogue (empty if not found)
       priceOptions:opts,
       selectedPriceIdx:opts.length>0?0:-1,
-      unitPrice:opts.length>0?opts[0].price:l.unitPrice // Auto-fill latest price
+      unitPrice:opts.length>0?opts[0].price:l.unitPrice
     }:l));
   };
 
@@ -3906,8 +3909,11 @@ function CataloguePage({clients,lang,isMobile}:any){
                       </td>
                       <td style={{padding:"8px 8px",verticalAlign:"top"}}>
                         <input value={line.desc} onChange={e=>updateLine(idx,"desc",e.target.value)}
-                          placeholder="Description…"
-                          style={{width:"100%",padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                          placeholder={line.pn&&line.priceOptions?.length>0?"Description non dispo — saisir":"Description…"}
+                          style={{width:"100%",padding:"6px 8px",
+                            border:`1px solid ${line.desc?C.b:line.pn&&line.priceOptions?.length>0?C.amber:C.b}`,
+                            borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",
+                            background:line.desc?"#fff":line.pn&&line.priceOptions?.length>0?C.amberL:"#fff"}}/>
                       </td>
                       <td style={{padding:"8px 8px",verticalAlign:"top",textAlign:"center"}}>
                         <input type="number" min="1" value={line.qty} onChange={e=>updateLine(idx,"qty",+e.target.value)}
@@ -4022,6 +4028,15 @@ function CataloguePage({clients,lang,isMobile}:any){
                 style={{width:"100%",padding:"8px 10px 8px 32px",border:`1px solid ${C.b}`,borderRadius:C.r,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
             </div>
             <span style={{fontSize:12,color:C.t3}}>{filteredProducts.length} produits</span>
+            {products.filter((p:any)=>!p.description||p.description.trim()==="").length>0&&(
+              <span style={{fontSize:11,color:C.amberDk,background:C.amberL,padding:"4px 10px",borderRadius:99,fontWeight:600}}>
+                ⚠️ {products.filter((p:any)=>!p.description||p.description.trim()==="").length} produits sans description — réimportez le fichier
+              </span>
+            )}
+            <button onClick={async()=>{if(window.confirm("Supprimer tout le catalogue ?"))await saveProducts([]);}}
+              style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+              <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/> Vider catalogue
+            </button>
           </div>
           <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
             {loading?<div style={{padding:32,textAlign:"center",color:C.t3}}>Chargement…</div>:
