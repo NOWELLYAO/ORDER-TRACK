@@ -3938,11 +3938,29 @@ function CataloguePage({clients,lang,isMobile}:any){
       :"";
     setQLines(lines=>lines.map((l:any,i:number)=>i===idx?{...l,
       pn,
-      desc:newDesc, // Auto-fill description from catalogue (empty if not found)
+      desc:newDesc,
       priceOptions:opts,
       selectedPriceIdx:opts.length>0?0:-1,
       unitPrice:opts.length>0?opts[0].price:l.unitPrice
     }:l));
+  };
+
+  // Search by description — returns matching products
+  const searchByDesc=(term:string):any[]=>{
+    if(!term||term.length<2)return[];
+    const t=term.toLowerCase();
+    return products.filter((p:any)=>{
+      const desc=(p.description||"").toLowerCase();
+      const pn=(p.pn||"").toLowerCase();
+      // Split search term into words for generic matching
+      const words=t.split(/\s+/).filter((w:string)=>w.length>1);
+      return words.every((w:string)=>desc.includes(w)||pn.includes(w));
+    }).slice(0,8);
+  };
+
+  // When user selects a product from description suggestions
+  const selectFromDesc=(lineIdx:number,product:any)=>{
+    lookupPN(lineIdx, product.pn);
   };
 
   const updateLine=(idx:number,field:string,val:any)=>{
@@ -4149,13 +4167,66 @@ function CataloguePage({clients,lang,isMobile}:any){
                           </div>
                         )}
                       </td>
-                      <td style={{padding:"8px 8px",verticalAlign:"top"}}>
-                        <input value={line.desc} onChange={e=>updateLine(idx,"desc",e.target.value)}
-                          placeholder={line.pn&&line.priceOptions?.length>0?"Description non dispo — saisir":"Description…"}
+                      <td style={{padding:"8px 8px",verticalAlign:"top",position:"relative"}}>
+                        <input value={line.desc}
+                          onChange={e=>updateLine(idx,"desc",e.target.value)}
+                          placeholder="Recherche par description…"
                           style={{width:"100%",padding:"6px 8px",
-                            border:`1px solid ${line.desc?C.b:line.pn&&line.priceOptions?.length>0?C.amber:C.b}`,
-                            borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",
-                            background:line.desc?"#fff":line.pn&&line.priceOptions?.length>0?C.amberL:"#fff"}}/>
+                            border:`1px solid ${line.desc&&line.pn?C.green:line.desc?C.blue:C.b}`,
+                            borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                        {/* Description suggestions dropdown */}
+                        {line.desc&&line.desc.length>=2&&!line.pn&&searchByDesc(line.desc).length>0&&(
+                          <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",
+                            border:`1px solid ${C.b}`,borderRadius:6,boxShadow:C.shMd,zIndex:50,maxHeight:220,overflowY:"auto"}}>
+                            <div style={{padding:"5px 10px",fontSize:10,color:C.t3,fontWeight:600,
+                              borderBottom:`1px solid ${C.b}`,background:"#F8FAFC",textTransform:"uppercase",letterSpacing:".05em"}}>
+                              {searchByDesc(line.desc).length} résultat{searchByDesc(line.desc).length>1?"s":""} trouvé{searchByDesc(line.desc).length>1?"s":""}
+                            </div>
+                            {searchByDesc(line.desc).map((p:any)=>(
+                              <button key={p.pn} onClick={()=>selectFromDesc(idx,p)}
+                                style={{display:"flex",width:"100%",padding:"8px 10px",border:"none",
+                                  background:"transparent",textAlign:"left",cursor:"pointer",
+                                  borderBottom:`1px solid ${C.b}`,gap:10,alignItems:"flex-start"}}
+                                onMouseEnter={(e:any)=>e.currentTarget.style.background=C.blueL}
+                                onMouseLeave={(e:any)=>e.currentTarget.style.background="transparent"}>
+                                <div style={{minWidth:80,flexShrink:0}}>
+                                  <div style={{fontWeight:700,color:C.blue,fontFamily:"monospace",fontSize:11}}>{p.pn}</div>
+                                  {(p.prices||[]).length>0&&(
+                                    <div style={{fontSize:10,color:C.greenDk,fontWeight:600,marginTop:1}}>
+                                      {fmt((p.prices||[]).slice(-1)[0]?.price||0)} €
+                                    </div>
+                                  )}
+                                </div>
+                                <div style={{flex:1,fontSize:11,color:C.t1,lineHeight:1.4,textAlign:"left"}}>
+                                  {/* Highlight matching words */}
+                                  {p.description||"—"}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {/* Also show suggestions when typing in desc with a PN already set */}
+                        {line.desc&&line.desc.length>=2&&line.pn&&searchByDesc(line.desc).filter((p:any)=>p.pn!==line.pn).length>0&&(
+                          <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",
+                            border:`1px solid ${C.amber}`,borderRadius:6,boxShadow:C.shMd,zIndex:50,maxHeight:180,overflowY:"auto"}}>
+                            <div style={{padding:"5px 10px",fontSize:10,color:C.amberDk,fontWeight:600,
+                              borderBottom:`1px solid ${C.b}`,background:C.amberL}}>
+                              Autres produits correspondants — cliquer pour changer
+                            </div>
+                            {searchByDesc(line.desc).filter((p:any)=>p.pn!==line.pn).slice(0,4).map((p:any)=>(
+                              <button key={p.pn} onClick={()=>selectFromDesc(idx,p)}
+                                style={{display:"flex",width:"100%",padding:"7px 10px",border:"none",
+                                  background:"transparent",textAlign:"left",cursor:"pointer",
+                                  borderBottom:`1px solid ${C.b}`,gap:8,alignItems:"center"}}
+                                onMouseEnter={(e:any)=>e.currentTarget.style.background=C.amberL}
+                                onMouseLeave={(e:any)=>e.currentTarget.style.background="transparent"}>
+                                <span style={{fontWeight:700,color:C.blue,fontFamily:"monospace",fontSize:11,minWidth:70}}>{p.pn}</span>
+                                <span style={{fontSize:11,color:C.t2,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description}</span>
+                                {(p.prices||[]).length>0&&<span style={{fontSize:11,fontWeight:600,color:C.greenDk,whiteSpace:"nowrap"}}>{fmt(p.prices[p.prices.length-1]?.price)} €</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td style={{padding:"8px 8px",verticalAlign:"top",textAlign:"center"}}>
                         <input type="number" min="1" value={line.qty} onChange={e=>updateLine(idx,"qty",+e.target.value)}
