@@ -3726,6 +3726,18 @@ function CataloguePage({clients,lang,isMobile}:any){
   // Quote form state
   const[qClient,setQClient]=useState("");
   const[qLines,setQLines]=useState<any[]>([{pn:"",desc:"",qty:1,unitPrice:0,avail:"Stock",priceOptions:[],selectedPriceIdx:-1}]);
+  const[dropdownPos,setDropdownPos]=useState<{top:number,left:number,width:number}|null>(null);
+  const[dropdownType,setDropdownType]=useState<"pn"|"desc"|null>(null);
+  const[dropdownLineIdx,setDropdownLineIdx]=useState<number>(-1);
+  const[dropdownItems,setDropdownItems]=useState<any[]>([]);
+  const closeDropdown=()=>{setDropdownPos(null);setDropdownType(null);setDropdownLineIdx(-1);setDropdownItems([]);};
+
+  const openDropdown=(e:any,type:"pn"|"desc",idx:number,items:any[])=>{
+    if(!items.length){closeDropdown();return;}
+    const rect=e.target.getBoundingClientRect();
+    setDropdownPos({top:rect.bottom+4,left:rect.left,width:Math.max(rect.width,280)});
+    setDropdownType(type);setDropdownLineIdx(idx);setDropdownItems(items);
+  };
   const[qRef,setQRef]=useState(()=>`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);
   const[qDate,setQDate]=useState(new Date().toISOString().slice(0,10));
   const[qValidity,setQValidity]=useState("30");
@@ -4148,85 +4160,29 @@ function CataloguePage({clients,lang,isMobile}:any){
                 <tbody>
                   {qLines.map((line:any,idx:number)=>(
                     <tr key={idx} style={{borderBottom:`1px solid ${C.b}`}}>
-                      <td style={{padding:"8px 8px",verticalAlign:"top",position:"relative"}}>
-                        <input value={line.pn} onChange={e=>lookupPN(idx,e.target.value)}
+                      <td style={{padding:"8px 8px",verticalAlign:"top"}}>
+                        <input value={line.pn}
+                          onChange={e=>{
+                            lookupPN(idx,e.target.value);
+                            const sugg=products.filter((p:any)=>p.pn.toLowerCase().includes(e.target.value.toLowerCase())&&e.target.value.length>=2).slice(0,8);
+                            openDropdown(e,"pn",idx,sugg);
+                          }}
+                          onBlur={()=>setTimeout(closeDropdown,150)}
                           placeholder="ex: 96896506"
                           style={{width:"100%",padding:"6px 8px",border:`1px solid ${line.priceOptions?.length>0?C.green:C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-                        {/* Suggestions dropdown */}
-                        {line.pn?.length>=2&&products.filter((p:any)=>p.pn.toLowerCase().includes(line.pn.toLowerCase())).slice(0,5).length>0&&line.priceOptions?.length===0&&(
-                          <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:`1px solid ${C.b}`,borderRadius:5,boxShadow:C.shMd,zIndex:50,maxHeight:180,overflowY:"auto"}}>
-                            {products.filter((p:any)=>p.pn.toLowerCase().includes(line.pn.toLowerCase())).slice(0,5).map((p:any)=>(
-                              <button key={p.pn} onClick={()=>lookupPN(idx,p.pn)}
-                                style={{display:"block",width:"100%",padding:"7px 10px",border:"none",background:"transparent",textAlign:"left",cursor:"pointer",borderBottom:`1px solid ${C.b}`,fontSize:11}}
-                                onMouseEnter={(e:any)=>e.currentTarget.style.background=C.blueL}
-                                onMouseLeave={(e:any)=>e.currentTarget.style.background="transparent"}>
-                                <div style={{fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{p.pn}</div>
-                                <div style={{color:C.t3,fontSize:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description||"—"}</div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </td>
-                      <td style={{padding:"8px 8px",verticalAlign:"top",position:"relative"}}>
+                      <td style={{padding:"8px 8px",verticalAlign:"top"}}>
                         <input value={line.desc}
-                          onChange={e=>updateLine(idx,"desc",e.target.value)}
+                          onChange={e=>{
+                            updateLine(idx,"desc",e.target.value);
+                            const results=searchByDesc(e.target.value);
+                            openDropdown(e,"desc",idx,results);
+                          }}
+                          onBlur={()=>setTimeout(closeDropdown,150)}
                           placeholder="Recherche par description…"
                           style={{width:"100%",padding:"6px 8px",
                             border:`1px solid ${line.desc&&line.pn?C.green:line.desc?C.blue:C.b}`,
                             borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-                        {/* Description suggestions dropdown */}
-                        {line.desc&&line.desc.length>=2&&!line.pn&&searchByDesc(line.desc).length>0&&(
-                          <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",
-                            border:`1px solid ${C.b}`,borderRadius:6,boxShadow:C.shMd,zIndex:50,maxHeight:220,overflowY:"auto"}}>
-                            <div style={{padding:"5px 10px",fontSize:10,color:C.t3,fontWeight:600,
-                              borderBottom:`1px solid ${C.b}`,background:"#F8FAFC",textTransform:"uppercase",letterSpacing:".05em"}}>
-                              {searchByDesc(line.desc).length} résultat{searchByDesc(line.desc).length>1?"s":""} trouvé{searchByDesc(line.desc).length>1?"s":""}
-                            </div>
-                            {searchByDesc(line.desc).map((p:any)=>(
-                              <button key={p.pn} onClick={()=>selectFromDesc(idx,p)}
-                                style={{display:"flex",width:"100%",padding:"8px 10px",border:"none",
-                                  background:"transparent",textAlign:"left",cursor:"pointer",
-                                  borderBottom:`1px solid ${C.b}`,gap:10,alignItems:"flex-start"}}
-                                onMouseEnter={(e:any)=>e.currentTarget.style.background=C.blueL}
-                                onMouseLeave={(e:any)=>e.currentTarget.style.background="transparent"}>
-                                <div style={{minWidth:80,flexShrink:0}}>
-                                  <div style={{fontWeight:700,color:C.blue,fontFamily:"monospace",fontSize:11}}>{p.pn}</div>
-                                  {(p.prices||[]).length>0&&(
-                                    <div style={{fontSize:10,color:C.greenDk,fontWeight:600,marginTop:1}}>
-                                      {fmt((p.prices||[]).slice(-1)[0]?.price||0)} €
-                                    </div>
-                                  )}
-                                </div>
-                                <div style={{flex:1,fontSize:11,color:C.t1,lineHeight:1.4,textAlign:"left"}}>
-                                  {/* Highlight matching words */}
-                                  {p.description||"—"}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {/* Also show suggestions when typing in desc with a PN already set */}
-                        {line.desc&&line.desc.length>=2&&line.pn&&searchByDesc(line.desc).filter((p:any)=>p.pn!==line.pn).length>0&&(
-                          <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",
-                            border:`1px solid ${C.amber}`,borderRadius:6,boxShadow:C.shMd,zIndex:50,maxHeight:180,overflowY:"auto"}}>
-                            <div style={{padding:"5px 10px",fontSize:10,color:C.amberDk,fontWeight:600,
-                              borderBottom:`1px solid ${C.b}`,background:C.amberL}}>
-                              Autres produits correspondants — cliquer pour changer
-                            </div>
-                            {searchByDesc(line.desc).filter((p:any)=>p.pn!==line.pn).slice(0,4).map((p:any)=>(
-                              <button key={p.pn} onClick={()=>selectFromDesc(idx,p)}
-                                style={{display:"flex",width:"100%",padding:"7px 10px",border:"none",
-                                  background:"transparent",textAlign:"left",cursor:"pointer",
-                                  borderBottom:`1px solid ${C.b}`,gap:8,alignItems:"center"}}
-                                onMouseEnter={(e:any)=>e.currentTarget.style.background=C.amberL}
-                                onMouseLeave={(e:any)=>e.currentTarget.style.background="transparent"}>
-                                <span style={{fontWeight:700,color:C.blue,fontFamily:"monospace",fontSize:11,minWidth:70}}>{p.pn}</span>
-                                <span style={{fontSize:11,color:C.t2,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description}</span>
-                                {(p.prices||[]).length>0&&<span style={{fontSize:11,fontWeight:600,color:C.greenDk,whiteSpace:"nowrap"}}>{fmt(p.prices[p.prices.length-1]?.price)} €</span>}
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </td>
                       <td style={{padding:"8px 8px",verticalAlign:"top",textAlign:"center"}}>
                         <input type="number" min="1" value={line.qty} onChange={e=>updateLine(idx,"qty",+e.target.value)}
@@ -4282,6 +4238,50 @@ function CataloguePage({clients,lang,isMobile}:any){
               </table>
             </div>
           </div>
+
+          {/* Global fixed dropdown portal */}
+          {dropdownPos&&dropdownItems.length>0&&(
+            <div style={{
+              position:"fixed",top:dropdownPos.top,left:dropdownPos.left,
+              width:Math.min(dropdownPos.width,500),maxWidth:"90vw",
+              background:"#fff",border:`1px solid ${dropdownType==="pn"?C.blue:C.blue}`,
+              borderRadius:8,boxShadow:"0 8px 30px rgba(0,0,0,.18)",
+              zIndex:9999,maxHeight:280,overflowY:"auto"
+            }}>
+              <div style={{padding:"6px 12px",fontSize:10,color:C.t3,fontWeight:700,
+                borderBottom:`1px solid ${C.b}`,background:"#F8FAFC",
+                textTransform:"uppercase",letterSpacing:".06em",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span>{dropdownItems.length} résultat{dropdownItems.length>1?"s":""} — {dropdownType==="pn"?"Part Number":"Description"}</span>
+                <button onClick={closeDropdown} style={{background:"transparent",border:"none",color:C.t3,cursor:"pointer",fontSize:14,lineHeight:1}}>✕</button>
+              </div>
+              {dropdownItems.map((p:any,di:number)=>(
+                <button key={di}
+                  onClick={()=>{
+                    if(dropdownType==="pn") lookupPN(dropdownLineIdx,p.pn);
+                    else selectFromDesc(dropdownLineIdx,p);
+                    closeDropdown();
+                  }}
+                  style={{display:"flex",width:"100%",padding:"9px 12px",border:"none",
+                    background:"transparent",textAlign:"left",cursor:"pointer",
+                    borderBottom:`1px solid ${C.b}`,gap:12,alignItems:"center"}}
+                  onMouseEnter={(e:any)=>e.currentTarget.style.background=C.blueL}
+                  onMouseLeave={(e:any)=>e.currentTarget.style.background="transparent"}>
+                  <div style={{flexShrink:0,minWidth:90}}>
+                    <div style={{fontWeight:700,color:C.blue,fontFamily:"monospace",fontSize:12}}>{p.pn}</div>
+                    {(p.prices||[]).length>0&&(
+                      <div style={{fontSize:11,color:C.greenDk,fontWeight:600,marginTop:2}}>
+                        {fmt(p.prices[p.prices.length-1]?.price||0)} €
+                      </div>
+                    )}
+                  </div>
+                  <div style={{flex:1,fontSize:11,color:C.t1,lineHeight:1.4,overflow:"hidden",
+                    display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>
+                    {p.description||"—"}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Notes + generate */}
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:14}}>
