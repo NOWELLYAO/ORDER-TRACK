@@ -3516,19 +3516,30 @@ const detectColumns=(headers:string[])=>{
 
 // Smart header finder — scans all rows to find the header row
 const findHeaderRow=(rows:any[][]):{headerIdx:number,colMap:any}=>{
-  for(let i=0;i<Math.min(15,rows.length);i++){
+  // Score each row — the header row has the most column name keywords
+  let bestScore=-1,bestIdx=0;
+  for(let i=0;i<Math.min(20,rows.length);i++){
     const row=rows[i];
+    if(!row.some((x:any)=>x!==null&&x!==undefined&&x!==""))continue;
     const headers=row.map((x:any)=>String(x||"").toLowerCase().trim());
-    // Check if this row looks like a header (has PN and price indicators)
-    const hasPn=headers.some((h:string)=>h==="pn"||h.includes("part")||h.includes("référence")||h.includes("code"));
-    const hasPrice=headers.some((h:string)=>h.includes("up")||h.includes("prix")||h.includes("price")||h.includes("tarif"));
-    if(hasPn&&hasPrice){
-      return{headerIdx:i,colMap:detectColumns(row.map((x:any)=>String(x||"")))};
-    }
+    let score=0;
+    // Strong indicators
+    if(headers.some((h:string)=>h==="pn"||h==="part number"||h==="p/n"||h==="référence"))score+=3;
+    if(headers.some((h:string)=>h.includes("up")||h==="price"||h==="prix"||h==="tarif"||h==="cost"))score+=3;
+    if(headers.some((h:string)=>h.includes("description")||h==="product"||h.includes("désign")))score+=2;
+    if(headers.some((h:string)=>h.includes("qty")||h.includes("quantit")||h.includes("stock")))score+=1;
+    if(headers.some((h:string)=>h.includes("customer")||h.includes("client")))score+=1;
+    // Penalty if row has numeric-only cells (likely data row)
+    const numericCount=row.filter((x:any)=>typeof x==="number"||(typeof x==="string"&&/^\d+[\.,]?\d*$/.test(x.trim()))).length;
+    if(numericCount>row.length/2)score-=3;
+    if(score>bestScore){bestScore=score;bestIdx=i;}
   }
-  // Fallback: use first non-empty row as header
+  if(bestScore>=2){
+    return{headerIdx:bestIdx,colMap:detectColumns(rows[bestIdx].map((x:any)=>String(x||"")))};
+  }
+  // Fallback: first non-empty row
   for(let i=0;i<Math.min(5,rows.length);i++){
-    if(rows[i].some((x:any)=>x!==null&&x!==undefined&&x!=="")) return{headerIdx:i,colMap:detectColumns(rows[i].map((x:any)=>String(x||"")))};
+    if(rows[i].some((x:any)=>x!==null&&x!==undefined&&x!==""))return{headerIdx:i,colMap:detectColumns(rows[i].map((x:any)=>String(x||"")))};
   }
   return{headerIdx:0,colMap:{pn:-1,desc:-1,price:-1,qty:-1,customer:-1,avail:-1}};
 };
