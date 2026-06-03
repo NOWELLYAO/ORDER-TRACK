@@ -3493,7 +3493,7 @@ const parseExcel=async(file:File):Promise<any[]>=>{
   });
 };
 
-// Detect columns from header row
+// Detect columns from header row — supports GRUNDFOS format and others
 const detectColumns=(headers:string[])=>{
   const h=headers.map((x:any)=>String(x||"").toLowerCase().trim());
   const find=(...keys:string[])=>{
@@ -3501,13 +3501,47 @@ const detectColumns=(headers:string[])=>{
     return -1;
   };
   return{
-    pn:find("part","pn","référence","reference","sku","code","article","part number","p/n"),
-    desc:find("description","libellé","designation","désignation","product","produit","name","nom"),
-    price:find("price","prix","up","unit","eur","tarif","cost","coût"),
+    pn:find("pn","part number","p/n","référence","reference","sku","code article"),
+    desc:find("product","description","libellé","designation","désignation","produit","name","nom","article","label","wording","intitulé","désign"),
+    price:find("up (€)","up (eur)","up","unit price","prix unitaire","price","prix","tarif","cost"),
     qty:find("qty","quantité","quantite","stock","qté","disponible","quantity"),
     customer:find("customer","client","compte"),
     avail:find("avail","dispo","lead","délai","delai"),
   };
+};
+
+// Smart header finder — scans all rows to find the header row
+const findHeaderRow=(rows:any[][]):{headerIdx:number,colMap:any}=>{
+  for(let i=0;i<Math.min(15,rows.length);i++){
+    const row=rows[i];
+    const headers=row.map((x:any)=>String(x||"").toLowerCase().trim());
+    // Check if this row looks like a header (has PN and price indicators)
+    const hasPn=headers.some((h:string)=>h==="pn"||h.includes("part")||h.includes("référence")||h.includes("code"));
+    const hasPrice=headers.some((h:string)=>h.includes("up")||h.includes("prix")||h.includes("price")||h.includes("tarif"));
+    if(hasPn&&hasPrice){
+      return{headerIdx:i,colMap:detectColumns(row.map((x:any)=>String(x||"")))};
+    }
+  }
+  // Fallback: use first non-empty row as header
+  for(let i=0;i<Math.min(5,rows.length);i++){
+    if(rows[i].some((x:any)=>x!==null&&x!==undefined&&x!=="")) return{headerIdx:i,colMap:detectColumns(rows[i].map((x:any)=>String(x||"")))};
+  }
+  return{headerIdx:0,colMap:{pn:-1,desc:-1,price:-1,qty:-1,customer:-1,avail:-1}};
+};
+
+// Extract customer name from pre-header rows (GRUNDFOS format)
+const extractCustomer=(rows:any[][],headerIdx:number):string=>{
+  for(let i=0;i<headerIdx;i++){
+    for(const cell of rows[i]){
+      const s=String(cell||"").trim();
+      if(s.length>3&&!s.includes("=")){
+        // Look for customer name pattern e.g. "BERNABE (7292002420)"
+        const m=s.match(/^([A-Z][A-Z\s]+)/);
+        if(m&&m[1].trim().length>2) return m[1].trim();
+      }
+    }
+  }
+  return "";
 };
 
 // ─── CATALOGUE PAGE ───────────────────────────────────────────────────────────
@@ -3556,13 +3590,15 @@ function CataloguePage({clients,lang,isMobile}:any){
     if(ext==="xlsx"||ext==="xls"||ext==="csv"){
       const rows=await parseExcel(file);
       if(rows.length>0){
-        const headers=rows[0].map((x:any)=>String(x||""));
-        const detected=detectColumns(headers);
+        const{headerIdx,colMap:detected}=findHeaderRow(rows);
+        const customer=extractCustomer(rows,headerIdx);
+        const dataRows=rows.slice(headerIdx+1).filter((r:any)=>r.some((x:any)=>x!==null&&x!==undefined&&x!==""));
         setColMap(detected);
-        setAllRows(rows); // Store ALL rows
-        setPreviewRows(rows.slice(0,6)); // Only 5 for preview
+        setAllRows([rows[headerIdx],...dataRows]); // header + all data rows
+        setPreviewRows([rows[headerIdx],...dataRows.slice(0,5)]); // header + 5 rows preview
         setPendingFile(file.name);
-        setUploadMsg(`${rows.length-1} lignes détectées — vérifiez le mapping des colonnes ci-dessous`);
+        const clientHint=customer?` · Client détecté : ${customer}`:"";
+        setUploadMsg(`${dataRows.length} lignes détectées (en-tête ligne ${headerIdx+1})${clientHint} — vérifiez le mapping`);
         setUploading(false);
         return;
       }
@@ -3573,15 +3609,43 @@ function CataloguePage({clients,lang,isMobile}:any){
   };
 
   const confirmImport=async()=>{
-    if(!allRows.length||colMap.pn<0){setUploadMsg("Colonne PN non mappée");return;}
+    if(!allRows.length||colMap.pn<0){setUploadMsg("Colonne PN non mappée — assignez la colonne PN dans le tableau ci-dessous");return;}
     setUploading(true);setUploadMsg("Import en cours…");
-    const rows=allRows.slice(1); // Skip header row, use ALL rows
+    const rows=allRows.slice(1); // Skip header row, use ALL data rows
     let imported=0,updated=0;
     const newProducts=[...products];
+    // Try to get customer from filename hint (already extracted)
+    const fileCustomer=uploadMsg.includes("Client détecté")?uploadMsg.split("Client détecté : ")[1]?.split(" —")[0]?.trim()||""  :"";
     for(const row of rows){
       const pnVal=String(row[colMap.pn]||"").trim();
-      if(!pnVal)continue;
-      const priceVal=colMap.price>=0?parseFloat(String(row[colMap.price]||"0").replace(/[^0-9.,]/g,"").replace(",","."))||0:0;
+      if(!pnVal||pnVal==="PN"||pnVal==="Part Number")continue; // skip header leftovers
+      const rawPrice=colMap.price>=0?String(row[colMap.price]||""):""
+      // Handle French number format: "1 234,56" or "1.234,56" or "1234.56"
+      let priceVal=0;
+      if(rawPrice){
+        let p=rawPrice.trim();
+        // Remove currency symbols and spaces
+        p=p.replace(/[€$£\s]/g,"");
+        // Detect format: if comma before dot = English (1,234.56), if dot before comma = French (1.234,56)
+        const lastComma=p.lastIndexOf(",");
+        const lastDot=p.lastIndexOf(".");
+        if(lastComma>lastDot){
+          // French format: 1.234,56 → remove dots, replace comma with dot
+          p=p.replace(/\./g,"").replace(",",".");
+        } else if(lastDot>lastComma){
+          // English format: 1,234.56 → remove commas
+          p=p.replace(/,/g,"");
+        } else {
+          // No separator or same position
+          p=p.replace(/[^0-9.]/g,"");
+        }
+        priceVal=parseFloat(p)||0;
+        // Sanity check: if price > 1,000,000 it's probably a parse error
+        if(priceVal>1000000){
+          console.warn("[Import] Suspicious price:",rawPrice,"→",priceVal,"for PN:",row[colMap.pn]);
+          priceVal=0; // Ignore suspicious prices
+        }
+      }
       const descVal=colMap.desc>=0?String(row[colMap.desc]||"").trim():"";
       const qtyVal=colMap.qty>=0?parseInt(String(row[colMap.qty]||"0"))||0:0;
       const custVal=colMap.customer>=0?String(row[colMap.customer]||"").trim():"";
@@ -3594,12 +3658,12 @@ function CataloguePage({clients,lang,isMobile}:any){
           if(!newProducts[existing].prices)newProducts[existing].prices=[];
           newProducts[existing].prices.push({price:priceVal,currency:"EUR",customer:custVal,date:today,source:pendingFile});
         }
-        if(descVal&&!newProducts[existing].description)newProducts[existing].description=descVal;
+        if(descVal&&descVal!==pnVal&&!newProducts[existing].description)newProducts[existing].description=descVal;
         updated++;
       } else {
         newProducts.push({
           id:Date.now().toString()+Math.random().toString(36).slice(2,6),
-          pn:pnVal,description:descVal,
+          pn:pnVal,description:descVal!==pnVal?descVal:"",
           prices:priceVal>0?[{price:priceVal,currency:"EUR",customer:custVal,date:today,source:pendingFile}]:[],
           lastQty:qtyVal,lastAvail:availVal,lastUpdated:today
         });
@@ -3607,7 +3671,8 @@ function CataloguePage({clients,lang,isMobile}:any){
       }
     }
     await saveProducts(newProducts);
-    setUploadMsg(`✓ ${imported} produits ajoutés, ${updated} mis à jour (${rows.length} lignes traitées)`);
+    const noPrice=newProducts.filter((p:any)=>p.prices?.length===0).length;
+    setUploadMsg(`✓ ${imported} produits ajoutés, ${updated} mis à jour (${rows.length} lignes traitées)${noPrice>0?` · ⚠️ ${noPrice} sans prix — vérifiez le mapping "Prix"`:""}` );
     setPreviewRows([]);setAllRows([]);setPendingFile("");
     setUploading(false);
     if(fileRef.current)fileRef.current.value="";
