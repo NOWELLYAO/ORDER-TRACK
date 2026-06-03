@@ -3450,19 +3450,23 @@ const sbGet=async(key:string)=>{
   }catch{return null;}
 };
 const sbSet=async(key:string,payload:any)=>{
+  // Always use upsert via POST with merge-duplicates — most reliable
   try{
-    const r=await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K+"&user_key=eq."+key,{
-      method:"PATCH",headers:{"Content-Type":"application/json","apikey":CAT_K,"Authorization":"Bearer "+CAT_K,"Prefer":"return=minimal"},
-      body:JSON.stringify({payload})
+    await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","apikey":CAT_K,"Authorization":"Bearer "+CAT_K,"Prefer":"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify({user_key:key,payload})
     });
-    if(!r.ok||r.status===404){
-      await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K,{
-        method:"POST",headers:{"Content-Type":"application/json","apikey":CAT_K,"Authorization":"Bearer "+CAT_K,"Prefer":"resolution=merge-duplicates,return=minimal"},
-        body:JSON.stringify({user_key:key,payload})
-      });
-    }
   }catch(e){console.warn("sbSet error",e);}
 };
+
+// Also cache catalogue in localStorage to survive page refresh
+const CAT_LS_KEY="ordertrack_catalogue_cache";
+const QUOT_LS_KEY="ordertrack_quotes_cache";
+const saveCatLocal=(p:any[])=>{try{localStorage.setItem(CAT_LS_KEY,JSON.stringify(p));}catch{}};
+const loadCatLocal=():any[]|null=>{try{const d=localStorage.getItem(CAT_LS_KEY);return d?JSON.parse(d):null;}catch{return null;}};
+const saveQuotLocal=(q:any[])=>{try{localStorage.setItem(QUOT_LS_KEY,JSON.stringify(q));}catch{}};
+const loadQuotLocal=():any[]|null=>{try{const d=localStorage.getItem(QUOT_LS_KEY);return d?JSON.parse(d):null;}catch{return null;}};
 
 const AVAIL_OPTIONS=["Stock","2-4 weeks EXW","4-6 weeks EXW","6-8 weeks EXW","8-10 weeks EXW","10-12 weeks EXW","12-14 weeks EXW","14-18 weeks EXW","18-24 weeks EXW","24-28 weeks EXW"];
 
@@ -3699,6 +3703,8 @@ function CataloguePage({clients,lang,isMobile}:any){
   const[loading,setLoading]=useState(true);
   const[uploading,setUploading]=useState(false);
   const[uploadMsg,setUploadMsg]=useState("");
+  const[multiFiles,setMultiFiles]=useState<File[]>([]);
+  const[processingIdx,setProcessingIdx]=useState(-1);
   const[previewRows,setPreviewRows]=useState<any[]>([]);
   const[allRows,setAllRows]=useState<any[]>([]);
   const[colMap,setColMap]=useState<any>({pn:-1,desc:-1,price:-1,qty:-1,customer:-1,avail:-1});
@@ -3715,22 +3721,100 @@ function CataloguePage({clients,lang,isMobile}:any){
   const[qNotes,setQNotes]=useState("");
 
   useEffect(()=>{
+    // 1. Load from localStorage instantly (no blank screen)
+    const localCat=loadCatLocal();
+    const localQuot=loadQuotLocal();
+    if(localCat)setProducts(localCat);
+    if(localQuot)setQuotes(localQuot);
+    if(localCat||localQuot)setLoading(false);
+    // 2. Sync from Supabase in background
     (async()=>{
       setLoading(true);
       const catData=await sbGet(CAT_KEY);
       const quotData=await sbGet(QUOT_KEY);
-      setProducts(catData?.products||[]);
-      setQuotes(quotData?.quotes||[]);
+      if(catData?.products){setProducts(catData.products);saveCatLocal(catData.products);}
+      if(quotData?.quotes){setQuotes(quotData.quotes);saveQuotLocal(quotData.quotes);}
       setLoading(false);
     })();
   },[]);
 
-  const saveProducts=async(p:any[])=>{setProducts(p);await sbSet(CAT_KEY,{products:p});};
-  const saveQuotes=async(q:any[])=>{setQuotes(q);await sbSet(QUOT_KEY,{quotes:q});};
+  const saveProducts=async(p:any[])=>{
+    setProducts(p);
+    saveCatLocal(p); // Save locally immediately
+    await sbSet(CAT_KEY,{products:p}); // Then sync to cloud
+  };
+  const saveQuotes=async(q:any[])=>{
+    setQuotes(q);
+    saveQuotLocal(q);
+    await sbSet(QUOT_KEY,{quotes:q});
+  };
 
   // ── File upload & parse ────────────────────────────────────────────────────
-  const handleFile=async(e:any)=>{
-    const file=e.target.files?.[0];
+  const handleMultiFile=async(e:any)=>{
+    const files=Array.from(e.target.files||[]) as File[];
+    if(!files.length)return;
+    if(files.length===1){
+      // Single file — show preview as before
+      await handleFile(files[0]);
+    } else {
+      // Multiple files — process all directly without preview
+      setMultiFiles(files);
+      setUploading(true);
+      setUploadMsg(`Traitement de ${files.length} fichiers…`);
+      let totalImported=0,totalUpdated=0;
+      const newProducts=[...products];
+      for(let fi=0;fi<files.length;fi++){
+        const file=files[fi];
+        setProcessingIdx(fi);
+        setUploadMsg(`Traitement ${fi+1}/${files.length} : ${file.name}…`);
+        const rows=await parseExcel(file);
+        if(!rows.length)continue;
+        const{headerIdx,colMap:detected,}=findHeaderRow(rows);
+        const fileCustomer=extractCustomer(rows,headerIdx);
+        const dataRows=rows.slice(headerIdx+1).filter((r:any)=>r.some((x:any)=>x!==null&&x!==undefined&&x!==""));
+        for(const row of dataRows){
+          const pnVal=String(row[detected.pn]||"").trim();
+          if(!pnVal||pnVal==="PN"||pnVal==="Part Number")continue;
+          const descVal=detected.desc>=0?String(row[detected.desc]||"").trim():"";
+          const rawPrice=detected.price>=0?String(row[detected.price]||""):"";
+          let priceVal=0;
+          if(rawPrice){
+            let p=rawPrice.trim().replace(/[€$£\s]/g,"");
+            const lastComma=p.lastIndexOf(","),lastDot=p.lastIndexOf(".");
+            if(lastComma>lastDot)p=p.replace(/\./g,"").replace(",",".");
+            else p=p.replace(/,/g,"");
+            priceVal=parseFloat(p)||0;
+            if(priceVal>1000000)priceVal=0;
+          }
+          const custVal=detected.customer>=0?String(row[detected.customer]||"").trim():fileCustomer;
+          const today=new Date().toISOString().slice(0,10);
+          const existing=newProducts.findIndex((p:any)=>p.pn===pnVal);
+          if(existing>=0){
+            if(priceVal>0){
+              if(!newProducts[existing].prices)newProducts[existing].prices=[];
+              newProducts[existing].prices.push({price:priceVal,currency:"EUR",customer:custVal,date:today,source:file.name});
+            }
+            if(descVal&&descVal!==pnVal&&!newProducts[existing].description)newProducts[existing].description=descVal;
+            totalUpdated++;
+          } else {
+            newProducts.push({
+              id:Date.now().toString()+Math.random().toString(36).slice(2,6),
+              pn:pnVal,description:descVal!==pnVal?descVal:"",
+              prices:priceVal>0?[{price:priceVal,currency:"EUR",customer:custVal,date:today,source:file.name}]:[],
+              lastUpdated:today
+            });
+            totalImported++;
+          }
+        }
+      }
+      await saveProducts(newProducts);
+      setUploadMsg(`✓ ${totalImported} produits ajoutés, ${totalUpdated} mis à jour (${files.length} fichiers traités)`);
+      setMultiFiles([]);setProcessingIdx(-1);setUploading(false);
+      if(fileRef.current)fileRef.current.value="";
+    }
+  };
+
+  const handleFile=async(file:File)=>{
     if(!file)return;
     setUploading(true);setUploadMsg("Analyse du fichier…");
     const ext=file.name.split(".").pop()?.toLowerCase();
@@ -4236,13 +4320,24 @@ function CataloguePage({clients,lang,isMobile}:any){
               Les colonnes Customer, Description, Qty, Availability sont détectées automatiquement.
             </div>
             <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{display:"none"}}/>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" multiple onChange={handleMultiFile} style={{display:"none"}}/>
               <button onClick={()=>fileRef.current?.click()} disabled={uploading}
                 style={{display:"flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",border:"none",borderRadius:C.r,padding:"10px 20px",fontSize:13,fontWeight:600,cursor:uploading?"not-allowed":"pointer",opacity:uploading?.7:1}}>
                 <i className="ti ti-upload" style={{fontSize:15}} aria-hidden="true"/>
-                {uploading?"Analyse…":"Sélectionner un fichier"}
+                {uploading?uploadMsg.slice(0,30)+"…":"Sélectionner un ou plusieurs fichiers"}
               </button>
               {uploadMsg&&<span style={{fontSize:12,color:uploadMsg.startsWith("✓")?C.greenDk:uploadMsg.includes("Erreur")?C.redDk:C.amberDk,fontWeight:500}}>{uploadMsg}</span>}
+              {multiFiles.length>1&&processingIdx>=0&&(
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                  {multiFiles.map((f:File,i:number)=>(
+                    <span key={i} style={{fontSize:10,padding:"2px 8px",borderRadius:99,fontWeight:600,
+                      background:i<processingIdx?C.greenL:i===processingIdx?C.blueL:"#F1F5F9",
+                      color:i<processingIdx?C.greenDk:i===processingIdx?C.blueDk:C.t3}}>
+                      {i<processingIdx?"✓ ":i===processingIdx?"⟳ ":""}{f.name.slice(0,20)}{f.name.length>20?"…":""}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
