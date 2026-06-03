@@ -537,12 +537,19 @@ function LoginScreen({onLogin}:any){
   );
 }
 
+const DEFAULT_PERMS={canEdit:true,canDelete:true,canAddClient:true,canViewReports:true,canExport:true};
+
 function UserManager({session,onClose}:any){
   const[users,setUsers]=useState<any[]>([]);
   const[newName,setNewName]=useState("");
   const[newPin,setNewPin]=useState("");
   const[newRole,setNewRole]=useState("user");
   const[msg,setMsg]=useState("");
+  const[editIdx,setEditIdx]=useState<number|null>(null);
+  const[editName,setEditName]=useState("");
+  const[editPin,setEditPin]=useState("");
+  const[editShowPin,setEditShowPin]=useState(false);
+  const[expandPerms,setExpandPerms]=useState<number|null>(null);
   const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
   const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
 
@@ -552,8 +559,8 @@ function UserManager({session,onClose}:any){
       const res=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+USERS_DB_KEY+"&select=payload&limit=1",
         {headers:{"apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=representation"}});
       const rows=res.ok?await res.json():null;
-      setUsers(rows?.[0]?.payload?.users||[{name:"Admin",pin:"1234",role:"admin"}]);
-    }catch{setUsers([{name:"Admin",pin:"1234",role:"admin"}]);}
+      setUsers(rows?.[0]?.payload?.users||[{name:"Admin",pin:"1234",role:"admin",perms:DEFAULT_PERMS}]);
+    }catch{setUsers([{name:"Admin",pin:"1234",role:"admin",perms:DEFAULT_PERMS}]);}
   };
   const saveUsers=async(updated:any[])=>{
     try{
@@ -572,17 +579,39 @@ function UserManager({session,onClose}:any){
   };
   const addUser=()=>{
     if(!newName||!newPin){setMsg("Nom et code requis");return;}
+    if(newPin.length<4){setMsg("Le code doit avoir au moins 4 caractères");return;}
     if(users.find((u:any)=>u.pin===newPin)){setMsg("Ce code est déjà utilisé");return;}
-    const updated=[...users,{name:newName,pin:newPin,role:newRole}];
+    const updated=[...users,{name:newName,pin:newPin,role:newRole,perms:{...DEFAULT_PERMS}}];
     saveUsers(updated);setNewName("");setNewPin("");
   };
   const delUser=(idx:number)=>{
     if(!window.confirm("Supprimer cet utilisateur ?"))return;
     saveUsers(users.filter((_:any,i:number)=>i!==idx));
   };
+  const startEdit=(idx:number)=>{
+    setEditIdx(idx);setEditName(users[idx].name);setEditPin("");setEditShowPin(false);
+  };
+  const saveEdit=()=>{
+    if(!editName){setMsg("Nom requis");return;}
+    if(editPin&&editPin.length<4){setMsg("Le code doit avoir au moins 4 caractères");return;}
+    if(editPin&&editIdx!==null&&users.find((u:any,i:number)=>i!==editIdx&&u.pin===editPin)){setMsg("Ce code est déjà utilisé");return;}
+    const updated=users.map((u:any,i:number)=>i===editIdx?{...u,name:editName,...(editPin?{pin:editPin}:{})}:u);
+    saveUsers(updated);setEditIdx(null);
+  };
+  const togglePerm=(idx:number,perm:string,val:boolean)=>{
+    const updated=users.map((u:any,i:number)=>i===idx?{...u,perms:{...(u.perms||DEFAULT_PERMS),[perm]:val}}:u);
+    saveUsers(updated);
+  };
+  const PERMS_LIST=[
+    {key:"canEdit",label:"Modifier les commandes / factures",icon:"ti-edit"},
+    {key:"canDelete",label:"Supprimer des données",icon:"ti-trash"},
+    {key:"canAddClient",label:"Ajouter / supprimer des clients",icon:"ti-user-plus"},
+    {key:"canViewReports",label:"Accès aux rapports hebdo",icon:"ti-file-report"},
+    {key:"canExport",label:"Exporter en PDF",icon:"ti-file-export"},
+  ];
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,backdropFilter:"blur(3px)"}}>
-      <div style={{background:"#fff",borderRadius:16,width:480,maxWidth:"94vw",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+      <div style={{background:"#fff",borderRadius:16,width:560,maxWidth:"96vw",maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 22px",borderBottom:`1px solid #E5EAF0`}}>
           <h3 style={{margin:0,fontSize:16,fontWeight:700,color:"#0D1B2A",display:"flex",alignItems:"center",gap:8}}>
             <i className="ti ti-users" style={{fontSize:18,color:"#2563EB"}} aria-hidden="true"/> Gestion des accès
@@ -610,19 +639,73 @@ function UserManager({session,onClose}:any){
           <div style={{fontSize:12,fontWeight:600,color:"#0D1B2A",marginBottom:8}}>Utilisateurs ({users.length})</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {users.map((u:any,i:number)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#F8FAFC",borderRadius:8,border:"1px solid #E5EAF0"}}>
-                <div style={{width:32,height:32,borderRadius:8,background:u.role==="admin"?"#DBEAFE":"#F3E8FF",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  <i className={`ti ${u.role==="admin"?"ti-shield-check":"ti-user"}`} style={{fontSize:15,color:u.role==="admin"?"#2563EB":"#7C3AED"}} aria-hidden="true"/>
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:600,fontSize:13,color:"#0D1B2A"}}>{u.name}</div>
-                  <div style={{fontSize:11,color:"#8FA0B3"}}>
-                    {u.role==="admin"?"Administrateur":"Utilisateur"} · Code : {"•".repeat(u.pin?.length||4)}
+              <div key={i} style={{background:"#F8FAFC",borderRadius:8,border:"1px solid #E5EAF0",overflow:"hidden"}}>
+                {/* User row */}
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px"}}>
+                  <div style={{width:36,height:36,borderRadius:8,background:u.role==="admin"?"#DBEAFE":"#F3E8FF",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <i className={`ti ${u.role==="admin"?"ti-shield-check":"ti-user"}`} style={{fontSize:16,color:u.role==="admin"?"#2563EB":"#7C3AED"}} aria-hidden="true"/>
+                  </div>
+                  {editIdx===i?(
+                    <div style={{flex:1,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                      <input value={editName} onChange={e=>setEditName(e.target.value)} placeholder="Nom"
+                        style={{padding:"5px 8px",border:"1px solid #93C5FD",borderRadius:5,fontSize:12,fontFamily:"inherit",flex:1,minWidth:80}}/>
+                      <div style={{display:"flex",alignItems:"center",gap:4}}>
+                        <input value={editPin} onChange={e=>setEditPin(e.target.value)}
+                          type={editShowPin?"text":"password"} placeholder="Nouveau code (optionnel)"
+                          style={{padding:"5px 8px",border:"1px solid #93C5FD",borderRadius:5,fontSize:12,fontFamily:"inherit",width:140}}/>
+                        <button onClick={()=>setEditShowPin(!editShowPin)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#8FA0B3",padding:2}}>
+                          <i className={`ti ${editShowPin?"ti-eye-off":"ti-eye"}`} style={{fontSize:13}} aria-hidden="true"/>
+                        </button>
+                      </div>
+                      <button onClick={saveEdit} style={{background:"#2563EB",color:"#fff",border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>✓</button>
+                      <button onClick={()=>setEditIdx(null)} style={{background:"#F1F5F9",color:"#6B7280",border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,cursor:"pointer"}}>✕</button>
+                    </div>
+                  ):(
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:600,fontSize:13,color:"#0D1B2A"}}>{u.name}</div>
+                      <div style={{fontSize:11,color:"#8FA0B3"}}>
+                        {u.role==="admin"?"Administrateur":"Utilisateur"} · Code : {"•".repeat(u.pin?.length||4)}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{display:"flex",gap:4,flexShrink:0}}>
+                    {u.role!=="admin"&&<button onClick={()=>setExpandPerms(expandPerms===i?null:i)} title="Permissions"
+                      style={{background:expandPerms===i?"#EDE9FE":"#F3E8FF",color:"#7C3AED",border:"none",borderRadius:5,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                      <i className="ti ti-lock" style={{fontSize:13}} aria-hidden="true"/>
+                    </button>}
+                    <button onClick={()=>editIdx===i?setEditIdx(null):startEdit(i)} title="Modifier"
+                      style={{background:"#DBEAFE",color:"#2563EB",border:"none",borderRadius:5,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                      <i className="ti ti-edit" style={{fontSize:13}} aria-hidden="true"/>
+                    </button>
+                    {i>0&&<button onClick={()=>delUser(i)} title="Supprimer"
+                      style={{background:"#FEE2E2",color:"#DC2626",border:"none",borderRadius:5,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                      <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
+                    </button>}
                   </div>
                 </div>
-                {i>0&&<button onClick={()=>delUser(i)} style={{background:"#FEE2E2",color:"#DC2626",border:"none",borderRadius:5,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-                  <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
-                </button>}
+                {/* Permissions panel */}
+                {expandPerms===i&&u.role!=="admin"&&(
+                  <div style={{padding:"10px 14px",borderTop:"1px solid #E5EAF0",background:"#fff"}}>
+                    <div style={{fontSize:11,fontWeight:600,color:"#7C3AED",marginBottom:8,display:"flex",alignItems:"center",gap:5}}>
+                      <i className="ti ti-lock" style={{fontSize:12}} aria-hidden="true"/> Permissions de {u.name}
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {PERMS_LIST.map(({key,label,icon})=>{
+                        const val=(u.perms||DEFAULT_PERMS)[key]!==false;
+                        return(
+                          <label key={key} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",padding:"4px 0"}}>
+                            <div onClick={()=>togglePerm(i,key,!val)}
+                              style={{width:36,height:20,borderRadius:10,background:val?"#7C3AED":"#D1D5DB",transition:"all .2s",position:"relative",flexShrink:0,cursor:"pointer"}}>
+                              <div style={{width:16,height:16,borderRadius:8,background:"#fff",position:"absolute",top:2,left:val?18:2,transition:"all .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
+                            </div>
+                            <i className={`ti ${icon}`} style={{fontSize:13,color:val?"#7C3AED":"#9CA3AF"}} aria-hidden="true"/>
+                            <span style={{fontSize:11,color:val?"#0D1B2A":"#9CA3AF",fontWeight:val?500:400}}>{label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
