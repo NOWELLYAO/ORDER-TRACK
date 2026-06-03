@@ -470,6 +470,168 @@ const getStatusMeta=(id:string,lang:Lang="fr")=>{
 };
 
 // ─── APP ────────────────────────────────────────────────────────────────────
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+const DEFAULT_ADMIN_PIN="1234";
+const AUTH_KEY="ordertrack_auth";
+const USERS_DB_KEY="ordertrack-users";
+
+function LoginScreen({onLogin}:any){
+  const[pin,setPin]=useState("");
+  const[error,setError]=useState("");
+  const[loading,setLoading]=useState(false);
+  const inputRef=useRef<HTMLInputElement>(null);
+  useEffect(()=>{setTimeout(()=>inputRef.current?.focus(),100);},[]);
+
+  const tryLogin=async()=>{
+    if(!pin){setError("Entrez votre code d'accès");return;}
+    setLoading(true);setError("");
+    // Check against Supabase users
+    try{
+      const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+      const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+      const res=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+USERS_DB_KEY+"&select=payload&limit=1",
+        {headers:{"apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=representation"}});
+      const rows=res.ok?await res.json():null;
+      const users:any[]=rows?.[0]?.payload?.users||[{name:"Admin",pin:DEFAULT_ADMIN_PIN,role:"admin"}];
+      const found=users.find((u:any)=>u.pin===pin);
+      if(found){
+        const session={name:found.name,role:found.role,pin:found.pin,loginAt:new Date().toISOString()};
+        localStorage.setItem(AUTH_KEY,JSON.stringify(session));
+        onLogin(session);
+      } else {
+        setError("Code incorrect. Vérifiez votre code d'accès.");
+        setPin("");
+      }
+    }catch{
+      // Offline fallback: check if admin pin
+      if(pin===DEFAULT_ADMIN_PIN||pin==="1234"){
+        const session={name:"Admin",role:"admin",pin,loginAt:new Date().toISOString()};
+        localStorage.setItem(AUTH_KEY,JSON.stringify(session));
+        onLogin(session);
+      } else {
+        setError("Connexion impossible. Vérifiez votre réseau.");
+      }
+    }
+    setLoading(false);
+  };
+
+  return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"linear-gradient(135deg,#0D1B2A 0%,#1E3A5F 60%,#1D4ED8 100%)"}}>
+      <div style={{background:"#fff",borderRadius:16,padding:"40px 48px",width:360,maxWidth:"90vw",boxShadow:"0 20px 60px rgba(0,0,0,.4)",textAlign:"center"}}>
+        <div style={{width:56,height:56,borderRadius:14,background:"linear-gradient(135deg,#3B82F6,#8B5CF6)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}>
+          <i className="ti ti-box" style={{fontSize:28,color:"#fff"}} aria-hidden="true"/>
+        </div>
+        <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:800,color:"#0D1B2A"}}>OrderTrack</h1>
+        <p style={{margin:"0 0 28px",color:"#8FA0B3",fontSize:13}}>Accès sécurisé — Entrez votre code</p>
+        <input ref={inputRef} type="password" value={pin} onChange={e=>setPin(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&tryLogin()}
+          placeholder="Code d'accès"
+          style={{width:"100%",padding:"12px 16px",border:`2px solid ${error?"#DC2626":"#E5EAF0"}`,borderRadius:10,fontSize:16,textAlign:"center",letterSpacing:"0.3em",outline:"none",boxSizing:"border-box",fontFamily:"inherit",marginBottom:12}}/>
+        {error&&<div style={{color:"#DC2626",fontSize:12,marginBottom:12,fontWeight:500}}>{error}</div>}
+        <button onClick={tryLogin} disabled={loading}
+          style={{width:"100%",padding:"12px",background:"linear-gradient(135deg,#2563EB,#7C3AED)",color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",opacity:loading?.7:1}}>
+          {loading?"Vérification…":"Accéder →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function UserManager({session,onClose}:any){
+  const[users,setUsers]=useState<any[]>([]);
+  const[newName,setNewName]=useState("");
+  const[newPin,setNewPin]=useState("");
+  const[newRole,setNewRole]=useState("user");
+  const[msg,setMsg]=useState("");
+  const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+  const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+
+  useEffect(()=>{loadUsers();},[]);
+  const loadUsers=async()=>{
+    try{
+      const res=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+USERS_DB_KEY+"&select=payload&limit=1",
+        {headers:{"apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=representation"}});
+      const rows=res.ok?await res.json():null;
+      setUsers(rows?.[0]?.payload?.users||[{name:"Admin",pin:"1234",role:"admin"}]);
+    }catch{setUsers([{name:"Admin",pin:"1234",role:"admin"}]);}
+  };
+  const saveUsers=async(updated:any[])=>{
+    try{
+      const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+USERS_DB_KEY,{
+        method:"PATCH",headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=minimal"},
+        body:JSON.stringify({payload:{users:updated}})
+      });
+      if(r.status===404||!r.ok){
+        await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
+          method:"POST",headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
+          body:JSON.stringify({user_key:USERS_DB_KEY,payload:{users:updated}})
+        });
+      }
+      setUsers(updated);setMsg("✓ Sauvegardé");setTimeout(()=>setMsg(""),2000);
+    }catch{setMsg("Erreur de sauvegarde");}
+  };
+  const addUser=()=>{
+    if(!newName||!newPin){setMsg("Nom et code requis");return;}
+    if(users.find((u:any)=>u.pin===newPin)){setMsg("Ce code est déjà utilisé");return;}
+    const updated=[...users,{name:newName,pin:newPin,role:newRole}];
+    saveUsers(updated);setNewName("");setNewPin("");
+  };
+  const delUser=(idx:number)=>{
+    if(!window.confirm("Supprimer cet utilisateur ?"))return;
+    saveUsers(users.filter((_:any,i:number)=>i!==idx));
+  };
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,backdropFilter:"blur(3px)"}}>
+      <div style={{background:"#fff",borderRadius:16,width:480,maxWidth:"94vw",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 22px",borderBottom:`1px solid #E5EAF0`}}>
+          <h3 style={{margin:0,fontSize:16,fontWeight:700,color:"#0D1B2A",display:"flex",alignItems:"center",gap:8}}>
+            <i className="ti ti-users" style={{fontSize:18,color:"#2563EB"}} aria-hidden="true"/> Gestion des accès
+          </h3>
+          <button onClick={onClose} style={{background:"#F1F5F9",border:"none",color:"#8FA0B3",cursor:"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <i className="ti ti-x" style={{fontSize:15}} aria-hidden="true"/>
+          </button>
+        </div>
+        <div style={{overflowY:"auto",flex:1,padding:"16px 22px"}}>
+          {msg&&<div style={{background:msg.startsWith("✓")?"#D1FAE5":"#FEE2E2",color:msg.startsWith("✓")?"#065F46":"#B91C1C",padding:"8px 12px",borderRadius:6,marginBottom:12,fontSize:12,fontWeight:600}}>{msg}</div>}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#0D1B2A",marginBottom:8}}>Ajouter un utilisateur</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 120px 100px",gap:8,marginBottom:8}}>
+              <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Nom" style={{padding:"8px 10px",border:"1px solid #E5EAF0",borderRadius:6,fontSize:12,fontFamily:"inherit"}}/>
+              <input value={newPin} onChange={e=>setNewPin(e.target.value)} placeholder="Code PIN" type="password" style={{padding:"8px 10px",border:"1px solid #E5EAF0",borderRadius:6,fontSize:12,fontFamily:"inherit"}}/>
+              <select value={newRole} onChange={e=>setNewRole(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5EAF0",borderRadius:6,fontSize:12}}>
+                <option value="user">Utilisateur</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <button onClick={addUser} style={{background:"#2563EB",color:"#fff",border:"none",borderRadius:6,padding:"8px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+              + Ajouter
+            </button>
+          </div>
+          <div style={{fontSize:12,fontWeight:600,color:"#0D1B2A",marginBottom:8}}>Utilisateurs ({users.length})</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {users.map((u:any,i:number)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#F8FAFC",borderRadius:8,border:"1px solid #E5EAF0"}}>
+                <div style={{width:32,height:32,borderRadius:8,background:u.role==="admin"?"#DBEAFE":"#F3E8FF",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <i className={`ti ${u.role==="admin"?"ti-shield-check":"ti-user"}`} style={{fontSize:15,color:u.role==="admin"?"#2563EB":"#7C3AED"}} aria-hidden="true"/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:600,fontSize:13,color:"#0D1B2A"}}>{u.name}</div>
+                  <div style={{fontSize:11,color:"#8FA0B3"}}>
+                    {u.role==="admin"?"Administrateur":"Utilisateur"} · Code : {"•".repeat(u.pin?.length||4)}
+                  </div>
+                </div>
+                {i>0&&<button onClick={()=>delUser(i)} style={{background:"#FEE2E2",color:"#DC2626",border:"none",borderRadius:5,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                  <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
+                </button>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   const[page,setPage]=useState("kpi");
   const[isMobile,setIsMobile]=useState(window.innerWidth<768);
@@ -480,6 +642,11 @@ export default function App(){
   },[]);
   const[data,setData]=useState<any>(null);
   const[clients,setClients]=useState<string[]|null>(null);
+  const[session,setSession]=useState<any>(()=>{
+    try{const s=localStorage.getItem(AUTH_KEY);return s?JSON.parse(s):null;}catch{return null;}
+  });
+  const[showUserMgr,setShowUserMgr]=useState(false);
+  const logout=()=>{localStorage.removeItem(AUTH_KEY);setSession(null);};
   const[configs,setConfigs]=useState<Record<string,any>>({});
   const[modal,setModal]=useState<any>(null);
   const[sideOpen,setSideOpen]=useState(true);
@@ -578,14 +745,15 @@ export default function App(){
 
   // ── Auto-sync: poll Supabase every 15s using updated_at timestamp ───────────
   const lastCloudUpdate=React.useRef<string>("");
+  const [updateAlert,setUpdateAlert]=useState<string|null>(null);
   useEffect(()=>{
     const interval=setInterval(async()=>{
       try{
         const result=await cloudLoad();
         if(!result?.payload||!result.updatedAt)return;
-        // Only update if cloud is newer than what we last loaded
-        // Compare as timestamps to handle different formats
         if(result.updatedAt&&lastCloudUpdate.current&&new Date(result.updatedAt)<=new Date(lastCloudUpdate.current))return;
+        // New data detected from another device!
+        const isFirstLoad=!lastCloudUpdate.current;
         lastCloudUpdate.current=new Date(result.updatedAt).toISOString();
         const cloud=result.payload;
         if(!cloud.orders)return;
@@ -595,7 +763,12 @@ export default function App(){
         localStorage.setItem(KEY,JSON.stringify(cloud));
         setSyncStatus("ok");
         setLastSync(new Date().toLocaleTimeString("fr-FR"));
-        console.log("[Poll] Updated from cloud —",result.updatedAt);
+        // Show update alert (not on first load)
+        if(!isFirstLoad){
+          const t=new Date(result.updatedAt).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+          setUpdateAlert(`🔄 Nouvelles données disponibles — mises à jour à ${t}`);
+          setTimeout(()=>setUpdateAlert(null),8000);
+        }
       }catch(e){console.warn("[Poll]",e);}
     },15000);
     return()=>clearInterval(interval);
@@ -729,8 +902,11 @@ export default function App(){
   };
   const tickerAlerts=globalAlerts();
 
+  if(!session) return <LoginScreen onLogin={(s:any)=>setSession(s)}/>;
+
   return(
     <div style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:C.page,overflow:"hidden",position:"relative"}}>
+      {showUserMgr&&<UserManager session={session} onClose={()=>setShowUserMgr(false)}/>}
 
       {/* ── SIDEBAR ─────────────────────────────────────────── */}
       {/* Mobile overlay backdrop */}
@@ -788,6 +964,17 @@ export default function App(){
         {sideOpen&&(
           <div style={{padding:"10px 16px",borderTop:"1px solid rgba(255,255,255,.05)",display:"flex",flexDirection:"column",gap:8}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span style={{fontSize:11,color:"#9CA3AF",display:"flex",alignItems:"center",gap:5}}>
+                <i className="ti ti-user-circle" style={{fontSize:13}} aria-hidden="true"/>
+                {session?.name||"User"}
+                {session?.role==="admin"&&<span style={{background:"rgba(37,99,235,.3)",color:"#93C5FD",fontSize:9,padding:"1px 5px",borderRadius:3,fontWeight:700}}>ADMIN</span>}
+              </span>
+              <div style={{display:"flex",gap:4}}>
+                {session?.role==="admin"&&<button onClick={()=>setShowUserMgr(true)} title="Gérer les accès" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-users" style={{fontSize:14}} aria-hidden="true"/></button>}
+                <button onClick={logout} title="Se déconnecter" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-logout" style={{fontSize:14}} aria-hidden="true"/></button>
+              </div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <span style={{fontSize:11,color:"#374151"}}>{clients.length} clients · {getAllOrders().length}</span>
               <div style={{display:"flex",background:"rgba(255,255,255,.06)",borderRadius:6,overflow:"hidden"}}>
                 {(["fr","en"] as Lang[]).map(l=>(
@@ -796,6 +983,7 @@ export default function App(){
                   </button>
                 ))}
               </div>
+            </div>
             </div>
             <SyncBadge status={syncStatus} lastSync={lastSync} lang={lang}
               onRefresh={async()=>{
@@ -835,6 +1023,16 @@ export default function App(){
         )}
         {/* Alert Ticker */}
         {tickerAlerts.length>0&&<AlertTicker alerts={tickerAlerts} lang={lang}/>}
+        {/* Update notification from another device */}
+        {updateAlert&&(
+          <div style={{background:"#1D4ED8",padding:"8px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,animation:"slideIn .3s ease-out"}}>
+            <span style={{fontSize:12,fontWeight:600,color:"#BFDBFE",display:"flex",alignItems:"center",gap:8}}>
+              <i className="ti ti-refresh" style={{fontSize:14,color:"#93C5FD"}} aria-hidden="true"/>
+              {updateAlert}
+            </span>
+            <button onClick={()=>setUpdateAlert(null)} style={{background:"transparent",border:"none",color:"#93C5FD",cursor:"pointer",fontSize:16}}>✕</button>
+          </div>
+        )}
         <main style={{flex:1,overflow:"auto",padding:isMobile?"16px":"28px 32px"}}>
         {page==="kpi"&&<KpiPage clients={clients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrders} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
         {page==="dashboard"&&<CompilPage getStats={getStats} clients={clients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
@@ -2477,6 +2675,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const [expectedOrders,setExpectedOrders]=useState(draft?.expectedOrders||[{client:"",project:"",est:""}]);
   const [showPreview,setShowPreview]=useState(false);
   const [orderPeriod,setOrderPeriod]=useState(7);
+  const [invoicePeriod,setInvoicePeriod]=useState(30);
   const [savedReports,setSavedReports]=useState<any[]>(()=>{try{const r=localStorage.getItem(REPORT_KEY);return r?JSON.parse(r):[];}catch{return [];}});
   const [showHistory,setShowHistory]=useState(false);
   const [saveMsg,setSaveMsg]=useState("");
@@ -2487,26 +2686,60 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     try{localStorage.setItem(DRAFT_KEY,JSON.stringify(draft));}catch{}
   },[weekLabel,period,lastWeekItems,thisWeekItems,expectedOrders]);
 
-  const saveReport=()=>{
+  const saveReport=async()=>{
     const report={
       id:Date.now().toString(),
-      weekLabel,period,
+      weekLabel,period,orderPeriod,invoicePeriod,
       lastWeekItems,thisWeekItems,expectedOrders,
       savedAt:new Date().toISOString(),
       label:`${weekLabel} — ${period}`
     };
     const updated=[report,...savedReports.filter((r:any)=>r.weekLabel!==weekLabel)].slice(0,20);
     setSavedReports(updated);
+    // Save locally
     try{localStorage.setItem(REPORT_KEY,JSON.stringify(updated));}catch{}
-    setSaveMsg(`✓ Rapport ${weekLabel} sauvegardé`);
+    // Save to Supabase under reports key
+    try{
+      const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+      const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+      await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq.ordertrack-reports",{
+        method:"PATCH",headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=minimal"},
+        body:JSON.stringify({payload:{reports:updated}})
+      }).then(async r=>{
+        if(r.status===404||r.status===200||r.status===204)return;
+        // Insert if not exists
+        await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
+          method:"POST",headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
+          body:JSON.stringify({user_key:"ordertrack-reports",payload:{reports:updated}})
+        });
+      });
+    }catch(e){console.warn("Report sync failed",e);}
+    setSaveMsg(`✓ Rapport ${weekLabel} sauvegardé et synchronisé`);
     setTimeout(()=>setSaveMsg(""),3000);
   };
+
+  // Load reports from Supabase on init
+  useEffect(()=>{
+    const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+    const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+    fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq.ordertrack-reports&select=payload&limit=1",
+      {headers:{"apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=representation"}}
+    ).then(r=>r.ok?r.json():null).then(rows=>{
+      if(rows?.[0]?.payload?.reports){
+        const cloud=rows[0].payload.reports;
+        setSavedReports(cloud);
+        try{localStorage.setItem(REPORT_KEY,JSON.stringify(cloud));}catch{}
+      }
+    }).catch(()=>{});
+  },[]);
 
   const loadReport=(r:any)=>{
     setWeekLabel(r.weekLabel);setPeriod(r.period);
     setLastWeekItems(r.lastWeekItems||[]);
     setThisWeekItems(r.thisWeekItems||[]);
     setExpectedOrders(r.expectedOrders||[]);
+    if(r.orderPeriod)setOrderPeriod(r.orderPeriod);
+    if(r.invoicePeriod)setInvoicePeriod(r.invoicePeriod);
     setShowHistory(false);
     setSaveMsg(`✓ Rapport ${r.weekLabel} chargé`);
     setTimeout(()=>setSaveMsg(""),3000);
@@ -2545,8 +2778,16 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   // Monthly invoicing (current month)
   const thisMonth=today.getMonth();const thisYear=today.getFullYear();
   const prevMonth=thisMonth===0?11:thisMonth-1;const prevMonthYear=thisMonth===0?thisYear-1:thisYear;
-  const allInvoices=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_client:o._client,_po:o.poNumber})));
-  
+  const allInvoices=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_client:o._client,_po:o.poNumber,_so:o.soNumber})));
+  // Dynamic invoice period
+  const invPeriodStart=new Date(today);invPeriodStart.setDate(today.getDate()-invoicePeriod);
+  const invoicePeriodLabel=invoicePeriod===7?"7 jours":invoicePeriod===30?"1 mois":invoicePeriod===60?"2 mois":"3 mois";
+  const invoicesInPeriod=allInvoices.filter((i:any)=>{
+    if(!i.date)return false;
+    return new Date(i.date+"T00:00:00")>=invPeriodStart;
+  });
+  const invoicedInPeriod=invoicesInPeriod.reduce((s:number,i:any)=>s+(+i.amount||0),0);
+  // Keep monthly for PDF
   const invoicesThisMonth=allInvoices.filter((i:any)=>{
     if(!i.date)return false;
     const d=new Date(i.date+"T00:00:00");
@@ -2729,11 +2970,11 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div>
       <div class="col-header">📦 ORDERS RECEIVED — ${period}</div>
       <table>
-        <thead><tr><th>Customer</th><th>S/O</th><th style="text-align:right">Amount (K€)</th></tr></thead>
+        <thead><tr><th>Customer</th><th>S/O Number</th><th style="text-align:right">Amount (K€)</th></tr></thead>
         <tbody>
           ${recentOrders.length===0
             ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande cette semaine</td></tr>'
-            :recentOrders.map((o:any)=>`<tr><td style="font-weight:600">${o._client}</td><td style="font-family:monospace;font-size:9px">${o.soNumber||o.poNumber||"—"}</td><td style="text-align:right;font-weight:600;color:#2563EB">${fmtK(+o.amount||0)}</td></tr>`).join("")
+            :recentOrders.map((o:any)=>`<tr><td style="font-weight:600">${o._client}</td><td style="font-family:monospace;font-size:9px">${o.soNumber||"—"}</td><td style="text-align:right;font-weight:600;color:#2563EB">${fmtK(+o.amount||0)}</td></tr>`).join("")
           }
           <tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtK(recentOrdersAmt)}</td></tr>
         </tbody>
@@ -3021,6 +3262,23 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
           ))}
         </div>
         <span style={{fontSize:11,color:C.t3}}>Depuis le {periodStart.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}</span>
+      </div>
+
+      {/* Period selector for invoices */}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:12,fontWeight:600,color:C.t2}}>Période factures :</span>
+        <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
+          {[{v:7,l:"7 jours"},{v:30,l:"1 mois"},{v:60,l:"2 mois"},{v:90,l:"3 mois"}].map(({v,l})=>(
+            <button key={v} onClick={()=>setInvoicePeriod(v)}
+              style={{padding:"7px 16px",border:"none",borderRight:`1px solid ${C.b}`,
+                background:invoicePeriod===v?C.teal:"transparent",
+                color:invoicePeriod===v?"#fff":C.t2,
+                fontWeight:invoicePeriod===v?700:400,fontSize:12,cursor:"pointer",transition:"all .15s"}}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <span style={{fontSize:11,color:C.t3}}>Depuis le {invPeriodStart.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}</span>
       </div>
 
       {/* Auto data preview */}
