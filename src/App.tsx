@@ -3998,40 +3998,75 @@ function CataloguePage({clients,lang,isMobile}:any){
           {previewRows.length>0&&(
             <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 20px"}}>
               <div style={{fontSize:13,fontWeight:600,color:C.t1,marginBottom:12}}>Aperçu — {pendingFile}</div>
-              {/* Column mapping */}
-              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(6,1fr)",gap:8,marginBottom:16}}>
+              {/* Visual column mapping - click on a column header to assign it */}
+              <div style={{fontSize:12,color:C.t2,marginBottom:10,lineHeight:1.6}}>
+                👇 <strong>Clique sur l'en-tête d'une colonne</strong> pour lui assigner un rôle.
+                Les colonnes en couleur sont déjà mappées.
+              </div>
+              {/* Legend */}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
                 {[
-                  {key:"pn",label:"Part Number *"},
-                  {key:"desc",label:"Description"},
-                  {key:"price",label:"Prix"},
-                  {key:"qty",label:"Quantité"},
-                  {key:"customer",label:"Customer"},
-                  {key:"avail",label:"Availability"},
-                ].map(({key,label})=>(
-                  <div key={key}>
-                    <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3,textTransform:"uppercase"}}>{label}</label>
-                    <select value={colMap[key]} onChange={e=>setColMap((m:any)=>({...m,[key]:+e.target.value}))}
-                      style={{width:"100%",padding:"6px 8px",border:`1px solid ${colMap[key]>=0?C.blue:C.b}`,borderRadius:5,fontSize:11,fontFamily:"inherit"}}>
-                      <option value={-1}>— Non mappé —</option>
-                      {previewRows[0]?.map((h:any,i:number)=><option key={i} value={i}>{String(h||`Col ${i+1}`)}</option>)}
-                    </select>
+                  {key:"pn",label:"Part Number *",color:C.blue,bg:C.blueL},
+                  {key:"desc",label:"Description",color:"#7C3AED",bg:"#EDE9FE"},
+                  {key:"price",label:"Prix",color:C.greenDk,bg:C.greenL},
+                  {key:"qty",label:"Quantité",color:C.amberDk,bg:C.amberL},
+                  {key:"customer",label:"Customer",color:"#0D9488",bg:"#CCFBF1"},
+                  {key:"avail",label:"Availability",color:"#BE185D",bg:"#FCE7F3"},
+                ].map(({key,label,color,bg})=>(
+                  <div key={key} style={{display:"flex",alignItems:"center",gap:5,padding:"3px 8px",borderRadius:99,background:colMap[key]>=0?bg:"#F1F5F9",border:`1px solid ${colMap[key]>=0?color:"#D1D5DB"}`}}>
+                    <span style={{width:8,height:8,borderRadius:99,background:colMap[key]>=0?color:"#D1D5DB",flexShrink:0}}/>
+                    <span style={{fontSize:10,fontWeight:600,color:colMap[key]>=0?color:"#9CA3AF"}}>
+                      {label} {colMap[key]>=0?`→ Col.${colMap[key]+1}`:"(non assigné)"}
+                    </span>
+                    {colMap[key]>=0&&<button onClick={()=>setColMap((m:any)=>({...m,[key]:-1}))} style={{background:"transparent",border:"none",color,cursor:"pointer",padding:0,fontSize:11,lineHeight:1}}>✕</button>}
                   </div>
                 ))}
               </div>
-              {/* Preview table */}
-              <div style={{overflowX:"auto",marginBottom:14}}>
+              {/* Interactive preview table */}
+              <div style={{overflowX:"auto",marginBottom:14,border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                  <thead><tr style={{background:"#F8FAFC"}}>
-                    {previewRows[0]?.map((h:any,i:number)=>(
-                      <th key={i} style={{padding:"6px 8px",textAlign:"left",color:Object.values(colMap).includes(i)?C.blueDk:C.t3,fontWeight:Object.values(colMap).includes(i)?700:400,fontSize:10,whiteSpace:"nowrap"}}>{String(h||`Col ${i+1}`)}</th>
-                    ))}
-                  </tr></thead>
+                  <thead>
+                    <tr>
+                      {previewRows[0]?.map((h:any,i:number)=>{
+                        const roleColors:any={pn:{c:C.blue,bg:C.blueL},desc:{c:"#7C3AED",bg:"#EDE9FE"},price:{c:C.greenDk,bg:C.greenL},qty:{c:C.amberDk,bg:C.amberL},customer:{c:"#0D9488",bg:"#CCFBF1"},avail:{c:"#BE185D",bg:"#FCE7F3"}};
+                        const role=Object.keys(colMap).find((k:string)=>colMap[k]===i);
+                        const rc=role?roleColors[role]:null;
+                        const ROLES=[{key:"pn",label:"PN *"},{key:"desc",label:"Desc"},{key:"price",label:"Prix"},{key:"qty",label:"Qté"},{key:"customer",label:"Client"},{key:"avail",label:"Dispo"}];
+                        return(
+                          <th key={i} style={{padding:0,border:`1px solid ${C.b}`,background:rc?rc.bg:"#F8FAFC",minWidth:80,position:"relative"}}>
+                            <div style={{padding:"6px 8px",display:"flex",flexDirection:"column",gap:3}}>
+                              <span style={{fontSize:10,fontWeight:700,color:rc?rc.c:C.t1}}>{String(h||`Col ${i+1}`)}</span>
+                              {/* Role selector */}
+                              <select value={role||""} onChange={e=>{
+                                const newKey=e.target.value;
+                                // Remove from previous
+                                const updated:any={...colMap};
+                                if(role)updated[role]=-1;
+                                if(newKey)updated[newKey]=i;
+                                setColMap(updated);
+                              }} style={{fontSize:9,padding:"2px 4px",border:`1px solid ${rc?rc.c:C.b}`,borderRadius:3,background:"#fff",color:rc?rc.c:C.t3,fontWeight:rc?600:400,cursor:"pointer"}}>
+                                <option value="">— Assigner —</option>
+                                {ROLES.map(r=><option key={r.key} value={r.key} disabled={colMap[r.key]>=0&&colMap[r.key]!==i}>{r.label}</option>)}
+                              </select>
+                            </div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
                   <tbody>
-                    {previewRows.slice(1,5).map((row:any,i:number)=>(
-                      <tr key={i} style={{borderBottom:`1px solid ${C.b}`}}>
-                        {row.map((cell:any,j:number)=>(
-                          <td key={j} style={{padding:"5px 8px",color:Object.values(colMap).includes(j)?C.t1:C.t3,fontWeight:Object.values(colMap).includes(j)?500:400}}>{String(cell||"")}</td>
-                        ))}
+                    {previewRows.slice(1,5).map((row:any,ri:number)=>(
+                      <tr key={ri} style={{borderBottom:`1px solid ${C.b}`,background:ri%2===0?"#fff":"#FAFBFD"}}>
+                        {row.map((cell:any,ci:number)=>{
+                          const roleColors:any={pn:{c:C.blue,bg:C.blueL},desc:{c:"#7C3AED",bg:"#EDE9FE"},price:{c:C.greenDk,bg:C.greenL},qty:{c:C.amberDk,bg:C.amberL},customer:{c:"#0D9488",bg:"#CCFBF1"},avail:{c:"#BE185D",bg:"#FCE7F3"}};
+                          const role=Object.keys(colMap).find((k:string)=>colMap[k]===ci);
+                          const rc=role?roleColors[role]:null;
+                          return(
+                            <td key={ci} style={{padding:"5px 8px",color:rc?rc.c:C.t3,fontWeight:rc?600:400,background:rc?`${rc.bg}60`:"transparent",fontSize:11}}>
+                              {String(cell||"")}
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>
