@@ -988,7 +988,8 @@ export default function App(){
             <SyncBadge status={syncStatus} lastSync={lastSync} lang={lang}
               onRefresh={async()=>{
                 setSyncStatus("syncing");
-                const cloud=await cloudLoad();
+                const result=await cloudLoad();
+                const cloud=result?.payload||null;
                 if(cloud){
                   setClients(cloud.clients||DEFAULT_CLIENTS);
                   setData(migrateRDT(cloud.orders||{}));
