@@ -3519,6 +3519,7 @@ function CataloguePage({clients,lang,isMobile}:any){
   const[uploading,setUploading]=useState(false);
   const[uploadMsg,setUploadMsg]=useState("");
   const[previewRows,setPreviewRows]=useState<any[]>([]);
+  const[allRows,setAllRows]=useState<any[]>([]);
   const[colMap,setColMap]=useState<any>({pn:-1,desc:-1,price:-1,qty:-1,customer:-1,avail:-1});
   const[pendingFile,setPendingFile]=useState<string>("");
   const[catSearch,setCatSearch]=useState("");
@@ -3558,9 +3559,10 @@ function CataloguePage({clients,lang,isMobile}:any){
         const headers=rows[0].map((x:any)=>String(x||""));
         const detected=detectColumns(headers);
         setColMap(detected);
-        setPreviewRows(rows.slice(0,6));
+        setAllRows(rows); // Store ALL rows
+        setPreviewRows(rows.slice(0,6)); // Only 5 for preview
         setPendingFile(file.name);
-        setUploadMsg(`${rows.length-1} lignes détectées — vérifiez le mapping des colonnes`);
+        setUploadMsg(`${rows.length-1} lignes détectées — vérifiez le mapping des colonnes ci-dessous`);
         setUploading(false);
         return;
       }
@@ -3571,15 +3573,11 @@ function CataloguePage({clients,lang,isMobile}:any){
   };
 
   const confirmImport=async()=>{
-    if(!previewRows.length||colMap.pn<0){setUploadMsg("Colonne PN non mappée");return;}
+    if(!allRows.length||colMap.pn<0){setUploadMsg("Colonne PN non mappée");return;}
     setUploading(true);setUploadMsg("Import en cours…");
-    const headers=previewRows[0];
-    const rows=previewRows.slice(1);
+    const rows=allRows.slice(1); // Skip header row, use ALL rows
     let imported=0,updated=0;
     const newProducts=[...products];
-    // Actually process ALL rows from the full parse (we only previewed 5)
-    // We need to re-parse — but we only have preview. For now use preview rows
-    // In full impl we'd store all rows
     for(const row of rows){
       const pnVal=String(row[colMap.pn]||"").trim();
       if(!pnVal)continue;
@@ -3609,21 +3607,31 @@ function CataloguePage({clients,lang,isMobile}:any){
       }
     }
     await saveProducts(newProducts);
-    setUploadMsg(`✓ ${imported} produits ajoutés, ${updated} mis à jour`);
-    setPreviewRows([]);setPendingFile("");
+    setUploadMsg(`✓ ${imported} produits ajoutés, ${updated} mis à jour (${rows.length} lignes traitées)`);
+    setPreviewRows([]);setAllRows([]);setPendingFile("");
     setUploading(false);
     if(fileRef.current)fileRef.current.value="";
   };
 
   // ── Quote line helpers ─────────────────────────────────────────────────────
   const lookupPN=(idx:number,pn:string)=>{
-    const found=products.filter((p:any)=>p.pn.toLowerCase()===pn.toLowerCase()||p.pn.toLowerCase().includes(pn.toLowerCase()));
+    // Exact match first, then partial
+    const exact=products.find((p:any)=>p.pn.toLowerCase()===pn.toLowerCase());
+    const partial=pn.length>=3?products.filter((p:any)=>
+      p.pn.toLowerCase().includes(pn.toLowerCase())||
+      (p.description||"").toLowerCase().includes(pn.toLowerCase())
+    ):[];
+    const found=exact?[exact,...partial.filter((p:any)=>p.pn!==exact.pn)]:partial;
+    const bestMatch=found[0];
     const opts=found.flatMap((p:any)=>(p.prices||[]).map((pr:any)=>({...pr,pn:p.pn,desc:p.description})));
-    setQLines(lines=>lines.map((l:any,i:number)=>i===idx?{...l,pn,
-      desc:found[0]?.description||l.desc,
+    // Sort by date descending
+    opts.sort((a:any,b:any)=>new Date(b.date).getTime()-new Date(a.date).getTime());
+    setQLines(lines=>lines.map((l:any,i:number)=>i===idx?{...l,
+      pn,
+      desc:bestMatch?.description||l.desc, // Auto-fill description
       priceOptions:opts,
       selectedPriceIdx:opts.length>0?0:-1,
-      unitPrice:opts[0]?.price||l.unitPrice
+      unitPrice:opts.length>0?opts[0].price:l.unitPrice // Auto-fill latest price
     }:l));
   };
 
@@ -3812,10 +3820,24 @@ function CataloguePage({clients,lang,isMobile}:any){
                 <tbody>
                   {qLines.map((line:any,idx:number)=>(
                     <tr key={idx} style={{borderBottom:`1px solid ${C.b}`}}>
-                      <td style={{padding:"8px 8px",verticalAlign:"top"}}>
+                      <td style={{padding:"8px 8px",verticalAlign:"top",position:"relative"}}>
                         <input value={line.pn} onChange={e=>lookupPN(idx,e.target.value)}
                           placeholder="ex: 96896506"
-                          style={{width:"100%",padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                          style={{width:"100%",padding:"6px 8px",border:`1px solid ${line.priceOptions?.length>0?C.green:C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                        {/* Suggestions dropdown */}
+                        {line.pn?.length>=2&&products.filter((p:any)=>p.pn.toLowerCase().includes(line.pn.toLowerCase())).slice(0,5).length>0&&line.priceOptions?.length===0&&(
+                          <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:`1px solid ${C.b}`,borderRadius:5,boxShadow:C.shMd,zIndex:50,maxHeight:180,overflowY:"auto"}}>
+                            {products.filter((p:any)=>p.pn.toLowerCase().includes(line.pn.toLowerCase())).slice(0,5).map((p:any)=>(
+                              <button key={p.pn} onClick={()=>lookupPN(idx,p.pn)}
+                                style={{display:"block",width:"100%",padding:"7px 10px",border:"none",background:"transparent",textAlign:"left",cursor:"pointer",borderBottom:`1px solid ${C.b}`,fontSize:11}}
+                                onMouseEnter={(e:any)=>e.currentTarget.style.background=C.blueL}
+                                onMouseLeave={(e:any)=>e.currentTarget.style.background="transparent"}>
+                                <div style={{fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{p.pn}</div>
+                                <div style={{color:C.t3,fontSize:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description||"—"}</div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td style={{padding:"8px 8px",verticalAlign:"top"}}>
                         <input value={line.desc} onChange={e=>updateLine(idx,"desc",e.target.value)}
