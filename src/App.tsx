@@ -3544,6 +3544,153 @@ const extractCustomer=(rows:any[][],headerIdx:number):string=>{
   return "";
 };
 
+// ─── MANUAL PRODUCT ENTRY ────────────────────────────────────────────────────
+function ManualProductEntry({products,saveProducts}:any){
+  const[pn,setPn]=useState("");
+  const[desc,setDesc]=useState("");
+  const[price,setPrice]=useState("");
+  const[date,setDate]=useState(new Date().toISOString().slice(0,10));
+  const[customer,setCustomer]=useState("");
+  const[msg,setMsg]=useState("");
+  const[editExisting,setEditExisting]=useState<any>(null);
+  const pnRef=useRef<HTMLInputElement>(null);
+
+  const handleAdd=async()=>{
+    if(!pn.trim()){setMsg("Le PN est obligatoire");return;}
+    const priceVal=parseFloat(price.replace(",","."))||0;
+    if(!priceVal){setMsg("Saisir un prix valide");return;}
+    const today=date||new Date().toISOString().slice(0,10);
+    const existing=products.findIndex((p:any)=>p.pn.toLowerCase()===pn.trim().toLowerCase());
+    const priceEntry={price:priceVal,currency:"EUR",customer:customer.trim(),date:today,source:"Saisie manuelle"};
+    let updated=[...products];
+    if(existing>=0){
+      // Update existing product
+      const prod={...updated[existing]};
+      if(desc.trim()&&desc.trim()!==pn.trim())prod.description=desc.trim();
+      prod.prices=[priceEntry,...(prod.prices||[])];
+      prod.lastUpdated=today;
+      updated[existing]=prod;
+      setMsg(`✓ Prix ajouté au produit existant : ${pn.trim()}`);
+    } else {
+      // New product
+      updated=[{
+        id:Date.now().toString()+Math.random().toString(36).slice(2,5),
+        pn:pn.trim(),
+        description:desc.trim()&&desc.trim()!==pn.trim()?desc.trim():"",
+        prices:[priceEntry],
+        lastUpdated:today
+      },...updated];
+      setMsg(`✓ Nouveau produit ajouté : ${pn.trim()}`);
+    }
+    await saveProducts(updated);
+    setPn("");setDesc("");setPrice("");setCustomer("");
+    setTimeout(()=>setMsg(""),3000);
+    pnRef.current?.focus();
+  };
+
+  // Check if PN already exists for live feedback
+  const existing=pn.trim()?products.find((p:any)=>p.pn.toLowerCase()===pn.trim().toLowerCase()):null;
+
+  return(
+    <div style={{background:"#fff",borderRadius:C.rLg,border:`2px solid ${C.blue}20`,boxShadow:C.sh,overflow:"hidden"}}>
+      <div style={{padding:"14px 20px",borderBottom:`1px solid ${C.b}`,background:`linear-gradient(135deg,${C.blueL},#fff)`,display:"flex",alignItems:"center",gap:8}}>
+        <i className="ti ti-keyboard" style={{fontSize:16,color:C.blue}} aria-hidden="true"/>
+        <span style={{fontWeight:700,fontSize:13,color:C.t1}}>Saisie manuelle — Ajouter un produit au catalogue</span>
+      </div>
+      <div style={{padding:"16px 20px"}}>
+        {msg&&(
+          <div style={{background:msg.startsWith("✓")?C.greenL:C.redL,color:msg.startsWith("✓")?C.greenDk:C.redDk,
+            padding:"8px 14px",borderRadius:6,marginBottom:12,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+            <i className={`ti ${msg.startsWith("✓")?"ti-check":"ti-alert-circle"}`} style={{fontSize:14}} aria-hidden="true"/>
+            {msg}
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr 1fr 1fr 1fr",gap:10,alignItems:"end"}}>
+          {/* PN */}
+          <div>
+            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>
+              Part Number *
+            </label>
+            <div style={{position:"relative"}}>
+              <input ref={pnRef} value={pn} onChange={e=>setPn(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&handleAdd()}
+                placeholder="ex: 96516993"
+                style={{width:"100%",padding:"8px 10px",
+                  border:`2px solid ${existing?C.amber:pn?C.blue:C.b}`,
+                  borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",
+                  background:existing?C.amberL:"#fff"}}/>
+              {existing&&(
+                <div style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",fontSize:10,color:C.amberDk,fontWeight:600,whiteSpace:"nowrap"}}>
+                  Existe déjà
+                </div>
+              )}
+            </div>
+            {existing&&<div style={{fontSize:10,color:C.amberDk,marginTop:2}}>Un prix sera ajouté à ce produit</div>}
+          </div>
+          {/* Description */}
+          <div>
+            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>Description</label>
+            <input value={desc||existing?.description||""} onChange={e=>setDesc(e.target.value)}
+              placeholder={existing?.description||"ex: CR5-10 A-A-A-E-HQQE 3x230/400 50HZ"}
+              style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",
+                background:existing?.description&&!desc?"#F8FAFC":"#fff",color:existing?.description&&!desc?C.t3:C.t1}}/>
+          </div>
+          {/* Price */}
+          <div>
+            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>Prix UP (€) *</label>
+            <input value={price} onChange={e=>setPrice(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleAdd()}
+              placeholder="ex: 791.78"
+              type="number" step="0.01" min="0"
+              style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+          {/* Date */}
+          <div>
+            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>Date</label>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+              style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+          {/* Add button */}
+          <div>
+            <button onClick={handleAdd}
+              style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+                background:pn&&price?C.blue:"#D1D5DB",color:"#fff",border:"none",
+                borderRadius:C.rSm,padding:"8px 12px",fontSize:12,fontWeight:700,
+                cursor:pn&&price?"pointer":"not-allowed",transition:"all .15s"}}>
+              <i className="ti ti-plus" style={{fontSize:14}} aria-hidden="true"/>
+              {existing?"Ajouter prix":"Ajouter"}
+            </button>
+          </div>
+        </div>
+        {/* Recent manual entries */}
+        {products.filter((p:any)=>p.prices?.some((pr:any)=>pr.source==="Saisie manuelle")).length>0&&(
+          <div style={{marginTop:14,borderTop:`1px solid ${C.b}`,paddingTop:12}}>
+            <div style={{fontSize:11,color:C.t3,fontWeight:600,marginBottom:8}}>Dernières saisies manuelles</div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {products
+                .filter((p:any)=>p.prices?.some((pr:any)=>pr.source==="Saisie manuelle"))
+                .slice(0,5)
+                .map((p:any)=>{
+                  const manualPrices=p.prices.filter((pr:any)=>pr.source==="Saisie manuelle");
+                  const latest=manualPrices[0];
+                  return(
+                    <div key={p.pn} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 10px",background:"#F8FAFC",borderRadius:5,border:`1px solid ${C.b}`}}>
+                      <span style={{fontWeight:700,color:C.blue,fontFamily:"monospace",fontSize:11,minWidth:80}}>{p.pn}</span>
+                      <span style={{flex:1,color:C.t2,fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description||"—"}</span>
+                      <span style={{fontWeight:700,color:C.greenDk,fontSize:11,whiteSpace:"nowrap"}}>{fmt(latest?.price)} €</span>
+                      <span style={{color:C.t3,fontSize:10}}>{latest?.date}</span>
+                    </div>
+                  );
+                })
+              }
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── CATALOGUE PAGE ───────────────────────────────────────────────────────────
 function CataloguePage({clients,lang,isMobile}:any){
   const[tab,setTab]=useState<"upload"|"catalogue"|"devis">("devis");
@@ -4078,6 +4225,9 @@ function CataloguePage({clients,lang,isMobile}:any){
       {/* ── TAB: IMPORT ───────────────────────────────────────────────────── */}
       {tab==="upload"&&(
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {/* Manual entry section */}
+          <ManualProductEntry products={products} saveProducts={saveProducts}/>
+
           <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"20px"}}>
             <div style={{fontSize:13,fontWeight:600,color:C.t1,marginBottom:6}}>Importer une liste de prix Excel</div>
             <div style={{fontSize:12,color:C.t3,marginBottom:16,lineHeight:1.6}}>
