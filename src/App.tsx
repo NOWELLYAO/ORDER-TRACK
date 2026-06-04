@@ -3785,6 +3785,9 @@ function CataloguePage({clients,lang,isMobile}:any){
   const[qDate,setQDate]=useState(new Date().toISOString().slice(0,10));
   const[qValidity,setQValidity]=useState("30");
   const[qNotes,setQNotes]=useState("");
+  const[qClientManual,setQClientManual]=useState("");
+  const[qClientAddr,setQClientAddr]=useState("");
+  const[useManualClient,setUseManualClient]=useState(false);
 
   useEffect(()=>{
     // 1. Load from localStorage instantly
@@ -4141,11 +4144,12 @@ function CataloguePage({clients,lang,isMobile}:any){
 
   // ── Generate quote PDF ─────────────────────────────────────────────────────
   const generateQuote=async()=>{
-    if(!qClient){alert("Sélectionnez un client");return;}
+    const effectiveClient=useManualClient?qClientManual:qClient;
+    if(!effectiveClient){alert("Sélectionnez ou saisissez un client");return;}
     if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert("Ajoutez au moins une ligne avec PN et prix");return;}
     // Save quote
     const quote={
-      id:Date.now().toString(),number:qRef,client:qClient,date:qDate,
+      id:Date.now().toString(),number:qRef,client:effectiveClient,date:qDate,
       validity:qValidity,notes:qNotes,
       lines:qLines.filter((l:any)=>l.pn),
       totalHT,
@@ -4188,7 +4192,8 @@ function CataloguePage({clients,lang,isMobile}:any){
   <!-- Client -->
   <div style="margin-bottom:24px">
     <div style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Destinataire</div>
-    <div style="font-size:14px;font-weight:700;color:#0D1B2A">${qClient}</div>
+    <div style="font-size:14px;font-weight:700;color:#0D1B2A">${effectiveClient}</div>
+    ${(useManualClient&&qClientAddr)?`<div style="font-size:11px;color:#6B7280;margin-top:3px;line-height:1.6">${qClientAddr.replace(/\n/g,"<br/>")}</div>`:""}
   </div>
   <!-- Table -->
   <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
@@ -4206,7 +4211,7 @@ function CataloguePage({clients,lang,isMobile}:any){
     <tfoot>
       <tr style="background:#F8FAFC">
         <td colspan="4" style="padding:10px;text-align:right;font-weight:700;font-size:13px">TOTAL HT</td>
-        <td style="padding:10px;text-align:right;font-weight:800;font-size:14px;color:#E2051B">${fmt(totalHT)} €</td>
+        <td style="padding:10px;text-align:right;font-weight:800;font-size:14px;color:#1D4ED8">${fmt(totalHT)} €</td>
         <td></td>
       </tr>
     </tfoot>
@@ -4214,7 +4219,7 @@ function CataloguePage({clients,lang,isMobile}:any){
   ${qNotes?`<div style="background:#F8FAFC;border:1px solid #E5EAF0;border-radius:6px;padding:12px 14px;margin-bottom:20px"><div style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;margin-bottom:4px">Notes</div><div style="font-size:11px;color:#374151">${qNotes}</div></div>`:""}
   <div style="margin-top:30px;padding-top:16px;border-top:1px solid #E5EAF0;display:flex;justify-content:space-between;font-size:10px;color:#9CA3AF">
     <span>Ce devis est valable ${qValidity} jours à compter de la date d'émission.</span>
-    <span>Grundfos — kyao@grundfos.com</span>
+    <span>GRUNDFOS — kyao@grundfos.com</span>
   </div>
 <script>setTimeout(()=>window.print(),400);</script>
 </body></html>`);
@@ -4268,13 +4273,32 @@ function CataloguePage({clients,lang,isMobile}:any){
                 <input value={qRef} onChange={e=>setQRef(e.target.value)}
                   style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
               </div>
-              <div>
+              <div style={{gridColumn:"span 1"}}>
                 <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Client</label>
-                <select value={qClient} onChange={e=>setQClient(e.target.value)}
-                  style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>
-                  <option value="">— Sélectionner —</option>
-                  {(clients||[]).map((c:string)=><option key={c} value={c}>{c}</option>)}
-                </select>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <div style={{display:"flex",gap:6}}>
+                    <select value={useManualClient?"__manual__":qClient}
+                      onChange={e=>{
+                        if(e.target.value==="__manual__"){setUseManualClient(true);}
+                        else{setUseManualClient(false);setQClient(e.target.value);}
+                      }}
+                      style={{flex:1,padding:"8px 10px",border:`1px solid ${useManualClient?C.purple:C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>
+                      <option value="">— Sélectionner —</option>
+                      {(clients||[]).map((c:string)=><option key={c} value={c}>{c}</option>)}
+                      <option value="__manual__">✏️ Saisir manuellement…</option>
+                    </select>
+                  </div>
+                  {useManualClient&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      <input value={qClientManual} onChange={e=>setQClientManual(e.target.value)}
+                        placeholder="Nom du client *"
+                        style={{padding:"7px 10px",border:`2px solid ${C.purple}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                      <textarea value={qClientAddr} onChange={e=>setQClientAddr(e.target.value)}
+                        placeholder={"Adresse (optionnel)\nBP 123, Abidjan\nCôte d'Ivoire"} rows={3}
+                        style={{padding:"7px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:11,fontFamily:"inherit",resize:"none",boxSizing:"border-box"}}/>
+                    </div>
+                  )}
+                </div>
               </div>
               <div>
                 <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Date</label>
