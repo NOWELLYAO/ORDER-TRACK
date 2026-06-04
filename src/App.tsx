@@ -3566,7 +3566,7 @@ const findHeaderRow=(rows:any[][]):{headerIdx:number,colMap:any}=>{
     let score=0;
     // Strong indicators
     if(headers.some((h:string)=>h==="pn"||h==="part number"||h==="p/n"||h==="référence"))score+=3;
-    if(headers.some((h:string)=>h.includes("up")||h==="price"||h==="prix"||h==="tarif"||h==="cost"))score+=3;
+    if(headers.some((h:string)=>h.includes("up")||h.includes("p.u")||h.includes("pu.")||h==="price"||h==="prix"||h==="tarif"||h==="cost"))score+=3;
     if(headers.some((h:string)=>h.includes("description")||h==="product"||h.includes("désign")))score+=2;
     if(headers.some((h:string)=>h.includes("qty")||h.includes("quantit")||h.includes("stock")))score+=1;
     if(headers.some((h:string)=>h.includes("customer")||h.includes("client")))score+=1;
