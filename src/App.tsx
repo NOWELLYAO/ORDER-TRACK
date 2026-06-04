@@ -4176,15 +4176,14 @@ function CataloguePage({clients,lang,isMobile}:any){
   @media print{body{padding:15mm 14mm;}}
 </style></head><body>
   <!-- Header -->
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;padding-bottom:20px;border-bottom:3px solid #E2051B">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;padding-bottom:20px;border-bottom:3px solid #1D4ED8">
     <div>
-      <div style="font-size:22px;font-weight:900;color:#E2051B;letter-spacing:-.02em">GRUNDFOS</div>
-      <div style="font-size:11px;color:#6B7280;margin-top:4px">Pumps · Valves · Drives</div>
+      <div style="font-size:22px;font-weight:900;color:#1D4ED8;letter-spacing:-.02em">GRUNDFOS</div>
       <div style="font-size:11px;color:#6B7280;margin-top:2px">kyao@grundfos.com</div>
     </div>
     <div style="text-align:right">
       <div style="font-size:18px;font-weight:800;color:#0D1B2A">DEVIS</div>
-      <div style="font-size:13px;font-weight:700;color:#E2051B;margin-top:4px">${qRef}</div>
+      <div style="font-size:13px;font-weight:700;color:#1D4ED8;margin-top:4px">${qRef}</div>
       <div style="font-size:11px;color:#6B7280;margin-top:4px">Date : ${new Date(qDate).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</div>
       <div style="font-size:11px;color:#6B7280">Validité : ${qValidity} jours</div>
     </div>
