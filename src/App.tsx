@@ -3787,57 +3787,58 @@ function CataloguePage({clients,lang,isMobile}:any){
   const[qNotes,setQNotes]=useState("");
 
   useEffect(()=>{
-    // 1. Load from localStorage INSTANTLY — this is the primary source
+    // 1. Load from localStorage instantly
     const{data:localCat,ts:localCatTs}=loadCatLocal();
-    const{data:localQuot,ts:localQuotTs}=loadQuotLocal();
+    const{data:localQuot}=loadQuotLocal();
     if(localCat&&localCat.length>0){setProducts(localCat);setLoading(false);}
     if(localQuot&&localQuot.length>0){setQuotes(localQuot);setLoading(false);}
-    
-    // 2. Check Supabase ONLY to get data from OTHER devices
+
+    // 2. Always fetch from Supabase to get latest cross-device data
     (async()=>{
-      if(!localCat||localCat.length===0)setLoading(true);
       try{
         const catData=await sbGet(CAT_KEY);
-        if(catData?.products&&catData.products.length>0){
-          const cloudTs=catData._updatedAt||catData.ts||"";
-          const localIsNewer=localCatTs&&cloudTs&&(new Date(localCatTs)>new Date(cloudTs));
+        const cloudProds=catData?.products||[];
+        const localProds=localCat||[];
+        const cloudTs=catData?._updatedAt||catData?.ts||"";
+        const localIsNewer=localCatTs&&cloudTs&&(new Date(localCatTs)>new Date(cloudTs));
+
+        if(cloudProds.length>0&&localProds.length===0){
+          // Other device: load from cloud
+          setProducts(cloudProds);saveCatLocal(cloudProds);
+          setSyncStatus("ok");setSyncMsg(`✓ ${cloudProds.length} produits chargés depuis le cloud`);
+        } else if(cloudProds.length>0&&localProds.length>0){
           if(localIsNewer){
-            // Local is newer — push to cloud
-            console.log("[Catalogue] Local newer, pushing to cloud");
-            const ok=await sbSet(CAT_KEY,{products:localCat,ts:localCatTs});
-            setSyncStatus(ok?"ok":"error");
-            setSyncMsg(ok?`✓ ${(localCat||[]).length} produits synchronisés`:"⚠️ Sync cloud échouée");
+            // Local newer: merge and push
+            const cloudPNs=new Set(cloudProds.map((p:any)=>p.pn));
+            const localOnly=localProds.filter((p:any)=>!cloudPNs.has(p.pn));
+            const merged=[...cloudProds,...localOnly];
+            if(merged.length>localProds.length){setProducts(merged);saveCatLocal(merged);}
+            await sbSet(CAT_KEY,{products:merged.length>localProds.length?merged:localProds,ts:new Date().toISOString()});
+            setSyncStatus("ok");setSyncMsg(`✓ ${Math.max(merged.length,localProds.length)} produits synchronisés`);
           } else {
-            // Cloud is authoritative — merge: keep ALL products from both
-            const localPNs=new Set((localCat||[]).map((p:any)=>p.pn));
-            const cloudOnly=catData.products.filter((p:any)=>!localPNs.has(p.pn));
-            const merged=[...(localCat||[]),...cloudOnly];
-            // Use cloud if it has more products OR if local is empty
-            const final=(!localCat||localCat.length===0)?catData.products:
-                         catData.products.length>merged.length?catData.products:merged;
-            setProducts(final);
-            saveCatLocal(final);
-            setSyncStatus("ok");
-            setSyncMsg(`✓ ${final.length} produits chargés depuis le cloud`);
+            // Cloud newer or equal: merge cloud+local
+            const cloudPNs=new Set(cloudProds.map((p:any)=>p.pn));
+            const localOnly=localProds.filter((p:any)=>!cloudPNs.has(p.pn));
+            const merged=[...cloudProds,...localOnly];
+            setProducts(merged);saveCatLocal(merged);
+            setSyncStatus("ok");setSyncMsg(`✓ ${merged.length} produits synchronisés`);
           }
-        } else if(!localCat||localCat.length===0){
-          setProducts([]);
-          setSyncStatus("idle");
-          setSyncMsg("Catalogue vide — importez des fichiers");
+        } else if(cloudProds.length===0&&localProds.length>0){
+          // Cloud empty: push local
+          await sbSet(CAT_KEY,{products:localProds,ts:localCatTs||new Date().toISOString()});
+          setSyncStatus("ok");setSyncMsg(`✓ ${localProds.length} produits envoyés vers le cloud`);
         } else {
-          // Cloud empty but local has data — push local to cloud
-          console.log("[Catalogue] Cloud empty, pushing local");
-          await sbSet(CAT_KEY,{products:localCat,ts:localCatTs});
-          setSyncStatus("ok");
-          setSyncMsg(`✓ ${(localCat||[]).length} produits synchronisés`);
+          setSyncStatus("idle");setSyncMsg("Catalogue vide — importez des fichiers");
         }
+
         const quotData=await sbGet(QUOT_KEY);
-        if(quotData?.quotes&&quotData.quotes.length>0){
-          if(!localQuot||quotData.quotes.length>=localQuot.length){
-            setQuotes(quotData.quotes);saveQuotLocal(quotData.quotes);
-          }
+        if(quotData?.quotes?.length>0){
+          setQuotes(quotData.quotes);saveQuotLocal(quotData.quotes);
         }
-      }catch(e){console.warn("[Catalogue] Load error",e);}
+      }catch(e){
+        console.warn("[Catalogue] Load error",e);
+        setSyncStatus("error");setSyncMsg("⚠️ Erreur de connexion cloud");
+      }
       setLoading(false);
     })();
   },[]);
@@ -3863,17 +3864,62 @@ function CataloguePage({clients,lang,isMobile}:any){
   };
 
   const forceSync=async()=>{
-    setSyncStatus("syncing");setSyncMsg("Synchronisation forcée…");
-    const{data:localCat}=loadCatLocal();
-    const p=localCat||products;
-    const ts=new Date().toISOString();
-    const ok=await sbSet(CAT_KEY,{products:p,ts});
-    if(ok){
-      setSyncStatus("ok");
-      setSyncMsg(`✓ ${p.length} produits synchronisés — ${new Date().toLocaleTimeString("fr-FR")}`);
-    } else {
+    setSyncStatus("syncing");setSyncMsg("Connexion au cloud…");
+    try{
+      // 1. Always fetch cloud first
+      const catData=await sbGet(CAT_KEY);
+      const{data:localCat,ts:localTs}=loadCatLocal();
+      const cloudProds=catData?.products||[];
+      const localProds=localCat||products||[];
+      const cloudTs=catData?._updatedAt||catData?.ts||"";
+
+      if(cloudProds.length===0&&localProds.length===0){
+        setSyncStatus("idle");setSyncMsg("Catalogue vide des deux côtés");return;
+      }
+      if(cloudProds.length===0&&localProds.length>0){
+        // Push local to cloud
+        const ts=new Date().toISOString();
+        const ok=await sbSet(CAT_KEY,{products:localProds,ts});
+        setSyncStatus(ok?"ok":"error");
+        setSyncMsg(ok?`✓ ${localProds.length} produits envoyés vers le cloud`:"⚠️ Échec envoi cloud");
+        return;
+      }
+      if(localProds.length===0&&cloudProds.length>0){
+        // Pull from cloud
+        setProducts(cloudProds);saveCatLocal(cloudProds);
+        setSyncStatus("ok");
+        setSyncMsg(`✓ ${cloudProds.length} produits chargés depuis le cloud`);
+        return;
+      }
+      // Both have data — merge intelligently
+      const localIsNewer=localTs&&cloudTs&&(new Date(localTs)>new Date(cloudTs));
+      if(localIsNewer){
+        // Merge: local + cloud-only products
+        const localPNs=new Set(localProds.map((p:any)=>p.pn));
+        const cloudOnly=cloudProds.filter((p:any)=>!localPNs.has(p.pn));
+        const merged=[...localProds,...cloudOnly];
+        setProducts(merged);saveCatLocal(merged);
+        const ts=new Date().toISOString();
+        await sbSet(CAT_KEY,{products:merged,ts});
+        setSyncStatus("ok");
+        setSyncMsg(`✓ ${merged.length} produits (fusion local+cloud)`);
+      } else {
+        // Cloud is newer — merge: cloud + local-only products
+        const cloudPNs=new Set(cloudProds.map((p:any)=>p.pn));
+        const localOnly=localProds.filter((p:any)=>!cloudPNs.has(p.pn));
+        const merged=[...cloudProds,...localOnly];
+        setProducts(merged);saveCatLocal(merged);
+        if(localOnly.length>0){
+          const ts=new Date().toISOString();
+          await sbSet(CAT_KEY,{products:merged,ts});
+        }
+        setSyncStatus("ok");
+        setSyncMsg(`✓ ${merged.length} produits synchronisés`);
+      }
+    }catch(e){
       setSyncStatus("error");
-      setSyncMsg("⚠️ Échec. Vérifiez votre connexion.");
+      setSyncMsg("⚠️ Erreur de connexion");
+      console.warn("[forceSync]",e);
     }
   };
 
