@@ -3463,10 +3463,35 @@ const sbSet=async(key:string,payload:any)=>{
 // Also cache catalogue in localStorage to survive page refresh
 const CAT_LS_KEY="ordertrack_catalogue_cache";
 const QUOT_LS_KEY="ordertrack_quotes_cache";
-const saveCatLocal=(p:any[])=>{try{localStorage.setItem(CAT_LS_KEY,JSON.stringify(p));}catch{}};
-const loadCatLocal=():any[]|null=>{try{const d=localStorage.getItem(CAT_LS_KEY);return d?JSON.parse(d):null;}catch{return null;}};
-const saveQuotLocal=(q:any[])=>{try{localStorage.setItem(QUOT_LS_KEY,JSON.stringify(q));}catch{}};
-const loadQuotLocal=():any[]|null=>{try{const d=localStorage.getItem(QUOT_LS_KEY);return d?JSON.parse(d):null;}catch{return null;}};
+const CAT_TS_KEY=CAT_LS_KEY+"_ts";
+const QUOT_TS_KEY=QUOT_LS_KEY+"_ts";
+
+const saveCatLocal=(p:any[])=>{
+  try{
+    localStorage.setItem(CAT_LS_KEY,JSON.stringify(p));
+    localStorage.setItem(CAT_TS_KEY,new Date().toISOString());
+  }catch{}
+};
+const loadCatLocal=():{data:any[]|null,ts:string}=>{
+  try{
+    const d=localStorage.getItem(CAT_LS_KEY);
+    const ts=localStorage.getItem(CAT_TS_KEY)||"";
+    return{data:d?JSON.parse(d):null,ts};
+  }catch{return{data:null,ts:""};}
+};
+const saveQuotLocal=(q:any[])=>{
+  try{
+    localStorage.setItem(QUOT_LS_KEY,JSON.stringify(q));
+    localStorage.setItem(QUOT_TS_KEY,new Date().toISOString());
+  }catch{}
+};
+const loadQuotLocal=():{data:any[]|null,ts:string}=>{
+  try{
+    const d=localStorage.getItem(QUOT_LS_KEY);
+    const ts=localStorage.getItem(QUOT_TS_KEY)||"";
+    return{data:d?JSON.parse(d):null,ts};
+  }catch{return{data:null,ts:""};}
+};
 
 const AVAIL_OPTIONS=["Stock","2-4 weeks EXW","4-6 weeks EXW","6-8 weeks EXW","8-10 weeks EXW","10-12 weeks EXW","12-14 weeks EXW","14-18 weeks EXW","18-24 weeks EXW","24-28 weeks EXW"];
 
@@ -3744,32 +3769,56 @@ function CataloguePage({clients,lang,isMobile}:any){
   const[qNotes,setQNotes]=useState("");
 
   useEffect(()=>{
-    // 1. Load from localStorage instantly (no blank screen)
-    const localCat=loadCatLocal();
-    const localQuot=loadQuotLocal();
-    if(localCat)setProducts(localCat);
-    if(localQuot)setQuotes(localQuot);
-    if(localCat||localQuot)setLoading(false);
-    // 2. Sync from Supabase in background
+    // 1. Load from localStorage INSTANTLY — this is the primary source
+    const{data:localCat,ts:localCatTs}=loadCatLocal();
+    const{data:localQuot,ts:localQuotTs}=loadQuotLocal();
+    if(localCat&&localCat.length>0){setProducts(localCat);setLoading(false);}
+    if(localQuot&&localQuot.length>0){setQuotes(localQuot);setLoading(false);}
+    
+    // 2. Check Supabase ONLY to get data from OTHER devices
     (async()=>{
-      setLoading(true);
-      const catData=await sbGet(CAT_KEY);
-      const quotData=await sbGet(QUOT_KEY);
-      if(catData?.products){setProducts(catData.products);saveCatLocal(catData.products);}
-      if(quotData?.quotes){setQuotes(quotData.quotes);saveQuotLocal(quotData.quotes);}
+      if(!localCat||localCat.length===0)setLoading(true);
+      try{
+        const catData=await sbGet(CAT_KEY);
+        if(catData?.products&&catData.products.length>0){
+          const cloudTs=catData.updatedAt||catData.ts||"";
+          const localIsNewer=localCatTs&&cloudTs&&new Date(localCatTs)>new Date(cloudTs);
+          if(localIsNewer){
+            // Local is newer — push local to cloud
+            console.log("[Catalogue] Local newer, pushing to cloud");
+            await sbSet(CAT_KEY,{products:localCat,ts:localCatTs});
+          } else if(catData.products.length>=(localCat?.length||0)){
+            // Cloud has same or more products — use cloud
+            setProducts(catData.products);
+            saveCatLocal(catData.products);
+          }
+          // else: local has more products (from this device imports) — keep local
+        } else if(!localCat||localCat.length===0){
+          // Nothing anywhere — start fresh
+          setProducts([]);
+        }
+        const quotData=await sbGet(QUOT_KEY);
+        if(quotData?.quotes&&quotData.quotes.length>0){
+          if(!localQuot||quotData.quotes.length>=localQuot.length){
+            setQuotes(quotData.quotes);saveQuotLocal(quotData.quotes);
+          }
+        }
+      }catch(e){console.warn("[Catalogue] Load error",e);}
       setLoading(false);
     })();
   },[]);
 
   const saveProducts=async(p:any[])=>{
     setProducts(p);
-    saveCatLocal(p); // Save locally immediately
-    await sbSet(CAT_KEY,{products:p}); // Then sync to cloud
+    saveCatLocal(p); // Immediate local save with timestamp
+    // Push to Supabase with timestamp
+    const ts=new Date().toISOString();
+    await sbSet(CAT_KEY,{products:p,ts});
   };
   const saveQuotes=async(q:any[])=>{
     setQuotes(q);
     saveQuotLocal(q);
-    await sbSet(QUOT_KEY,{quotes:q});
+    await sbSet(QUOT_KEY,{quotes:q,ts:new Date().toISOString()});
   };
 
   // ── File upload & parse ────────────────────────────────────────────────────
