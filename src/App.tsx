@@ -3443,21 +3443,37 @@ const CAT_B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
 
 const sbGet=async(key:string)=>{
   try{
-    const r=await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K+"&user_key=eq."+key+"&select=payload&limit=1",
+    const r=await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K+"&user_key=eq."+key+"&select=payload,updated_at&limit=1",
       {headers:{"apikey":CAT_K,"Authorization":"Bearer "+CAT_K,"Prefer":"return=representation"}});
-    const d=r.ok?await r.json():null;
-    return d?.[0]?.payload||null;
-  }catch{return null;}
+    if(!r.ok)return null;
+    const d=await r.json();
+    if(!d?.[0])return null;
+    return{...d[0].payload,_updatedAt:d[0].updated_at};
+  }catch(e){console.warn("[sbGet]",key,e);return null;}
 };
-const sbSet=async(key:string,payload:any)=>{
-  // Always use upsert via POST with merge-duplicates — most reliable
+const sbSet=async(key:string,payload:any):Promise<boolean>=>{
   try{
-    await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K,{
+    // Step 1: try PATCH (update existing row)
+    const patch=await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K+"&user_key=eq."+key,{
+      method:"PATCH",
+      headers:{"Content-Type":"application/json","apikey":CAT_K,"Authorization":"Bearer "+CAT_K,"Prefer":"return=minimal"},
+      body:JSON.stringify({payload,updated_at:new Date().toISOString()})
+    });
+    if(patch.status===204||patch.status===200){
+      console.log("[sbSet] PATCH OK:",key);
+      return true;
+    }
+    // Step 2: if no row, INSERT
+    const post=await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K,{
       method:"POST",
       headers:{"Content-Type":"application/json","apikey":CAT_K,"Authorization":"Bearer "+CAT_K,"Prefer":"resolution=merge-duplicates,return=minimal"},
       body:JSON.stringify({user_key:key,payload})
     });
-  }catch(e){console.warn("sbSet error",e);}
+    const ok=post.status===201||post.status===200||post.status===204;
+    console.log("[sbSet] POST:",key,"status:",post.status,ok?"OK":"FAIL");
+    if(!ok){const e=await post.text();console.warn("[sbSet] Error:",e);}
+    return ok;
+  }catch(e){console.warn("[sbSet] Exception:",key,e);return false;}
 };
 
 // Also cache catalogue in localStorage to survive page refresh
@@ -3737,6 +3753,8 @@ function CataloguePage({clients,lang,isMobile}:any){
   const[products,setProducts]=useState<any[]>([]);
   const[quotes,setQuotes]=useState<any[]>([]);
   const[loading,setLoading]=useState(true);
+  const[syncStatus,setSyncStatus]=useState<"idle"|"syncing"|"ok"|"error">("idle");
+  const[syncMsg,setSyncMsg]=useState("");
   const[uploading,setUploading]=useState(false);
   const[uploadMsg,setUploadMsg]=useState("");
   const[multiFiles,setMultiFiles]=useState<File[]>([]);
@@ -3781,21 +3799,37 @@ function CataloguePage({clients,lang,isMobile}:any){
       try{
         const catData=await sbGet(CAT_KEY);
         if(catData?.products&&catData.products.length>0){
-          const cloudTs=catData.updatedAt||catData.ts||"";
-          const localIsNewer=localCatTs&&cloudTs&&new Date(localCatTs)>new Date(cloudTs);
+          const cloudTs=catData._updatedAt||catData.ts||"";
+          const localIsNewer=localCatTs&&cloudTs&&(new Date(localCatTs)>new Date(cloudTs));
           if(localIsNewer){
-            // Local is newer — push local to cloud
+            // Local is newer — push to cloud
             console.log("[Catalogue] Local newer, pushing to cloud");
-            await sbSet(CAT_KEY,{products:localCat,ts:localCatTs});
-          } else if(catData.products.length>=(localCat?.length||0)){
-            // Cloud has same or more products — use cloud
-            setProducts(catData.products);
-            saveCatLocal(catData.products);
+            const ok=await sbSet(CAT_KEY,{products:localCat,ts:localCatTs});
+            setSyncStatus(ok?"ok":"error");
+            setSyncMsg(ok?`✓ ${(localCat||[]).length} produits synchronisés`:"⚠️ Sync cloud échouée");
+          } else {
+            // Cloud is authoritative — merge: keep ALL products from both
+            const localPNs=new Set((localCat||[]).map((p:any)=>p.pn));
+            const cloudOnly=catData.products.filter((p:any)=>!localPNs.has(p.pn));
+            const merged=[...(localCat||[]),...cloudOnly];
+            // Use cloud if it has more products OR if local is empty
+            const final=(!localCat||localCat.length===0)?catData.products:
+                         catData.products.length>merged.length?catData.products:merged;
+            setProducts(final);
+            saveCatLocal(final);
+            setSyncStatus("ok");
+            setSyncMsg(`✓ ${final.length} produits chargés depuis le cloud`);
           }
-          // else: local has more products (from this device imports) — keep local
         } else if(!localCat||localCat.length===0){
-          // Nothing anywhere — start fresh
           setProducts([]);
+          setSyncStatus("idle");
+          setSyncMsg("Catalogue vide — importez des fichiers");
+        } else {
+          // Cloud empty but local has data — push local to cloud
+          console.log("[Catalogue] Cloud empty, pushing local");
+          await sbSet(CAT_KEY,{products:localCat,ts:localCatTs});
+          setSyncStatus("ok");
+          setSyncMsg(`✓ ${(localCat||[]).length} produits synchronisés`);
         }
         const quotData=await sbGet(QUOT_KEY);
         if(quotData?.quotes&&quotData.quotes.length>0){
@@ -3810,15 +3844,37 @@ function CataloguePage({clients,lang,isMobile}:any){
 
   const saveProducts=async(p:any[])=>{
     setProducts(p);
-    saveCatLocal(p); // Immediate local save with timestamp
-    // Push to Supabase with timestamp
+    saveCatLocal(p); // Immediate local save
+    setSyncStatus("syncing");setSyncMsg("Synchronisation…");
     const ts=new Date().toISOString();
-    await sbSet(CAT_KEY,{products:p,ts});
+    const ok=await sbSet(CAT_KEY,{products:p,ts});
+    if(ok){
+      setSyncStatus("ok");
+      setSyncMsg(`✓ ${p.length} produits synchronisés — ${new Date().toLocaleTimeString("fr-FR")}`);
+    } else {
+      setSyncStatus("error");
+      setSyncMsg("⚠️ Sync cloud échouée — données sauvegardées localement");
+    }
   };
   const saveQuotes=async(q:any[])=>{
     setQuotes(q);
     saveQuotLocal(q);
     await sbSet(QUOT_KEY,{quotes:q,ts:new Date().toISOString()});
+  };
+
+  const forceSync=async()=>{
+    setSyncStatus("syncing");setSyncMsg("Synchronisation forcée…");
+    const{data:localCat}=loadCatLocal();
+    const p=localCat||products;
+    const ts=new Date().toISOString();
+    const ok=await sbSet(CAT_KEY,{products:p,ts});
+    if(ok){
+      setSyncStatus("ok");
+      setSyncMsg(`✓ ${p.length} produits synchronisés — ${new Date().toLocaleTimeString("fr-FR")}`);
+    } else {
+      setSyncStatus("error");
+      setSyncMsg("⚠️ Échec. Vérifiez votre connexion.");
+    }
   };
 
   // ── File upload & parse ────────────────────────────────────────────────────
@@ -4392,12 +4448,24 @@ function CataloguePage({clients,lang,isMobile}:any){
             <span style={{fontSize:12,color:C.t3}}>{filteredProducts.length} produits</span>
             {products.filter((p:any)=>!p.description||p.description.trim()==="").length>0&&(
               <span style={{fontSize:11,color:C.amberDk,background:C.amberL,padding:"4px 10px",borderRadius:99,fontWeight:600}}>
-                ⚠️ {products.filter((p:any)=>!p.description||p.description.trim()==="").length} produits sans description — réimportez le fichier
+                ⚠️ {products.filter((p:any)=>!p.description||p.description.trim()==="").length} sans description
               </span>
             )}
+            {/* Sync status */}
+            <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:99,fontSize:11,fontWeight:600,
+              background:syncStatus==="ok"?C.greenL:syncStatus==="error"?C.redL:syncStatus==="syncing"?C.blueL:"#F1F5F9",
+              color:syncStatus==="ok"?C.greenDk:syncStatus==="error"?C.redDk:syncStatus==="syncing"?C.blueDk:C.t3}}>
+              <i className={`ti ${syncStatus==="ok"?"ti-cloud-check":syncStatus==="error"?"ti-cloud-exclamation":syncStatus==="syncing"?"ti-loader-2 rotating":"ti-cloud"}`}
+                style={{fontSize:13}} aria-hidden="true"/>
+              <span style={{maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{syncMsg||"En attente"}</span>
+            </div>
+            <button onClick={forceSync} title="Forcer la synchronisation cloud"
+              style={{background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+              <i className="ti ti-refresh" style={{fontSize:13}} aria-hidden="true"/> Sync
+            </button>
             <button onClick={async()=>{if(window.confirm("Supprimer tout le catalogue ?"))await saveProducts([]);}}
-              style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
-              <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/> Vider catalogue
+              style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+              <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/> Vider
             </button>
           </div>
           <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
