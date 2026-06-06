@@ -956,7 +956,7 @@ export default function App(){
 
   if(!data||!clients)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:C.t3,fontSize:14}}>Chargement…</div>;
 
-  const special=["kpi","dashboard","tresorerie","rapport","catalogue"];
+  const special=["kpi","dashboard","tresorerie","rapport","catalogue","documents"];
   const getConfig=(c:string)=>configs[c]||{accountNumber:"",termId:"net60",customDays:0};
 
   // ── Compute global alerts (for ticker on all pages) ──────────────
@@ -1026,6 +1026,7 @@ export default function App(){
           <SBtn icon="ti-chart-area-line" label="Trésorerie" active={page==="tresorerie"} open={sideOpen} onClick={()=>{setPage("tresorerie");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-file-report" label="Rapport Hebdo" active={page==="rapport"} open={sideOpen} onClick={()=>{setPage("rapport");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-receipt" label="Catalogue & Devis" active={page==="catalogue"} open={sideOpen} onClick={()=>{setPage("catalogue");if(isMobile)setMobileMenuOpen(false);}}/>
+          <SBtn icon="ti-files" label="Documents" active={page==="documents"} open={sideOpen} onClick={()=>{setPage("documents");if(isMobile)setMobileMenuOpen(false);}}/>
 
           {sideOpen&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 6px 4px",marginTop:4}}>
@@ -1123,6 +1124,7 @@ export default function App(){
         {page==="tresorerie"&&<TresoreriePage getAllOrders={getAllOrders} clients={clients} lang={lang} isMobile={isMobile}/>}
         {page==="rapport"&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
         {page==="catalogue"&&<CataloguePage clients={clients} lang={lang} isMobile={isMobile}/>}
+        {page==="documents"&&<DocumentsPage isMobile={isMobile}/>}
         {!special.includes(page)&&(
           <ClientPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
@@ -4924,6 +4926,272 @@ function CataloguePage({clients,lang,isMobile}:any){
               </button>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── DOCUMENTS PAGE ──────────────────────────────────────────────────────────
+const DOCS_KEY="ordertrack-docs";
+const DOCS_LS="ordertrack_docs_cache";
+
+const saveDocs=(docs:any[])=>{
+  try{localStorage.setItem(DOCS_LS,JSON.stringify(docs));}catch{}
+  sbSet(DOCS_KEY,{docs,ts:new Date().toISOString()});
+};
+const loadDocsLocal=():any[]|null=>{
+  try{const d=localStorage.getItem(DOCS_LS);return d?JSON.parse(d):null;}catch{return null;}
+};
+
+function DocumentsPage({isMobile}:any){
+  const[docs,setDocs]=useState<any[]>(()=>loadDocsLocal()||[]);
+  const[search,setSearch]=useState("");
+  const[uploading,setUploading]=useState(false);
+  const[uploadMsg,setUploadMsg]=useState("");
+  const[catFilter,setCatFilter]=useState("all");
+  const[dragOver,setDragOver]=useState(false);
+  const fileRef=useRef<HTMLInputElement>(null);
+
+  useEffect(()=>{
+    sbGet(DOCS_KEY).then(d=>{
+      if(d?.docs&&d.docs.length>=(loadDocsLocal()?.length||0)){
+        setDocs(d.docs);
+        try{localStorage.setItem(DOCS_LS,JSON.stringify(d.docs));}catch{}
+      }
+    }).catch(()=>{});
+  },[]);
+
+  const CATEGORIES=[
+    {id:"all",label:"Tous",icon:"ti-files"},
+    {id:"pdf",label:"PDF",icon:"ti-file-type-pdf"},
+    {id:"excel",label:"Excel",icon:"ti-file-type-xls"},
+    {id:"word",label:"Word",icon:"ti-file-type-doc"},
+    {id:"other",label:"Autres",icon:"ti-file"},
+  ];
+
+  const getCategory=(type:string,name:string)=>{
+    if(type?.includes("pdf")||name?.endsWith(".pdf"))return "pdf";
+    if(type?.includes("excel")||type?.includes("spreadsheet")||name?.match(/\.(xlsx?|csv)$/i))return "excel";
+    if(type?.includes("word")||name?.match(/\.(docx?|odt)$/i))return "word";
+    return "other";
+  };
+
+  const getCatStyle=(cat:string)=>{
+    if(cat==="pdf")return{icon:"ti-file-type-pdf",color:"#DC2626",bg:"#FEE2E2"};
+    if(cat==="excel")return{icon:"ti-file-type-xls",color:"#059669",bg:"#D1FAE5"};
+    if(cat==="word")return{icon:"ti-file-type-doc",color:"#2563EB",bg:"#DBEAFE"};
+    return{icon:"ti-file",color:"#7C3AED",bg:"#EDE9FE"};
+  };
+
+  const fmtSize=(b:number)=>b>1024*1024?`${(b/1024/1024).toFixed(1)} Mo`:b>1024?`${Math.round(b/1024)} Ko`:`${b} o`;
+
+  const uploadFile=async(file:File)=>{
+    const ext=file.name.split(".").pop()?.toLowerCase();
+    const path=`documents/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;
+    const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+    const res=await fetch(`https://vxxrxnyxfmgcdzxcigdw.supabase.co/storage/v1/object/ordertrack-files/${path}`,{
+      method:"POST",
+      headers:{"apikey":K,"Authorization":"Bearer "+K,"Content-Type":file.type||"application/octet-stream"},
+      body:file
+    });
+    if(!res.ok){const e=await res.text();throw new Error(e);}
+    return{
+      url:`https://vxxrxnyxfmgcdzxcigdw.supabase.co/storage/v1/object/public/ordertrack-files/${path}`,
+      path
+    };
+  };
+
+  const handleFiles=async(files:FileList|File[])=>{
+    const arr=Array.from(files);
+    if(!arr.length)return;
+    setUploading(true);
+    let added=0;
+    const newDocs=[...docs];
+    for(let i=0;i<arr.length;i++){
+      const file=arr[i];
+      setUploadMsg(`Upload ${i+1}/${arr.length} : ${file.name}…`);
+      try{
+        const{url,path}=await uploadFile(file);
+        const cat=getCategory(file.type,file.name);
+        newDocs.unshift({
+          id:Date.now().toString()+Math.random().toString(36).slice(2,5),
+          name:file.name,
+          size:file.size,
+          type:file.type,
+          category:cat,
+          url,path,
+          uploadedAt:new Date().toISOString(),
+          tags:[]
+        });
+        added++;
+      }catch(e:any){
+        setUploadMsg(`⚠️ Erreur : ${file.name} — ${e.message?.slice(0,60)}`);
+        await new Promise(r=>setTimeout(r,1500));
+      }
+    }
+    setDocs(newDocs);
+    saveDocs(newDocs);
+    setUploadMsg(`✓ ${added} fichier${added>1?"s":""} ajouté${added>1?"s":""}`);
+    setUploading(false);
+    if(fileRef.current)fileRef.current.value="";
+  };
+
+  const deleteDoc=async(doc:any)=>{
+    if(!window.confirm(`Supprimer "${doc.name}" ?`))return;
+    // Delete from storage
+    try{
+      const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+      await fetch(`https://vxxrxnyxfmgcdzxcigdw.supabase.co/storage/v1/object/ordertrack-files/${doc.path}`,{
+        method:"DELETE",headers:{"apikey":K,"Authorization":"Bearer "+K}
+      });
+    }catch{}
+    const updated=docs.filter((d:any)=>d.id!==doc.id);
+    setDocs(updated);saveDocs(updated);
+  };
+
+  const filtered=docs.filter((d:any)=>{
+    const matchCat=catFilter==="all"||d.category===catFilter;
+    const matchSearch=!search||d.name.toLowerCase().includes(search.toLowerCase());
+    return matchCat&&matchSearch;
+  });
+
+  // Stats
+  const totalSize=docs.reduce((s:number,d:any)=>s+(d.size||0),0);
+  const catCounts:Record<string,number>={};
+  docs.forEach((d:any)=>{catCounts[d.category]=(catCounts[d.category]||0)+1;});
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+        <div>
+          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Documents</h1>
+          <p style={{margin:0,color:C.t3,fontSize:13}}>{docs.length} fichier{docs.length>1?"s":""} · {fmtSize(totalSize)}</p>
+        </div>
+        <button onClick={()=>fileRef.current?.click()} disabled={uploading}
+          style={{display:"flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",border:"none",
+            borderRadius:C.r,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:uploading?"not-allowed":"pointer",opacity:uploading?.7:1}}>
+          <i className="ti ti-upload" style={{fontSize:16}} aria-hidden="true"/>
+          {uploading?"Envoi…":"Ajouter des fichiers"}
+        </button>
+        <input ref={fileRef} type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.png,.jpg,.jpeg" onChange={e=>handleFiles(e.target.files!)} style={{display:"none"}}/>
+      </div>
+
+      {/* Upload status */}
+      {uploadMsg&&(
+        <div style={{background:uploadMsg.startsWith("✓")?C.greenL:uploadMsg.startsWith("⚠")?C.amberL:C.blueL,
+          color:uploadMsg.startsWith("✓")?C.greenDk:uploadMsg.startsWith("⚠")?C.amberDk:C.blueDk,
+          padding:"10px 16px",borderRadius:C.r,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:8}}>
+          <i className={`ti ${uploadMsg.startsWith("✓")?"ti-check":uploadMsg.startsWith("⚠")?"ti-alert-triangle":"ti-loader-2 rotating"}`} style={{fontSize:15}} aria-hidden="true"/>
+          {uploadMsg}
+        </div>
+      )}
+
+      {/* Drop zone */}
+      <div
+        onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+        onDragLeave={()=>setDragOver(false)}
+        onDrop={e=>{e.preventDefault();setDragOver(false);handleFiles(e.dataTransfer.files);}}
+        onClick={()=>fileRef.current?.click()}
+        style={{border:`2px dashed ${dragOver?C.blue:C.b}`,borderRadius:C.rLg,
+          padding:"24px",textAlign:"center",cursor:"pointer",
+          background:dragOver?C.blueL:"#FAFBFD",transition:"all .2s"}}>
+        <i className="ti ti-cloud-upload" style={{fontSize:32,color:dragOver?C.blue:C.t3,display:"block",marginBottom:8}} aria-hidden="true"/>
+        <div style={{fontSize:13,fontWeight:600,color:dragOver?C.blue:C.t2}}>Glisser-déposer des fichiers ici</div>
+        <div style={{fontSize:11,color:C.t3,marginTop:4}}>PDF, Excel, Word, PowerPoint, Images · Taille max 50 Mo par fichier</div>
+      </div>
+
+      {/* Category tabs + search */}
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
+          {CATEGORIES.map(cat=>(
+            <button key={cat.id} onClick={()=>setCatFilter(cat.id)}
+              style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",border:"none",borderRight:`1px solid ${C.b}`,
+                background:catFilter===cat.id?C.blue:"transparent",
+                color:catFilter===cat.id?"#fff":C.t2,
+                fontWeight:catFilter===cat.id?700:400,fontSize:11,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s"}}>
+              <i className={`ti ${cat.icon}`} style={{fontSize:13}} aria-hidden="true"/>
+              {cat.label}
+              {cat.id!=="all"&&catCounts[cat.id]>0&&(
+                <span style={{background:catFilter===cat.id?"rgba(255,255,255,.3)":C.blueL,color:catFilter===cat.id?"#fff":C.blueDk,
+                  borderRadius:99,fontSize:10,padding:"0 5px",fontWeight:700}}>{catCounts[cat.id]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div style={{flex:1,minWidth:200,position:"relative"}}>
+          <i className="ti ti-search" style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.t3}} aria-hidden="true"/>
+          <input value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder="Rechercher un document par nom…"
+            style={{width:"100%",padding:"8px 10px 8px 32px",border:`1px solid ${C.b}`,borderRadius:C.r,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          {search&&<button onClick={()=>setSearch("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:C.t3,cursor:"pointer",fontSize:16,lineHeight:1}}>✕</button>}
+        </div>
+        <span style={{fontSize:12,color:C.t3,whiteSpace:"nowrap"}}>{filtered.length} résultat{filtered.length>1?"s":""}</span>
+      </div>
+
+      {/* Documents grid */}
+      {filtered.length===0?(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,padding:"48px",textAlign:"center"}}>
+          <i className="ti ti-files" style={{fontSize:40,color:C.t3,display:"block",marginBottom:12}} aria-hidden="true"/>
+          <div style={{fontSize:14,fontWeight:600,color:C.t2,marginBottom:4}}>
+            {docs.length===0?"Aucun document — ajoutez vos premiers fichiers":"Aucun résultat pour cette recherche"}
+          </div>
+          <div style={{fontSize:12,color:C.t3}}>
+            {docs.length===0?"Glissez des fichiers ou cliquez sur 'Ajouter des fichiers'":"Essayez un autre mot-clé ou une autre catégorie"}
+          </div>
+        </div>
+      ):(
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
+          {filtered.map((doc:any)=>{
+            const cs=getCatStyle(doc.category);
+            const date=doc.uploadedAt?new Date(doc.uploadedAt).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"}):"";
+            return(
+              <div key={doc.id} style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,
+                boxShadow:C.sh,overflow:"hidden",display:"flex",flexDirection:"column",
+                transition:"box-shadow .15s"}}
+                onMouseEnter={(e:any)=>e.currentTarget.style.boxShadow=C.shMd}
+                onMouseLeave={(e:any)=>e.currentTarget.style.boxShadow=C.sh}>
+                {/* File icon header */}
+                <div style={{padding:"20px 20px 12px",display:"flex",alignItems:"flex-start",gap:12}}>
+                  <div style={{width:44,height:44,borderRadius:10,background:cs.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <i className={`ti ${cs.icon}`} style={{fontSize:22,color:cs.color}} aria-hidden="true"/>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:700,color:C.t1,lineHeight:1.4,wordBreak:"break-word",
+                      display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>
+                      {doc.name}
+                    </div>
+                    <div style={{fontSize:10,color:C.t3,marginTop:4,display:"flex",gap:8}}>
+                      <span>{fmtSize(doc.size||0)}</span>
+                      <span>·</span>
+                      <span>{date}</span>
+                    </div>
+                  </div>
+                </div>
+                {/* Actions */}
+                <div style={{display:"flex",gap:6,padding:"10px 16px",borderTop:`1px solid ${C.b}`,marginTop:"auto"}}>
+                  <a href={doc.url} target="_blank" rel="noreferrer"
+                    style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+                      background:C.blueL,color:C.blueDk,borderRadius:6,padding:"7px",
+                      fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"none",border:"none"}}>
+                    <i className="ti ti-external-link" style={{fontSize:13}} aria-hidden="true"/> Ouvrir
+                  </a>
+                  <a href={doc.url} download={doc.name}
+                    style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+                      background:"#F1F5F9",color:C.t2,borderRadius:6,padding:"7px 10px",
+                      fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"none",border:"none"}}>
+                    <i className="ti ti-download" style={{fontSize:13}} aria-hidden="true"/>
+                  </a>
+                  <button onClick={()=>deleteDoc(doc)}
+                    style={{display:"flex",alignItems:"center",justifyContent:"center",
+                      background:C.redL,color:C.redDk,border:"none",borderRadius:6,padding:"7px 10px",cursor:"pointer"}}>
+                    <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
