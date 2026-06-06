@@ -4936,25 +4936,47 @@ function CataloguePage({clients,lang,isMobile}:any){
 const DOCS_KEY="ordertrack-docs";
 const DOCS_LS="ordertrack_docs_cache";
 
-const saveDocsCloud=async(docs:any[])=>{
+const saveDocsCloud=async(docs:any[]):Promise<boolean>=>{
   const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
   const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
-  const payload={docs,ts:new Date().toISOString()};
   try{
-    // Always use POST with merge-duplicates for reliable upsert
-    const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
-      method:"POST",
-      headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
-      body:JSON.stringify({user_key:DOCS_KEY,payload})
+    // Step 1: Try PATCH on existing row
+    const patch=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+DOCS_KEY,{
+      method:"PATCH",
+      headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"count=exact,return=minimal"},
+      body:JSON.stringify({payload:{docs,ts:new Date().toISOString()}})
     });
-    if(!r.ok){const e=await r.text();console.warn("[Docs save] POST failed:",r.status,e);}
-    else console.log("[Docs save] OK —",docs.length,"docs");
-  }catch(e){console.warn("[Docs save] Exception:",e);}
+    // Check if PATCH actually updated a row via Content-Range header
+    const count=patch.headers.get("Content-Range"); // e.g. "*/1" means 1 row
+    const updated=count&&!count.includes("*/0");
+    if(patch.ok&&updated){
+      console.log("[Docs] PATCH OK — updated existing row");
+      return true;
+    }
+    // Step 2: INSERT (row doesn't exist yet)
+    const post=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=minimal"},
+      body:JSON.stringify({user_key:DOCS_KEY,payload:{docs,ts:new Date().toISOString()}})
+    });
+    if(post.ok||post.status===201||post.status===204){
+      console.log("[Docs] POST INSERT OK");
+      return true;
+    }
+    const err=await post.text();
+    console.warn("[Docs] POST failed:",post.status,err);
+    return false;
+  }catch(e){console.warn("[Docs] Exception:",e);return false;}
 };
-const saveDocs=(docs:any[])=>{
+const saveDocs=async(docs:any[],setSyncMsgFn?:any)=>{
   const ts=new Date().toISOString();
   try{localStorage.setItem(DOCS_LS,JSON.stringify(docs));localStorage.setItem(DOCS_LS+"_ts",ts);}catch{}
-  saveDocsCloud(docs);
+  const ok=await saveDocsCloud(docs);
+  if(setSyncMsgFn){
+    setSyncMsgFn(ok?`✓ ${docs.length} document${docs.length>1?"s":""} sauvegardé${docs.length>1?"s":""}  dans le cloud`:"⚠️ Sauvegarde locale OK — cloud non synchronisé");
+    setTimeout(()=>setSyncMsgFn(""),4000);
+  }
+  return ok;
 };
 const loadDocsLocal=():any[]|null=>{
   try{const d=localStorage.getItem(DOCS_LS);return d?JSON.parse(d):null;}catch{return null;}
@@ -5076,7 +5098,8 @@ function DocumentsPage({isMobile}:any){
       }
     }
     setDocs(newDocs);
-    saveDocs(newDocs);
+    setUploadMsg(`✓ ${added} fichier${added>1?"s":""} ajouté${added>1?"s":""} — synchronisation…`);
+    await saveDocs(newDocs,setSyncMsg);
     setUploadMsg(`✓ ${added} fichier${added>1?"s":""} ajouté${added>1?"s":""}`);
     setUploading(false);
     if(fileRef.current)fileRef.current.value="";
@@ -5092,7 +5115,8 @@ function DocumentsPage({isMobile}:any){
       });
     }catch{}
     const updated=docs.filter((d:any)=>d.id!==doc.id);
-    setDocs(updated);saveDocs(updated);
+    setDocs(updated);
+    await saveDocs(updated,setSyncMsg);
   };
 
   const filtered=docs.filter((d:any)=>{
