@@ -4967,33 +4967,45 @@ function DocumentsPage({isMobile}:any){
   const[uploadMsg,setUploadMsg]=useState("");
   const[catFilter,setCatFilter]=useState("all");
   const[dragOver,setDragOver]=useState(false);
+  const[syncMsg,setSyncMsg]=useState("");
+  const[syncing,setSyncing]=useState(false);
   const fileRef=useRef<HTMLInputElement>(null);
 
-  useEffect(()=>{
+  const loadFromCloud=async(silent=false)=>{
     const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
     const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
-    (async()=>{
-      try{
-        const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+DOCS_KEY+"&select=payload,updated_at&limit=1",
-          {headers:{"apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=representation"}});
-        if(!r.ok)return;
-        const rows=await r.json();
-        const cloudDocs=rows?.[0]?.payload?.docs||[];
+    if(!silent)setSyncing(true);
+    try{
+      const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+DOCS_KEY+"&select=payload,updated_at&limit=1",
+        {headers:{"apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=representation"}});
+      console.log("[Docs load] status:",r.status);
+      if(!r.ok){setSyncMsg("⚠️ Erreur connexion Supabase: "+r.status);setSyncing(false);return;}
+      const rows=await r.json();
+      console.log("[Docs load] rows:",rows?.length,"payload keys:",Object.keys(rows?.[0]?.payload||{}));
+      const cloudDocs=rows?.[0]?.payload?.docs||[];
+      console.log("[Docs load] cloudDocs count:",cloudDocs.length);
+      if(cloudDocs.length>0){
+        setDocs(cloudDocs);
+        try{localStorage.setItem(DOCS_LS,JSON.stringify(cloudDocs));}catch{}
+        setSyncMsg("✓ "+cloudDocs.length+" document"+(cloudDocs.length>1?"s":"")+" chargé"+(cloudDocs.length>1?"s":"")+" depuis le cloud");
+      } else {
         const localDocs=loadDocsLocal()||[];
-        const cloudTs=rows?.[0]?.updated_at||rows?.[0]?.payload?.ts||"";
-        const localTs=(()=>{try{return localStorage.getItem(DOCS_LS+"_ts")||"";}catch{return "";}})();
-        const localIsNewer=localTs&&cloudTs&&(new Date(localTs)>new Date(cloudTs));
-        if(cloudDocs.length>0&&!localIsNewer){
-          // Cloud has data and is newer (or same) — use cloud
-          setDocs(cloudDocs);
-          try{localStorage.setItem(DOCS_LS,JSON.stringify(cloudDocs));localStorage.setItem(DOCS_LS+"_ts",cloudTs);}catch{}
-        } else if(localDocs.length>0&&cloudDocs.length===0){
-          // Local has data but cloud is empty — push to cloud
-          saveDocsCloud(localDocs);
+        if(localDocs.length>0){
+          // Push local to cloud
+          await saveDocsCloud(localDocs);
+          setSyncMsg("✓ "+localDocs.length+" document"+(localDocs.length>1?"s":"")+" envoyé"+(localDocs.length>1?"s":"")+" vers le cloud");
+        } else {
+          setSyncMsg("Cloud vide — aucun document synchronisé");
         }
-      }catch(e){console.warn("[Docs load]",e);}
-    })();
-  },[]);
+      }
+    }catch(e:any){
+      console.warn("[Docs load] error:",e);
+      setSyncMsg("⚠️ Erreur: "+e.message);
+    }
+    setSyncing(false);
+  };
+
+  useEffect(()=>{loadFromCloud(true);},[]);
 
   const CATEGORIES=[
     {id:"all",label:"Tous",icon:"ti-files"},
@@ -5102,12 +5114,27 @@ function DocumentsPage({isMobile}:any){
           <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Documents</h1>
           <p style={{margin:0,color:C.t3,fontSize:13}}>{docs.length} fichier{docs.length>1?"s":""} · {fmtSize(totalSize)}</p>
         </div>
-        <button onClick={()=>fileRef.current?.click()} disabled={uploading}
-          style={{display:"flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",border:"none",
-            borderRadius:C.r,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:uploading?"not-allowed":"pointer",opacity:uploading?.7:1}}>
-          <i className="ti ti-upload" style={{fontSize:16}} aria-hidden="true"/>
-          {uploading?"Envoi…":"Ajouter des fichiers"}
-        </button>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          {syncMsg&&<span style={{fontSize:11,fontWeight:600,
+            color:syncMsg.startsWith("✓")?C.greenDk:syncMsg.startsWith("⚠")?C.redDk:C.blueDk,
+            background:syncMsg.startsWith("✓")?C.greenL:syncMsg.startsWith("⚠")?C.redL:C.blueL,
+            padding:"6px 12px",borderRadius:99,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            {syncMsg}
+          </span>}
+          <button onClick={()=>loadFromCloud(false)} disabled={syncing}
+            title="Synchroniser depuis le cloud"
+            style={{display:"flex",alignItems:"center",gap:6,background:C.blueL,color:C.blueDk,border:"none",
+              borderRadius:C.r,padding:"9px 14px",fontSize:12,fontWeight:600,cursor:syncing?"not-allowed":"pointer"}}>
+            <i className={`ti ti-refresh${syncing?" rotating":""}`} style={{fontSize:14}} aria-hidden="true"/>
+            {syncing?"Sync…":"Sync"}
+          </button>
+          <button onClick={()=>fileRef.current?.click()} disabled={uploading}
+            style={{display:"flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",border:"none",
+              borderRadius:C.r,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:uploading?"not-allowed":"pointer",opacity:uploading?.7:1}}>
+            <i className="ti ti-upload" style={{fontSize:16}} aria-hidden="true"/>
+            {uploading?"Envoi…":"Ajouter des fichiers"}
+          </button>
+        </div>
         <input ref={fileRef} type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.png,.jpg,.jpeg" onChange={e=>handleFiles(e.target.files!)} style={{display:"none"}}/>
       </div>
 
