@@ -3511,6 +3511,35 @@ const loadQuotLocal=():{data:any[]|null,ts:string}=>{
 
 const AVAIL_OPTIONS=["Stock","2-4 weeks EXW","4-6 weeks EXW","6-8 weeks EXW","8-10 weeks EXW","10-12 weeks EXW","12-14 weeks EXW","14-18 weeks EXW","18-24 weeks EXW","24-28 weeks EXW"];
 
+// Convert French month label to ISO date string
+const frMonthToISO=(label:string):string=>{
+  const MONTHS_FR:Record<string,string>={
+    "janvier":"01","fevrier":"02","février":"02","mars":"03","avril":"04",
+    "mai":"05","juin":"06","juillet":"07","aout":"08","août":"08",
+    "septembre":"09","octobre":"10","novembre":"11","decembre":"12","décembre":"12"
+  };
+  const l=label.toLowerCase().trim();
+  for(const [m,n] of Object.entries(MONTHS_FR)){
+    if(l.includes(m)){
+      const yearMatch=l.match(/20\d{2}/);
+      const year=yearMatch?yearMatch[0]:new Date().getFullYear().toString();
+      return `${year}-${n}-01`;
+    }
+  }
+  return new Date().toISOString().slice(0,10);
+};
+
+// Check if a row contains a date/period label (like "FEVRIER 2026")
+const isPeriodLabel=(row:any[]):string|null=>{
+  for(const cell of row){
+    const s=String(cell||"").trim();
+    if(/^(JANVIER|FEVRIER|FÉVRIER|MARS|AVRIL|MAI|JUIN|JUILLET|AOUT|AOÛT|SEPTEMBRE|OCTOBRE|NOVEMBRE|DECEMBRE|DÉCEMBRE)\s+20\d{2}$/i.test(s)){
+      return s;
+    }
+  }
+  return null;
+};
+
 // Parse Excel with SheetJS (loaded dynamically)
 const parseExcel=async(file:File):Promise<any[]>=>{
   return new Promise((resolve)=>{
@@ -4126,11 +4155,78 @@ function CataloguePage({clients,lang,isMobile}:any){
   const confirmImport=async()=>{
     if(!allRows.length||colMap.pn<0){setUploadMsg("Colonne PN non mappée — assignez la colonne PN dans le tableau ci-dessous");return;}
     setUploading(true);setUploadMsg("Import en cours…");
-    const rows=allRows.slice(1); // Skip header row, use ALL data rows
+    const fileCustomer=uploadMsg.includes("Client détecté")?uploadMsg.split("Client détecté : ")[1]?.split(" —")[0]?.trim()||""  :"";
+
+    // Detect if file has multiple periods (like BERNABE EXTRA DISCOUNT)
+    const allDataRows=allRows.slice(1);
+    const hasPeriods=allDataRows.some((r:any)=>isPeriodLabel(r));
     let imported=0,updated=0;
     const newProducts=[...products];
-    // Try to get customer from filename hint (already extracted)
-    const fileCustomer=uploadMsg.includes("Client détecté")?uploadMsg.split("Client détecté : ")[1]?.split(" —")[0]?.trim()||""  :"";
+
+    if(hasPeriods){
+      // Multi-period file: scan for period labels and process each section
+      setUploadMsg("Fichier multi-périodes détecté — import en cours…");
+      let currentDate=new Date().toISOString().slice(0,10);
+      let currentColMap={...colMap};
+
+      for(const row of allDataRows){
+        // Check if this row is a period label
+        const period=isPeriodLabel(row);
+        if(period){
+          currentDate=frMonthToISO(period);
+          setUploadMsg(`Import: ${period}…`);
+          continue;
+        }
+        // Check if this row is a header row
+        const rowStr=row.map((x:any)=>String(x||"").toLowerCase());
+        const isHeader=rowStr.some((s:string)=>s==="pn"||s==="product"||s==="item");
+        if(isHeader){
+          currentColMap=detectColumns(row.map((x:any)=>String(x||"")));
+          continue;
+        }
+        // Process data row
+        const pnCol=currentColMap.pn>=0?currentColMap.pn:1; // fallback col 1 (PN)
+        const descCol=currentColMap.desc>=0?currentColMap.desc:2; // fallback col 2 (PRODUCT)
+        const priceCol=currentColMap.price>=0?currentColMap.price:4; // fallback col 4 (UP)
+        const pnVal=String(row[pnCol]||"").trim();
+        if(!pnVal||pnVal==="PN"||/^(ITEM|N°)$/i.test(pnVal)||isNaN(Number(pnVal.replace(/[^0-9]/g,""))&&pnVal.length>10?0:1)){}
+        if(!pnVal||pnVal==="PN"||pnVal==="Part Number")continue;
+        const priceRaw=String(row[priceCol]||"").trim();
+        if(priceRaw.startsWith("="))continue; // skip formula cells without value
+        let priceVal=0;
+        if(priceRaw){
+          let p=priceRaw.replace(/[€$£\s]/g,"");
+          const lc=p.lastIndexOf(","),ld=p.lastIndexOf(".");
+          if(lc>ld)p=p.replace(/\./g,"").replace(",",".");
+          else p=p.replace(/,/g,"");
+          priceVal=parseFloat(p)||0;
+          if(priceVal>999999)priceVal=0;
+        }
+        const descVal=String(row[descCol]||"").trim();
+        const existing=newProducts.findIndex((p:any)=>String(p.pn)===pnVal);
+        if(existing>=0){
+          if(!newProducts[existing].prices)newProducts[existing].prices=[];
+          // Don't add duplicate price for same date
+          const alreadyHas=newProducts[existing].prices.some((pr:any)=>pr.date===currentDate&&pr.price===priceVal);
+          if(priceVal>0&&!alreadyHas){
+            newProducts[existing].prices.push({price:priceVal,currency:"EUR",customer:fileCustomer,date:currentDate,source:pendingFile});
+          }
+          if(descVal&&descVal!==pnVal&&!newProducts[existing].description)newProducts[existing].description=descVal;
+          updated++;
+        } else {
+          if(!pnVal||pnVal.length<4)continue;
+          newProducts.push({
+            id:Date.now().toString()+Math.random().toString(36).slice(2,6),
+            pn:pnVal,description:descVal!==pnVal?descVal:"",
+            prices:priceVal>0?[{price:priceVal,currency:"EUR",customer:fileCustomer,date:currentDate,source:pendingFile}]:[],
+            lastUpdated:currentDate
+          });
+          imported++;
+        }
+      }
+    } else {
+    // Standard single-period file
+    const rows=allDataRows;
     for(const row of rows){
       const pnVal=String(row[colMap.pn]||"").trim();
       if(!pnVal||pnVal==="PN"||pnVal==="Part Number")continue; // skip header leftovers
@@ -4186,8 +4282,11 @@ function CataloguePage({clients,lang,isMobile}:any){
       }
     }
     await saveProducts(newProducts);
+    } // end else standard import
     const noPrice=newProducts.filter((p:any)=>p.prices?.length===0).length;
-    setUploadMsg(`✓ ${imported} produits ajoutés, ${updated} mis à jour (${rows.length} lignes traitées)${noPrice>0?` · ⚠️ ${noPrice} sans prix — vérifiez le mapping "Prix"`:""}` );
+    const periods=allDataRows.filter((r:any)=>isPeriodLabel(r)).length;
+    const periodInfo=periods>0?` · ${periods} périodes détectées`:"";
+    setUploadMsg(`✓ ${imported} produits ajoutés, ${updated} mis à jour${periodInfo}${noPrice>0?` · ⚠️ ${noPrice} sans prix`:""}` );
     setPreviewRows([]);setAllRows([]);setPendingFile("");
     setUploading(false);
     if(fileRef.current)fileRef.current.value="";
