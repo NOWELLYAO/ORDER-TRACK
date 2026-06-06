@@ -4936,9 +4936,25 @@ function CataloguePage({clients,lang,isMobile}:any){
 const DOCS_KEY="ordertrack-docs";
 const DOCS_LS="ordertrack_docs_cache";
 
+const saveDocsCloud=async(docs:any[])=>{
+  const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+  const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+  const payload={docs,ts:new Date().toISOString()};
+  try{
+    // Always use POST with merge-duplicates for reliable upsert
+    const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify({user_key:DOCS_KEY,payload})
+    });
+    if(!r.ok){const e=await r.text();console.warn("[Docs save] POST failed:",r.status,e);}
+    else console.log("[Docs save] OK —",docs.length,"docs");
+  }catch(e){console.warn("[Docs save] Exception:",e);}
+};
 const saveDocs=(docs:any[])=>{
-  try{localStorage.setItem(DOCS_LS,JSON.stringify(docs));}catch{}
-  sbSet(DOCS_KEY,{docs,ts:new Date().toISOString()});
+  const ts=new Date().toISOString();
+  try{localStorage.setItem(DOCS_LS,JSON.stringify(docs));localStorage.setItem(DOCS_LS+"_ts",ts);}catch{}
+  saveDocsCloud(docs);
 };
 const loadDocsLocal=():any[]|null=>{
   try{const d=localStorage.getItem(DOCS_LS);return d?JSON.parse(d):null;}catch{return null;}
@@ -4954,12 +4970,29 @@ function DocumentsPage({isMobile}:any){
   const fileRef=useRef<HTMLInputElement>(null);
 
   useEffect(()=>{
-    sbGet(DOCS_KEY).then(d=>{
-      if(d?.docs&&d.docs.length>=(loadDocsLocal()?.length||0)){
-        setDocs(d.docs);
-        try{localStorage.setItem(DOCS_LS,JSON.stringify(d.docs));}catch{}
-      }
-    }).catch(()=>{});
+    const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+    const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+    (async()=>{
+      try{
+        const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+DOCS_KEY+"&select=payload,updated_at&limit=1",
+          {headers:{"apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=representation"}});
+        if(!r.ok)return;
+        const rows=await r.json();
+        const cloudDocs=rows?.[0]?.payload?.docs||[];
+        const localDocs=loadDocsLocal()||[];
+        const cloudTs=rows?.[0]?.updated_at||rows?.[0]?.payload?.ts||"";
+        const localTs=(()=>{try{return localStorage.getItem(DOCS_LS+"_ts")||"";}catch{return "";}})();
+        const localIsNewer=localTs&&cloudTs&&(new Date(localTs)>new Date(cloudTs));
+        if(cloudDocs.length>0&&!localIsNewer){
+          // Cloud has data and is newer (or same) — use cloud
+          setDocs(cloudDocs);
+          try{localStorage.setItem(DOCS_LS,JSON.stringify(cloudDocs));localStorage.setItem(DOCS_LS+"_ts",cloudTs);}catch{}
+        } else if(localDocs.length>0&&cloudDocs.length===0){
+          // Local has data but cloud is empty — push to cloud
+          saveDocsCloud(localDocs);
+        }
+      }catch(e){console.warn("[Docs load]",e);}
+    })();
   },[]);
 
   const CATEGORIES=[
