@@ -3747,6 +3747,112 @@ function ManualProductEntry({products,saveProducts}:any){
   );
 }
 
+// ─── CATALOGUE EDIT MODAL ────────────────────────────────────────────────────
+function CatEditModal({product,onSave,onClose}:any){
+  const[pn,setPn]=useState(product?.pn||"");
+  const[desc,setDesc]=useState(product?.description||"");
+  const[prices,setPrices]=useState<any[]>(product?.prices||[]);
+  const[newPrice,setNewPrice]=useState("");
+  const[newDate,setNewDate]=useState(new Date().toISOString().slice(0,10));
+  const[newCustomer,setNewCustomer]=useState("");
+
+  const addPrice=()=>{
+    const v=parseFloat(newPrice.replace(",","."))||0;
+    if(!v)return;
+    setPrices(p=>[{price:v,currency:"EUR",customer:newCustomer,date:newDate,source:"Saisie manuelle"},...p]);
+    setNewPrice("");setNewCustomer("");
+  };
+
+  const removePrice=(idx:number)=>setPrices(p=>p.filter((_:any,i:number)=>i!==idx));
+
+  const handleSave=()=>{
+    if(!pn.trim())return;
+    onSave({...product,pn:pn.trim(),description:desc.trim(),prices,lastUpdated:new Date().toISOString().slice(0,10)});
+  };
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,backdropFilter:"blur(3px)"}}>
+      <div style={{background:"#fff",borderRadius:16,width:560,maxWidth:"96vw",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:`1px solid ${C.b}`}}>
+          <h3 style={{margin:0,fontSize:15,fontWeight:700,color:C.t1,display:"flex",alignItems:"center",gap:8}}>
+            <i className="ti ti-edit" style={{fontSize:16,color:C.blue}} aria-hidden="true"/>
+            Modifier le produit
+          </h3>
+          <button onClick={onClose} style={{background:"#F1F5F9",border:"none",color:C.t3,cursor:"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <i className="ti ti-x" style={{fontSize:14}} aria-hidden="true"/>
+          </button>
+        </div>
+        {/* Body */}
+        <div style={{overflowY:"auto",flex:1,padding:"18px 22px",display:"flex",flexDirection:"column",gap:14}}>
+          {/* PN + Description */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10}}>
+            <div>
+              <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Part Number</label>
+              <input value={pn} onChange={e=>setPn(e.target.value)}
+                style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:13,fontFamily:"monospace",fontWeight:700,color:C.blue,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Description</label>
+              <input value={desc} onChange={e=>setDesc(e.target.value)}
+                style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+            </div>
+          </div>
+          {/* Prices list */}
+          <div>
+            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:8,textTransform:"uppercase",letterSpacing:".05em"}}>
+              Prix ({prices.length})
+            </label>
+            <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:10}}>
+              {prices.map((pr:any,i:number)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:"#F8FAFC",borderRadius:6,border:`1px solid ${C.b}`}}>
+                  <span style={{fontWeight:700,color:C.blue,fontSize:13,minWidth:80}}>{fmt(pr.price)} €</span>
+                  <span style={{fontSize:11,color:C.t3,flex:1}}>{pr.date} {pr.customer&&`· ${pr.customer}`} · {pr.source}</span>
+                  <button onClick={()=>removePrice(i)}
+                    style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0}}>
+                    <i className="ti ti-trash" style={{fontSize:11}} aria-hidden="true"/>
+                  </button>
+                </div>
+              ))}
+              {prices.length===0&&<div style={{color:C.t3,fontSize:12,padding:"8px 0"}}>Aucun prix enregistré</div>}
+            </div>
+            {/* Add new price */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 130px 120px 32px",gap:6,alignItems:"end"}}>
+              <div>
+                <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>Nouveau prix (€)</label>
+                <input value={newPrice} onChange={e=>setNewPrice(e.target.value)} type="number" step="0.01" placeholder="ex: 1250.00"
+                  style={{width:"100%",padding:"7px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>Date</label>
+                <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)}
+                  style={{width:"100%",padding:"7px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>Client</label>
+                <input value={newCustomer} onChange={e=>setNewCustomer(e.target.value)} placeholder="optionnel"
+                  style={{width:"100%",padding:"7px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <button onClick={addPrice} style={{background:C.greenL,color:C.greenDk,border:"none",borderRadius:5,height:32,width:32,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                <i className="ti ti-plus" style={{fontSize:14}} aria-hidden="true"/>
+              </button>
+            </div>
+          </div>
+        </div>
+        {/* Footer */}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",padding:"14px 22px",borderTop:`1px solid ${C.b}`}}>
+          <button onClick={onClose} style={{background:"#F1F5F9",color:C.t2,border:"none",borderRadius:8,padding:"9px 18px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            Annuler
+          </button>
+          <button onClick={handleSave} style={{background:C.blue,color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+            <i className="ti ti-check" style={{fontSize:14}} aria-hidden="true"/> Enregistrer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── CATALOGUE PAGE ───────────────────────────────────────────────────────────
 function CataloguePage({clients,lang,isMobile}:any){
   const[tab,setTab]=useState<"upload"|"catalogue"|"devis">("devis");
@@ -3764,6 +3870,7 @@ function CataloguePage({clients,lang,isMobile}:any){
   const[colMap,setColMap]=useState<any>({pn:-1,desc:-1,price:-1,qty:-1,customer:-1,avail:-1});
   const[pendingFile,setPendingFile]=useState<string>("");
   const[catSearch,setCatSearch]=useState("");
+  const[catEditProduct,setCatEditProduct]=useState<any>(null);
   const fileRef=useRef<HTMLInputElement>(null);
 
   // Quote form state
@@ -4236,8 +4343,19 @@ function CataloguePage({clients,lang,isMobile}:any){
     {id:"upload",label:"Importer prix",icon:"ti-upload"},
   ];
 
+  const handleCatEdit=(updated:any)=>{
+    const idx=products.findIndex((p:any)=>p.pn===catEditProduct?.pn);
+    if(idx>=0){
+      const newProducts=[...products];
+      newProducts[idx]=updated;
+      saveProducts(newProducts);
+    }
+    setCatEditProduct(null);
+  };
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {catEditProduct&&<CatEditModal product={catEditProduct} onSave={handleCatEdit} onClose={()=>setCatEditProduct(null)}/>}
       {/* Header */}
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
         <div>
@@ -4543,7 +4661,7 @@ function CataloguePage({clients,lang,isMobile}:any){
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:600}}>
                   <thead><tr style={{background:"#0D1B2A"}}>
-                    {["Part Number","Description","Prix disponibles","Dernière mise à jour"].map((h,i)=>(
+                    {["Part Number","Description","Prix disponibles","Dernière mise à jour","Actions"].map((h,i)=>(
                       <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
                     ))}
                   </tr></thead>
@@ -4551,7 +4669,7 @@ function CataloguePage({clients,lang,isMobile}:any){
                     {filteredProducts.map((p:any,i:number)=>(
                       <tr key={p.id||i} style={{borderBottom:`1px solid ${C.b}`,background:i%2===0?"#fff":"#FAFBFD"}}>
                         <td style={{padding:"8px 12px",fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{p.pn}</td>
-                        <td style={{padding:"8px 12px",color:C.t1,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description||"—"}</td>
+                        <td style={{padding:"8px 12px",color:C.t1,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description||"—"}</td>
                         <td style={{padding:"8px 12px"}}>
                           <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                             {(p.prices||[]).slice(0,3).map((pr:any,j:number)=>(
@@ -4564,6 +4682,19 @@ function CataloguePage({clients,lang,isMobile}:any){
                           </div>
                         </td>
                         <td style={{padding:"8px 12px",color:C.t3}}>{p.lastUpdated||"—"}</td>
+                        <td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
+                          <div style={{display:"flex",gap:4}}>
+                            <button onClick={()=>setCatEditProduct(p)} title="Modifier"
+                              style={{background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                              <i className="ti ti-edit" style={{fontSize:12}} aria-hidden="true"/>
+                            </button>
+                            <button onClick={()=>{if(window.confirm(`Supprimer ${p.pn} du catalogue ?`)){saveProducts(products.filter((_:any,j:number)=>j!==i));}}}
+                              title="Supprimer"
+                              style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                              <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/>
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
