@@ -1,6 +1,26 @@
 // @ts-nocheck
 import React, { useState, useEffect, Fragment, useRef } from "react";
 
+// ── Activity log (defined early — used by multiple components) ────────────────
+const LOG_KEY="ordertrack-activitylog";
+const logActivity=async(action:string,detail:string,user:string)=>{
+  try{
+    const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+    const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+    const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+LOG_KEY+"&select=payload&limit=1",
+      {headers:{"apikey":K,"Authorization":"Bearer "+K}});
+    const rows=r.ok?await r.json():[];
+    const logs=rows?.[0]?.payload?.logs||[];
+    const entry={ts:new Date().toISOString(),action,detail,user};
+    const updated=[entry,...logs].slice(0,500);
+    await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify({user_key:LOG_KEY,payload:{logs:updated}})
+    });
+  }catch{}
+};
+
 // ─── SUPABASE CLOUD SYNC (pure fetch — no package needed) ────────────────────
 const SUPABASE_URL = "https://vxxrxnyxfmgcdzxcigdw.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
@@ -729,7 +749,28 @@ export default function App(){
     try{const s=localStorage.getItem(AUTH_KEY);return s?JSON.parse(s):null;}catch{return null;}
   });
   const[showUserMgr,setShowUserMgr]=useState(false);
-  const logout=()=>{localStorage.removeItem(AUTH_KEY);setSession(null);};
+  const[sessionTimeout,setSessionTimeout]=useState<any>(null);
+  const SESSION_DURATION=30*60*1000; // 30 minutes
+  const logout=()=>{localStorage.removeItem(AUTH_KEY);setSession(null);if(sessionTimeout)clearTimeout(sessionTimeout);};
+
+  // Session expiration
+  const timerRef=React.useRef<any>(null);
+  const resetSessionTimer=React.useCallback(()=>{
+    if(timerRef.current)clearTimeout(timerRef.current);
+    timerRef.current=setTimeout(()=>{
+      alert("Votre session a expiré après 30 minutes d'inactivité.");
+      localStorage.removeItem(AUTH_KEY);
+      setSession(null);
+    },SESSION_DURATION);
+  },[]);
+
+  useEffect(()=>{
+    if(!session)return;
+    const events=["mousedown","keydown","touchstart","scroll"];
+    events.forEach(e=>window.addEventListener(e,resetSessionTimer,{passive:true}));
+    resetSessionTimer();
+    return()=>{events.forEach(e=>window.removeEventListener(e,resetSessionTimer));if(sessionTimeout)clearTimeout(sessionTimeout);};
+  },[session]);
   const[configs,setConfigs]=useState<Record<string,any>>({});
   const[modal,setModal]=useState<any>(null);
   const[sideOpen,setSideOpen]=useState(true);
@@ -851,6 +892,7 @@ export default function App(){
           const t=new Date(result.updatedAt).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
           setUpdateAlert(`🔄 Nouvelles données disponibles — mises à jour à ${t}`);
           setTimeout(()=>setUpdateAlert(null),8000);
+          sendNotif("OrderTrack — Mise à jour",`Nouvelles données synchronisées à ${t}`);
         }
       }catch(e){console.warn("[Poll]",e);}
     },15000);
@@ -956,7 +998,7 @@ export default function App(){
 
   if(!data||!clients)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:C.t3,fontSize:14}}>Chargement…</div>;
 
-  const special=["kpi","dashboard","tresorerie","rapport","catalogue","documents"];
+  const special=["kpi","dashboard","tresorerie","rapport","catalogue","documents","logs"];
   const getConfig=(c:string)=>configs[c]||{accountNumber:"",termId:"net60",customDays:0};
 
   // ── Compute global alerts (for ticker on all pages) ──────────────
@@ -1056,6 +1098,11 @@ export default function App(){
               </span>
               <div style={{display:"flex",gap:4}}>
                 {session?.role==="admin"&&<button onClick={()=>setShowUserMgr(true)} title="Gérer les accès" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-users" style={{fontSize:14}} aria-hidden="true"/></button>}
+                {session?.role==="admin"&&<button onClick={()=>setPage("logs")} title="Logs d'activité" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-activity" style={{fontSize:14}} aria-hidden="true"/></button>}
+                <button onClick={notifEnabled?()=>{}: enableNotifications} title={notifEnabled?"Notifications activées":"Activer les notifications"}
+                  style={{background:"transparent",border:"none",color:notifEnabled?"#10B981":"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}>
+                  <i className={`ti ${notifEnabled?"ti-bell-ringing":"ti-bell"}`} style={{fontSize:14}} aria-hidden="true"/>
+                </button>
                 <button onClick={logout} title="Se déconnecter" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-logout" style={{fontSize:14}} aria-hidden="true"/></button>
               </div>
             </div>
@@ -1108,9 +1155,16 @@ export default function App(){
         )}
         {/* Alert Ticker */}
         {tickerAlerts.length>0&&<AlertTicker alerts={tickerAlerts} lang={lang}/>}
+        {/* Offline banner */}
+        {!isOnline&&(
+          <div style={{background:"#92400E",padding:"7px 20px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+            <i className="ti ti-wifi-off" style={{fontSize:14,color:"#FCD34D"}} aria-hidden="true"/>
+            <span style={{fontSize:12,fontWeight:600,color:"#FDE68A"}}>Hors ligne — données locales uniquement</span>
+          </div>
+        )}
         {/* Update notification from another device */}
         {updateAlert&&(
-          <div style={{background:"#1D4ED8",padding:"8px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,animation:"slideIn .3s ease-out"}}>
+          <div style={{background:"#1D4ED8",padding:"8px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
             <span style={{fontSize:12,fontWeight:600,color:"#BFDBFE",display:"flex",alignItems:"center",gap:8}}>
               <i className="ti ti-refresh" style={{fontSize:14,color:"#93C5FD"}} aria-hidden="true"/>
               {updateAlert}
@@ -1125,6 +1179,7 @@ export default function App(){
         {page==="rapport"&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
         {page==="catalogue"&&<CataloguePage clients={clients} lang={lang} isMobile={isMobile}/>}
         {page==="documents"&&<DocumentsPage isMobile={isMobile}/>}
+        {page==="logs"&&<ActivityLogsPage session={session}/>}
         {!special.includes(page)&&(
           <ClientPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
@@ -3240,1117 +3295,61 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     w.document.close();
   };
 
-  // ── UI ─────────────────────────────────────────────────────────────────────
-  // ActivityTable moved outside component — see below
-
-  return(
-    <div style={{display:"flex",flexDirection:"column",gap:20}}>
-      {/* Header */}
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
-        <div>
-          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Rapport Hebdomadaire</h1>
-          <p style={{margin:0,color:C.t3,fontSize:13}}>Saisie des activités · données commerciales auto-générées</p>
-        </div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
-          {saveMsg&&<span style={{background:C.greenL,color:C.greenDk,padding:"8px 14px",borderRadius:C.r,fontSize:12,fontWeight:600,display:"flex",alignItems:"center"}}>{saveMsg}</span>}
-          <button onClick={newReport} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",color:C.t2,border:`1px solid ${C.b}`,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-            <i className="ti ti-file-plus" style={{fontSize:15}} aria-hidden="true"/> Nouveau
-          </button>
-          <button onClick={()=>setShowHistory(!showHistory)} style={{display:"flex",alignItems:"center",gap:6,background:C.blueL,color:C.blueDk,border:`1px solid ${C.blue}30`,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",position:"relative"}}>
-            <i className="ti ti-history" style={{fontSize:15}} aria-hidden="true"/> Historique
-            {savedReports.length>0&&<span style={{background:C.blue,color:"#fff",borderRadius:99,fontSize:10,fontWeight:700,padding:"1px 6px",marginLeft:2}}>{savedReports.length}</span>}
-          </button>
-          <button onClick={saveReport} style={{display:"flex",alignItems:"center",gap:6,background:C.greenL,color:C.greenDk,border:`1px solid ${C.green}30`,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-            <i className="ti ti-device-floppy" style={{fontSize:15}} aria-hidden="true"/> Sauvegarder
-          </button>
-          <button onClick={printReport} style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",border:"none",borderRadius:C.r,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 15px rgba(37,99,235,.35)"}}>
-            <i className="ti ti-printer" style={{fontSize:16}} aria-hidden="true"/>
-            Imprimer
-          </button>
-        </div>
-      </div>
-
-      {/* History panel */}
-      {showHistory&&(
-        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.shMd,overflow:"hidden"}}>
-          <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <span style={{fontWeight:600,fontSize:13,color:C.t1,display:"flex",alignItems:"center",gap:6}}>
-              <i className="ti ti-history" style={{fontSize:14,color:C.blue}} aria-hidden="true"/>
-              Rapports sauvegardés ({savedReports.length})
-            </span>
-            <button onClick={()=>setShowHistory(false)} style={{background:"#F1F5F9",border:"none",color:C.t3,cursor:"pointer",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <i className="ti ti-x" style={{fontSize:13}} aria-hidden="true"/>
-            </button>
-          </div>
-          {savedReports.length===0&&<div style={{padding:"24px",textAlign:"center",color:C.t3,fontSize:12}}>Aucun rapport sauvegardé</div>}
-          <div style={{display:"flex",flexDirection:"column",gap:0}}>
-            {savedReports.map((r:any,i:number)=>(
-              <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",borderBottom:`1px solid ${C.b}`,background:i%2===0?"#fff":"#FAFBFD",transition:"background .12s"}}
-                onMouseEnter={(e:any)=>e.currentTarget.style.background="#EFF6FF"}
-                onMouseLeave={(e:any)=>e.currentTarget.style.background=i%2===0?"#fff":"#FAFBFD"}>
-                <div style={{width:40,height:40,borderRadius:8,background:C.blueL,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <i className="ti ti-file-report" style={{fontSize:18,color:C.blue}} aria-hidden="true"/>
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:700,fontSize:13,color:C.t1}}>{r.label}</div>
-                  <div style={{fontSize:11,color:C.t3,marginTop:2}}>
-                    Sauvegardé le {new Date(r.savedAt).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"})}
-                    {" · "}{(r.lastWeekItems?.filter((x:any)=>x.client||x.action).length||0)} activités semaine passée
-                    {" · "}{(r.thisWeekItems?.filter((x:any)=>x.client||x.action).length||0)} activités semaine en cours
-                  </div>
-                </div>
-                <div style={{display:"flex",gap:6,flexShrink:0}}>
-                  <button onClick={()=>loadReport(r)} style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
-                    <i className="ti ti-folder-open" style={{fontSize:13}} aria-hidden="true"/> Charger
-                  </button>
-                  <button onClick={()=>{if(window.confirm(`Supprimer le rapport ${r.weekLabel} ?`))deleteReport(r.id);}}
-                    style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-                    <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Report settings */}
-      <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 20px"}}>
-        <div style={{fontSize:12,fontWeight:600,color:C.t1,marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <span style={{display:"flex",alignItems:"center",gap:6}}><i className="ti ti-settings" style={{fontSize:14,color:C.t3}} aria-hidden="true"/> Paramètres du rapport</span>
-          <span style={{fontSize:10,color:C.t3,fontStyle:"italic"}}>💾 Brouillon auto-sauvegardé</span>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr",gap:12}}>
-          <div>
-            <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>Semaine</label>
-            <input value={weekLabel} onChange={e=>setWeekLabel(e.target.value)} placeholder="ex: S23"
-              style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
-          </div>
-          <div>
-            <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>Période</label>
-            <input value={period} onChange={e=>setPeriod(e.target.value)} placeholder="ex: Mai 2026"
-              style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
-          </div>
-        </div>
-      </div>
-
-      {/* Period selector for orders */}
-      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:12,fontWeight:600,color:C.t2}}>Période commandes reçues :</span>
-        <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
-          {[{v:7,l:"7 jours"},{v:30,l:"1 mois"},{v:60,l:"2 mois"},{v:90,l:"3 mois"}].map(({v,l})=>(
-            <button key={v} onClick={()=>setOrderPeriod(v)}
-              style={{padding:"7px 16px",border:"none",borderRight:`1px solid ${C.b}`,
-                background:orderPeriod===v?C.blue:"transparent",
-                color:orderPeriod===v?"#fff":C.t2,
-                fontWeight:orderPeriod===v?700:400,fontSize:12,cursor:"pointer",transition:"all .15s"}}>
-              {l}
-            </button>
-          ))}
-        </div>
-        <span style={{fontSize:11,color:C.t3}}>Depuis le {periodStart.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}</span>
-      </div>
-
-      {/* Period selector for invoices */}
-      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:12,fontWeight:600,color:C.t2}}>Période factures :</span>
-        <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
-          {[{v:7,l:"7 jours"},{v:30,l:"1 mois"},{v:60,l:"2 mois"},{v:90,l:"3 mois"}].map(({v,l})=>(
-            <button key={v} onClick={()=>setInvoicePeriod(v)}
-              style={{padding:"7px 16px",border:"none",borderRight:`1px solid ${C.b}`,
-                background:invoicePeriod===v?C.teal:"transparent",
-                color:invoicePeriod===v?"#fff":C.t2,
-                fontWeight:invoicePeriod===v?700:400,fontSize:12,cursor:"pointer",transition:"all .15s"}}>
-              {l}
-            </button>
-          ))}
-        </div>
-        <span style={{fontSize:11,color:C.t3}}>Depuis le {invPeriodStart.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}</span>
-      </div>
-
-      {/* Auto data preview */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(4,1fr)",gap:12}}>
-        {[
-          {label:`Orders reçus (${periodLabel})`,val:`${fmtK(recentOrdersAmt)} €`,sub:`${recentOrders.length} commande${recentOrders.length>1?"s":""}`,c:C.blue,bg:C.blueL},
-          {label:"Facturé "+MONTH_NAMES[thisMonth],val:`${fmtK(invoicedThisMonth)} €`,sub:"Ce mois-ci",c:C.teal,bg:C.tealL},
-          {label:"Facturé "+MONTH_NAMES[prevMonth],val:`${fmtK(invoicedPrevMonth)} €`,sub:"Mois précédent",c:"#0D9488",bg:"#CCFBF1"},
-          {label:"Open Orders",val:`${fmtK(openOrders)} €`,sub:"Reste à facturer",c:C.amberDk,bg:C.amberL},
-        ].map((k,i)=>(
-          <div key={i} style={{background:"#fff",borderRadius:C.r,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
-            <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>{k.label}</div>
-            <div style={{fontSize:18,fontWeight:800,color:k.c}}>{k.val}</div>
-            <div style={{fontSize:11,color:C.t3,marginTop:3}}>{k.sub}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Expected orders */}
-      <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
-        <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <span style={{fontWeight:600,fontSize:13,color:C.t1}}>🎯 Commandes attendues (Expected Orders)</span>
-          <button onClick={()=>setExpectedOrders(p=>[...p,{client:"",project:"",est:""}])}
-            style={{display:"flex",alignItems:"center",gap:5,background:C.amberL,color:C.amberDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
-            <i className="ti ti-plus" style={{fontSize:13}} aria-hidden="true"/> Ajouter
-          </button>
-        </div>
-        <div style={{padding:"12px 18px",display:"flex",flexDirection:"column",gap:8}}>
-          {expectedOrders.map((item:any,idx:number)=>(
-            <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr 120px 32px",gap:8,alignItems:"center"}}>
-              <input value={item.client} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,client:e.target.value}:x))}
-                placeholder="Client" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
-              <input value={item.project} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,project:e.target.value}:x))}
-                placeholder="Projet / Description" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
-              <input type="number" value={item.est} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,est:e.target.value}:x))}
-                placeholder="K€" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
-              <button onClick={()=>setExpectedOrders((p:any)=>p.filter((_:any,i:number)=>i!==idx))}
-                style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Activity tables */}
-      <ActivityTable
-        items={lastWeekItems}
-        onAdd={()=>setLastWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
-        onUpdate={(idx:number,field:string,val:string)=>setLastWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
-        onRemove={(idx:number)=>setLastWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
-        title="📋 Semaine passée — Activités terrain" color={C.purple} isMobile={isMobile}/>
-      <ActivityTable
-        items={thisWeekItems}
-        onAdd={()=>setThisWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
-        onUpdate={(idx:number,field:string,val:string)=>setThisWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
-        onRemove={(idx:number)=>setThisWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
-        title="🚀 Semaine en cours — Activités terrain" color={C.green} isMobile={isMobile}/>
-
-      {/* Print button bottom */}
-      <div style={{display:"flex",justifyContent:"center",paddingBottom:20}}>
-        <button onClick={printReport}
-          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(37,99,235,.4)"}}>
-          <i className="ti ti-printer" style={{fontSize:18}} aria-hidden="true"/>
-          Générer & Imprimer le rapport PDF (5 pages)
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── CATALOGUE & DEVIS ───────────────────────────────────────────────────────
-const CAT_KEY="ordertrack-catalogue";
-const QUOT_KEY="ordertrack-quotes";
-const CAT_K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
-const CAT_B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
-
-const sbGet=async(key:string)=>{
-  try{
-    const r=await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K+"&user_key=eq."+key+"&select=payload,updated_at&limit=1",
-      {headers:{"apikey":CAT_K,"Authorization":"Bearer "+CAT_K,"Prefer":"return=representation"}});
-    if(!r.ok)return null;
-    const d=await r.json();
-    if(!d?.[0])return null;
-    return{...d[0].payload,_updatedAt:d[0].updated_at};
-  }catch(e){console.warn("[sbGet]",key,e);return null;}
-};
-const sbSet=async(key:string,payload:any):Promise<boolean>=>{
-  try{
-    // Step 1: try PATCH (update existing row)
-    const patch=await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K+"&user_key=eq."+key,{
-      method:"PATCH",
-      headers:{"Content-Type":"application/json","apikey":CAT_K,"Authorization":"Bearer "+CAT_K,"Prefer":"return=minimal"},
-      body:JSON.stringify({payload,updated_at:new Date().toISOString()})
-    });
-    if(patch.status===204||patch.status===200){
-      console.log("[sbSet] PATCH OK:",key);
-      return true;
-    }
-    // Step 2: if no row, INSERT
-    const post=await fetch(CAT_B+"/rest/v1/ordertrack_data?apikey="+CAT_K,{
-      method:"POST",
-      headers:{"Content-Type":"application/json","apikey":CAT_K,"Authorization":"Bearer "+CAT_K,"Prefer":"resolution=merge-duplicates,return=minimal"},
-      body:JSON.stringify({user_key:key,payload})
-    });
-    const ok=post.status===201||post.status===200||post.status===204;
-    console.log("[sbSet] POST:",key,"status:",post.status,ok?"OK":"FAIL");
-    if(!ok){const e=await post.text();console.warn("[sbSet] Error:",e);}
-    return ok;
-  }catch(e){console.warn("[sbSet] Exception:",key,e);return false;}
-};
-
-// Also cache catalogue in localStorage to survive page refresh
-const CAT_LS_KEY="ordertrack_catalogue_cache";
-const QUOT_LS_KEY="ordertrack_quotes_cache";
-const CAT_TS_KEY=CAT_LS_KEY+"_ts";
-const QUOT_TS_KEY=QUOT_LS_KEY+"_ts";
-
-const saveCatLocal=(p:any[])=>{
-  try{
-    localStorage.setItem(CAT_LS_KEY,JSON.stringify(p));
-    localStorage.setItem(CAT_TS_KEY,new Date().toISOString());
-  }catch{}
-};
-const loadCatLocal=():{data:any[]|null,ts:string}=>{
-  try{
-    const d=localStorage.getItem(CAT_LS_KEY);
-    const ts=localStorage.getItem(CAT_TS_KEY)||"";
-    return{data:d?JSON.parse(d):null,ts};
-  }catch{return{data:null,ts:""};}
-};
-const saveQuotLocal=(q:any[])=>{
-  try{
-    localStorage.setItem(QUOT_LS_KEY,JSON.stringify(q));
-    localStorage.setItem(QUOT_TS_KEY,new Date().toISOString());
-  }catch{}
-};
-const loadQuotLocal=():{data:any[]|null,ts:string}=>{
-  try{
-    const d=localStorage.getItem(QUOT_LS_KEY);
-    const ts=localStorage.getItem(QUOT_TS_KEY)||"";
-    return{data:d?JSON.parse(d):null,ts};
-  }catch{return{data:null,ts:""};}
-};
-
-const AVAIL_OPTIONS=["Stock","2-4 weeks EXW","4-6 weeks EXW","6-8 weeks EXW","8-10 weeks EXW","10-12 weeks EXW","12-14 weeks EXW","14-18 weeks EXW","18-24 weeks EXW","24-28 weeks EXW"];
-
-// Convert French month label to ISO date string
-const frMonthToISO=(label:string):string=>{
-  const MONTHS_FR:Record<string,string>={
-    "janvier":"01","fevrier":"02","février":"02","mars":"03","avril":"04",
-    "mai":"05","juin":"06","juillet":"07","aout":"08","août":"08",
-    "septembre":"09","octobre":"10","novembre":"11","decembre":"12","décembre":"12"
-  };
-  const l=label.toLowerCase().trim();
-  for(const [m,n] of Object.entries(MONTHS_FR)){
-    if(l.includes(m)){
-      const yearMatch=l.match(/20\d{2}/);
-      const year=yearMatch?yearMatch[0]:new Date().getFullYear().toString();
-      return `${year}-${n}-01`;
-    }
-  }
-  return new Date().toISOString().slice(0,10);
-};
-
-// Check if a row contains a date/period label (like "FEVRIER 2026")
-const isPeriodLabel=(row:any[]):string|null=>{
-  for(const cell of row){
-    const s=String(cell||"").trim();
-    if(/^(JANVIER|FEVRIER|FÉVRIER|MARS|AVRIL|MAI|JUIN|JUILLET|AOUT|AOÛT|SEPTEMBRE|OCTOBRE|NOVEMBRE|DECEMBRE|DÉCEMBRE)\s+20\d{2}$/i.test(s)){
-      return s;
-    }
-  }
-  return null;
-};
-
-// Parse Excel with SheetJS (loaded dynamically)
-const parseExcel=async(file:File):Promise<any[]>=>{
-  return new Promise((resolve)=>{
-    const reader=new FileReader();
-    reader.onload=async(e)=>{
-      try{
-        // Dynamically load SheetJS
-        if(!(window as any).XLSX){
-          await new Promise<void>((res,rej)=>{
-            const s=document.createElement("script");
-            s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-            s.onload=()=>res();s.onerror=()=>rej();
-            document.head.appendChild(s);
-          });
-        }
-        const XLSX=(window as any).XLSX;
-        const data=new Uint8Array(e.target?.result as ArrayBuffer);
-        const wb=XLSX.read(data,{type:"array"});
-        const ws=wb.Sheets[wb.SheetNames[0]];
-        const rows:any[]=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
-        resolve(rows);
-      }catch(err){console.warn("Excel parse error",err);resolve([]);}
-    };
-    reader.readAsArrayBuffer(file);
-  });
-};
-
-// Detect columns from header row — supports GRUNDFOS format and others
-const detectColumns=(headers:string[])=>{
-  const h=headers.map((x:any)=>String(x||"").toLowerCase().trim());
-  const find=(...keys:string[])=>{
-    for(const k of keys){const i=h.findIndex((x:string)=>x.includes(k));if(i>=0)return i;}
-    return -1;
-  };
-  return{
-    pn:find("pn","part number","p/n","référence","reference","sku","code article"),
-    desc:find("product","description","libellé","designation","désignation","produit","name","nom","article","label","wording","intitulé","désign"),
-    price:find("up (€)","up (eur)","up","unit price","prix unitaire","price","prix","tarif","cost"),
-    qty:find("qty","quantité","quantite","stock","qté","disponible","quantity"),
-    customer:find("customer","client","compte"),
-    avail:find("avail","dispo","lead","délai","delai"),
-  };
-};
-
-// Smart header finder — scans all rows to find the header row
-const findHeaderRow=(rows:any[][]):{headerIdx:number,colMap:any}=>{
-  // Score each row — the header row has the most column name keywords
-  let bestScore=-1,bestIdx=0;
-  for(let i=0;i<Math.min(20,rows.length);i++){
-    const row=rows[i];
-    if(!row.some((x:any)=>x!==null&&x!==undefined&&x!==""))continue;
-    const headers=row.map((x:any)=>String(x||"").toLowerCase().trim());
-    let score=0;
-    // Strong indicators
-    if(headers.some((h:string)=>h==="pn"||h==="part number"||h==="p/n"||h==="référence"))score+=3;
-    if(headers.some((h:string)=>h.includes("up")||h.includes("p.u")||h.includes("pu.")||h==="price"||h==="prix"||h==="tarif"||h==="cost"))score+=3;
-    if(headers.some((h:string)=>h.includes("description")||h==="product"||h.includes("désign")))score+=2;
-    if(headers.some((h:string)=>h.includes("qty")||h.includes("quantit")||h.includes("stock")))score+=1;
-    if(headers.some((h:string)=>h.includes("customer")||h.includes("client")))score+=1;
-    // Penalty if row has numeric-only cells (likely data row)
-    const numericCount=row.filter((x:any)=>typeof x==="number"||(typeof x==="string"&&/^\d+[\.,]?\d*$/.test(x.trim()))).length;
-    if(numericCount>row.length/2)score-=3;
-    if(score>bestScore){bestScore=score;bestIdx=i;}
-  }
-  if(bestScore>=2){
-    return{headerIdx:bestIdx,colMap:detectColumns(rows[bestIdx].map((x:any)=>String(x||"")))};
-  }
-  // Fallback: first non-empty row
-  for(let i=0;i<Math.min(5,rows.length);i++){
-    if(rows[i].some((x:any)=>x!==null&&x!==undefined&&x!==""))return{headerIdx:i,colMap:detectColumns(rows[i].map((x:any)=>String(x||"")))};
-  }
-  return{headerIdx:0,colMap:{pn:-1,desc:-1,price:-1,qty:-1,customer:-1,avail:-1}};
-};
-
-// Extract customer name from pre-header rows (GRUNDFOS format)
-const extractCustomer=(rows:any[][],headerIdx:number):string=>{
-  for(let i=0;i<headerIdx;i++){
-    for(const cell of rows[i]){
-      const s=String(cell||"").trim();
-      if(s.length>3&&!s.includes("=")){
-        // Look for customer name pattern e.g. "BERNABE (7292002420)"
-        const m=s.match(/^([A-Z][A-Z\s]+)/);
-        if(m&&m[1].trim().length>2) return m[1].trim();
-      }
-    }
-  }
-  return "";
-};
-
-// ─── MANUAL PRODUCT ENTRY ────────────────────────────────────────────────────
-function ManualProductEntry({products,saveProducts}:any){
-  const[pn,setPn]=useState("");
-  const[desc,setDesc]=useState("");
-  const[price,setPrice]=useState("");
-  const[date,setDate]=useState(new Date().toISOString().slice(0,10));
-  const[customer,setCustomer]=useState("");
-  const[msg,setMsg]=useState("");
-  const[editExisting,setEditExisting]=useState<any>(null);
-  const pnRef=useRef<HTMLInputElement>(null);
-
-  const handleAdd=async()=>{
-    if(!pn.trim()){setMsg("Le PN est obligatoire");return;}
-    const priceVal=parseFloat(price.replace(",","."))||0;
-    if(!priceVal){setMsg("Saisir un prix valide");return;}
-    const today=date||new Date().toISOString().slice(0,10);
-    const existing=products.findIndex((p:any)=>p.pn.toLowerCase()===pn.trim().toLowerCase());
-    const priceEntry={price:priceVal,currency:"EUR",customer:customer.trim(),date:today,source:"Saisie manuelle"};
-    let updated=[...products];
-    if(existing>=0){
-      // Update existing product
-      const prod={...updated[existing]};
-      if(desc.trim()&&desc.trim()!==pn.trim())prod.description=desc.trim();
-      prod.prices=[priceEntry,...(prod.prices||[])];
-      prod.lastUpdated=today;
-      updated[existing]=prod;
-      setMsg(`✓ Prix ajouté au produit existant : ${pn.trim()}`);
-    } else {
-      // New product
-      updated=[{
-        id:Date.now().toString()+Math.random().toString(36).slice(2,5),
-        pn:pn.trim(),
-        description:desc.trim()&&desc.trim()!==pn.trim()?desc.trim():"",
-        prices:[priceEntry],
-        lastUpdated:today
-      },...updated];
-      setMsg(`✓ Nouveau produit ajouté : ${pn.trim()}`);
-    }
-    await saveProducts(updated);
-    setPn("");setDesc("");setPrice("");setCustomer("");
-    setTimeout(()=>setMsg(""),3000);
-    pnRef.current?.focus();
-  };
-
-  // Check if PN already exists for live feedback
-  const existing=pn.trim()?products.find((p:any)=>p.pn.toLowerCase()===pn.trim().toLowerCase()):null;
-
-  return(
-    <div style={{background:"#fff",borderRadius:C.rLg,border:`2px solid ${C.blue}20`,boxShadow:C.sh,overflow:"hidden"}}>
-      <div style={{padding:"14px 20px",borderBottom:`1px solid ${C.b}`,background:`linear-gradient(135deg,${C.blueL},#fff)`,display:"flex",alignItems:"center",gap:8}}>
-        <i className="ti ti-keyboard" style={{fontSize:16,color:C.blue}} aria-hidden="true"/>
-        <span style={{fontWeight:700,fontSize:13,color:C.t1}}>Saisie manuelle — Ajouter un produit au catalogue</span>
-      </div>
-      <div style={{padding:"16px 20px"}}>
-        {msg&&(
-          <div style={{background:msg.startsWith("✓")?C.greenL:C.redL,color:msg.startsWith("✓")?C.greenDk:C.redDk,
-            padding:"8px 14px",borderRadius:6,marginBottom:12,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
-            <i className={`ti ${msg.startsWith("✓")?"ti-check":"ti-alert-circle"}`} style={{fontSize:14}} aria-hidden="true"/>
-            {msg}
-          </div>
-        )}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr 1fr 1fr 1fr",gap:10,alignItems:"end"}}>
-          {/* PN */}
-          <div>
-            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>
-              Part Number *
-            </label>
-            <div style={{position:"relative"}}>
-              <input ref={pnRef} value={pn} onChange={e=>setPn(e.target.value)}
-                onKeyDown={e=>e.key==="Enter"&&handleAdd()}
-                placeholder="ex: 96516993"
-                style={{width:"100%",padding:"8px 10px",
-                  border:`2px solid ${existing?C.amber:pn?C.blue:C.b}`,
-                  borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",
-                  background:existing?C.amberL:"#fff"}}/>
-              {existing&&(
-                <div style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",fontSize:10,color:C.amberDk,fontWeight:600,whiteSpace:"nowrap"}}>
-                  Existe déjà
-                </div>
-              )}
-            </div>
-            {existing&&<div style={{fontSize:10,color:C.amberDk,marginTop:2}}>Un prix sera ajouté à ce produit</div>}
-          </div>
-          {/* Description */}
-          <div>
-            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>Description</label>
-            <input value={desc||existing?.description||""} onChange={e=>setDesc(e.target.value)}
-              placeholder={existing?.description||"ex: CR5-10 A-A-A-E-HQQE 3x230/400 50HZ"}
-              style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",
-                background:existing?.description&&!desc?"#F8FAFC":"#fff",color:existing?.description&&!desc?C.t3:C.t1}}/>
-          </div>
-          {/* Price */}
-          <div>
-            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>Prix UP (€) *</label>
-            <input value={price} onChange={e=>setPrice(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&handleAdd()}
-              placeholder="ex: 791.78"
-              type="number" step="0.01" min="0"
-              style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-          </div>
-          {/* Date */}
-          <div>
-            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>Date</label>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
-              style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-          </div>
-          {/* Add button */}
-          <div>
-            <button onClick={handleAdd}
-              style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,
-                background:pn&&price?C.blue:"#D1D5DB",color:"#fff",border:"none",
-                borderRadius:C.rSm,padding:"8px 12px",fontSize:12,fontWeight:700,
-                cursor:pn&&price?"pointer":"not-allowed",transition:"all .15s"}}>
-              <i className="ti ti-plus" style={{fontSize:14}} aria-hidden="true"/>
-              {existing?"Ajouter prix":"Ajouter"}
-            </button>
-          </div>
-        </div>
-        {/* Recent manual entries */}
-        {products.filter((p:any)=>p.prices?.some((pr:any)=>pr.source==="Saisie manuelle")).length>0&&(
-          <div style={{marginTop:14,borderTop:`1px solid ${C.b}`,paddingTop:12}}>
-            <div style={{fontSize:11,color:C.t3,fontWeight:600,marginBottom:8}}>Dernières saisies manuelles</div>
-            <div style={{display:"flex",flexDirection:"column",gap:4}}>
-              {products
-                .filter((p:any)=>p.prices?.some((pr:any)=>pr.source==="Saisie manuelle"))
-                .slice(0,5)
-                .map((p:any)=>{
-                  const manualPrices=p.prices.filter((pr:any)=>pr.source==="Saisie manuelle");
-                  const latest=manualPrices[0];
-                  return(
-                    <div key={p.pn} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 10px",background:"#F8FAFC",borderRadius:5,border:`1px solid ${C.b}`}}>
-                      <span style={{fontWeight:700,color:C.blue,fontFamily:"monospace",fontSize:11,minWidth:80}}>{p.pn}</span>
-                      <span style={{flex:1,color:C.t2,fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description||"—"}</span>
-                      <span style={{fontWeight:700,color:C.greenDk,fontSize:11,whiteSpace:"nowrap"}}>{fmt(latest?.price)} €</span>
-                      <span style={{color:C.t3,fontSize:10}}>{latest?.date}</span>
-                    </div>
-                  );
-                })
-              }
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── CATALOGUE EDIT MODAL ────────────────────────────────────────────────────
-function CatEditModal({product,onSave,onClose}:any){
-  const[pn,setPn]=useState(product?.pn||"");
-  const[desc,setDesc]=useState(product?.description||"");
-  const[prices,setPrices]=useState<any[]>(product?.prices||[]);
-  const[newPrice,setNewPrice]=useState("");
-  const[newDate,setNewDate]=useState(new Date().toISOString().slice(0,10));
-  const[newCustomer,setNewCustomer]=useState("");
-
-  const addPrice=()=>{
-    const v=parseFloat(newPrice.replace(",","."))||0;
-    if(!v)return;
-    setPrices(p=>[{price:v,currency:"EUR",customer:newCustomer,date:newDate,source:"Saisie manuelle"},...p]);
-    setNewPrice("");setNewCustomer("");
-  };
-
-  const removePrice=(idx:number)=>setPrices(p=>p.filter((_:any,i:number)=>i!==idx));
-
-  const handleSave=()=>{
-    if(!pn.trim())return;
-    onSave({...product,pn:pn.trim(),description:desc.trim(),prices,lastUpdated:new Date().toISOString().slice(0,10)});
-  };
-
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,backdropFilter:"blur(3px)"}}>
-      <div style={{background:"#fff",borderRadius:16,width:560,maxWidth:"96vw",maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
-        {/* Header */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:`1px solid ${C.b}`}}>
-          <h3 style={{margin:0,fontSize:15,fontWeight:700,color:C.t1,display:"flex",alignItems:"center",gap:8}}>
-            <i className="ti ti-edit" style={{fontSize:16,color:C.blue}} aria-hidden="true"/>
-            Modifier le produit
-          </h3>
-          <button onClick={onClose} style={{background:"#F1F5F9",border:"none",color:C.t3,cursor:"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <i className="ti ti-x" style={{fontSize:14}} aria-hidden="true"/>
-          </button>
-        </div>
-        {/* Body */}
-        <div style={{overflowY:"auto",flex:1,padding:"18px 22px",display:"flex",flexDirection:"column",gap:14}}>
-          {/* PN + Description */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10}}>
-            <div>
-              <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Part Number</label>
-              <input value={pn} onChange={e=>setPn(e.target.value)}
-                style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:13,fontFamily:"monospace",fontWeight:700,color:C.blue,boxSizing:"border-box"}}/>
-            </div>
-            <div>
-              <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Description</label>
-              <input value={desc} onChange={e=>setDesc(e.target.value)}
-                style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-            </div>
-          </div>
-          {/* Prices list */}
-          <div>
-            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:8,textTransform:"uppercase",letterSpacing:".05em"}}>
-              Prix ({prices.length})
-            </label>
-            <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:10}}>
-              {prices.map((pr:any,i:number)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:"#F8FAFC",borderRadius:6,border:`1px solid ${C.b}`}}>
-                  <span style={{fontWeight:700,color:C.blue,fontSize:13,minWidth:80}}>{fmt(pr.price)} €</span>
-                  <span style={{fontSize:11,color:C.t3,flex:1}}>{pr.date} {pr.customer&&`· ${pr.customer}`} · {pr.source}</span>
-                  <button onClick={()=>removePrice(i)}
-                    style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0}}>
-                    <i className="ti ti-trash" style={{fontSize:11}} aria-hidden="true"/>
-                  </button>
-                </div>
-              ))}
-              {prices.length===0&&<div style={{color:C.t3,fontSize:12,padding:"8px 0"}}>Aucun prix enregistré</div>}
-            </div>
-            {/* Add new price */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 130px 120px 32px",gap:6,alignItems:"end"}}>
-              <div>
-                <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>Nouveau prix (€)</label>
-                <input value={newPrice} onChange={e=>setNewPrice(e.target.value)} type="number" step="0.01" placeholder="ex: 1250.00"
-                  style={{width:"100%",padding:"7px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-              </div>
-              <div>
-                <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>Date</label>
-                <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)}
-                  style={{width:"100%",padding:"7px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-              </div>
-              <div>
-                <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>Client</label>
-                <input value={newCustomer} onChange={e=>setNewCustomer(e.target.value)} placeholder="optionnel"
-                  style={{width:"100%",padding:"7px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-              </div>
-              <button onClick={addPrice} style={{background:C.greenL,color:C.greenDk,border:"none",borderRadius:5,height:32,width:32,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-                <i className="ti ti-plus" style={{fontSize:14}} aria-hidden="true"/>
-              </button>
-            </div>
-          </div>
-        </div>
-        {/* Footer */}
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end",padding:"14px 22px",borderTop:`1px solid ${C.b}`}}>
-          <button onClick={onClose} style={{background:"#F1F5F9",color:C.t2,border:"none",borderRadius:8,padding:"9px 18px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-            Annuler
-          </button>
-          <button onClick={handleSave} style={{background:C.blue,color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
-            <i className="ti ti-check" style={{fontSize:14}} aria-hidden="true"/> Enregistrer
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── CATALOGUE PAGE ───────────────────────────────────────────────────────────
-function CataloguePage({clients,lang,isMobile}:any){
-  const[tab,setTab]=useState<"upload"|"catalogue"|"devis">("devis");
-  const[products,setProducts]=useState<any[]>([]);
-  const[quotes,setQuotes]=useState<any[]>([]);
-  const[loading,setLoading]=useState(true);
-  const[syncStatus,setSyncStatus]=useState<"idle"|"syncing"|"ok"|"error">("idle");
-  const[syncMsg,setSyncMsg]=useState("");
-  const[uploading,setUploading]=useState(false);
-  const[uploadMsg,setUploadMsg]=useState("");
-  const[multiFiles,setMultiFiles]=useState<File[]>([]);
-  const[processingIdx,setProcessingIdx]=useState(-1);
-  const[previewRows,setPreviewRows]=useState<any[]>([]);
-  const[allRows,setAllRows]=useState<any[]>([]);
-  const[colMap,setColMap]=useState<any>({pn:-1,desc:-1,price:-1,qty:-1,customer:-1,avail:-1});
-  const[pendingFile,setPendingFile]=useState<string>("");
-  const[catSearch,setCatSearch]=useState("");
-  const[catEditProduct,setCatEditProduct]=useState<any>(null);
-  const fileRef=useRef<HTMLInputElement>(null);
-
-  // Quote form state
-  const[qClient,setQClient]=useState("");
-  const[qLines,setQLines]=useState<any[]>([{pn:"",desc:"",qty:1,unitPrice:0,avail:"Stock",priceOptions:[],selectedPriceIdx:-1}]);
-  const[dropdownPos,setDropdownPos]=useState<{top:number,left:number,width:number}|null>(null);
-  const[dropdownType,setDropdownType]=useState<"pn"|"desc"|null>(null);
-  const[dropdownLineIdx,setDropdownLineIdx]=useState<number>(-1);
-  const[dropdownItems,setDropdownItems]=useState<any[]>([]);
-  const closeDropdown=()=>{setDropdownPos(null);setDropdownType(null);setDropdownLineIdx(-1);setDropdownItems([]);};
-
-  const openDropdown=(e:any,type:"pn"|"desc",idx:number,items:any[])=>{
-    if(!items.length){closeDropdown();return;}
-    const rect=e.target.getBoundingClientRect();
-    setDropdownPos({top:rect.bottom+4,left:rect.left,width:Math.max(rect.width,280)});
-    setDropdownType(type);setDropdownLineIdx(idx);setDropdownItems(items);
-  };
-  const[qRef,setQRef]=useState(()=>`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);
-  const[qDate,setQDate]=useState(new Date().toISOString().slice(0,10));
-  const[qValidity,setQValidity]=useState("30");
-  const[qNotes,setQNotes]=useState("");
-  const[qClientManual,setQClientManual]=useState("");
-  const[qClientAddr,setQClientAddr]=useState("");
-  const[useManualClient,setUseManualClient]=useState(false);
-
-  useEffect(()=>{
-    // 1. Load from localStorage instantly
-    const{data:localCat,ts:localCatTs}=loadCatLocal();
-    const{data:localQuot}=loadQuotLocal();
-    if(localCat&&localCat.length>0){setProducts(localCat);setLoading(false);}
-    if(localQuot&&localQuot.length>0){setQuotes(localQuot);setLoading(false);}
-
-    // 2. Always fetch from Supabase to get latest cross-device data
-    (async()=>{
-      try{
-        const catData=await sbGet(CAT_KEY);
-        const cloudProds=catData?.products||[];
-        const localProds=localCat||[];
-        const cloudTs=catData?._updatedAt||catData?.ts||"";
-        const localIsNewer=localCatTs&&cloudTs&&(new Date(localCatTs)>new Date(cloudTs));
-
-        if(cloudProds.length>0&&localProds.length===0){
-          // Other device: load from cloud
-          setProducts(cloudProds);saveCatLocal(cloudProds);
-          setSyncStatus("ok");setSyncMsg(`✓ ${cloudProds.length} produits chargés depuis le cloud`);
-        } else if(cloudProds.length>0&&localProds.length>0){
-          if(localIsNewer){
-            // Local newer: merge and push
-            const cloudPNs=new Set(cloudProds.map((p:any)=>p.pn));
-            const localOnly=localProds.filter((p:any)=>!cloudPNs.has(p.pn));
-            const merged=[...cloudProds,...localOnly];
-            if(merged.length>localProds.length){setProducts(merged);saveCatLocal(merged);}
-            await sbSet(CAT_KEY,{products:merged.length>localProds.length?merged:localProds,ts:new Date().toISOString()});
-            setSyncStatus("ok");setSyncMsg(`✓ ${Math.max(merged.length,localProds.length)} produits synchronisés`);
-          } else {
-            // Cloud newer or equal: merge cloud+local
-            const cloudPNs=new Set(cloudProds.map((p:any)=>p.pn));
-            const localOnly=localProds.filter((p:any)=>!cloudPNs.has(p.pn));
-            const merged=[...cloudProds,...localOnly];
-            setProducts(merged);saveCatLocal(merged);
-            setSyncStatus("ok");setSyncMsg(`✓ ${merged.length} produits synchronisés`);
-          }
-        } else if(cloudProds.length===0&&localProds.length>0){
-          // Cloud empty: push local
-          await sbSet(CAT_KEY,{products:localProds,ts:localCatTs||new Date().toISOString()});
-          setSyncStatus("ok");setSyncMsg(`✓ ${localProds.length} produits envoyés vers le cloud`);
-        } else {
-          setSyncStatus("idle");setSyncMsg("Catalogue vide — importez des fichiers");
-        }
-
-        const quotData=await sbGet(QUOT_KEY);
-        if(quotData?.quotes?.length>0){
-          setQuotes(quotData.quotes);saveQuotLocal(quotData.quotes);
-        }
-      }catch(e){
-        console.warn("[Catalogue] Load error",e);
-        setSyncStatus("error");setSyncMsg("⚠️ Erreur de connexion cloud");
-      }
-      setLoading(false);
-    })();
-  },[]);
-
-  const saveProducts=async(p:any[])=>{
-    setProducts(p);
-    saveCatLocal(p); // Immediate local save
-    setSyncStatus("syncing");setSyncMsg("Synchronisation…");
-    const ts=new Date().toISOString();
-    const ok=await sbSet(CAT_KEY,{products:p,ts});
-    if(ok){
-      setSyncStatus("ok");
-      setSyncMsg(`✓ ${p.length} produits synchronisés — ${new Date().toLocaleTimeString("fr-FR")}`);
-    } else {
-      setSyncStatus("error");
-      setSyncMsg("⚠️ Sync cloud échouée — données sauvegardées localement");
-    }
-  };
-  const saveQuotes=async(q:any[])=>{
-    setQuotes(q);
-    saveQuotLocal(q);
-    await sbSet(QUOT_KEY,{quotes:q,ts:new Date().toISOString()});
-  };
-
-  const forceSync=async()=>{
-    setSyncStatus("syncing");setSyncMsg("Connexion au cloud…");
-    try{
-      // 1. Always fetch cloud first
-      const catData=await sbGet(CAT_KEY);
-      const{data:localCat,ts:localTs}=loadCatLocal();
-      const cloudProds=catData?.products||[];
-      const localProds=localCat||products||[];
-      const cloudTs=catData?._updatedAt||catData?.ts||"";
-
-      if(cloudProds.length===0&&localProds.length===0){
-        setSyncStatus("idle");setSyncMsg("Catalogue vide des deux côtés");return;
-      }
-      if(cloudProds.length===0&&localProds.length>0){
-        // Push local to cloud
-        const ts=new Date().toISOString();
-        const ok=await sbSet(CAT_KEY,{products:localProds,ts});
-        setSyncStatus(ok?"ok":"error");
-        setSyncMsg(ok?`✓ ${localProds.length} produits envoyés vers le cloud`:"⚠️ Échec envoi cloud");
-        return;
-      }
-      if(localProds.length===0&&cloudProds.length>0){
-        // Pull from cloud
-        setProducts(cloudProds);saveCatLocal(cloudProds);
-        setSyncStatus("ok");
-        setSyncMsg(`✓ ${cloudProds.length} produits chargés depuis le cloud`);
-        return;
-      }
-      // Both have data — merge intelligently
-      const localIsNewer=localTs&&cloudTs&&(new Date(localTs)>new Date(cloudTs));
-      if(localIsNewer){
-        // Merge: local + cloud-only products
-        const localPNs=new Set(localProds.map((p:any)=>p.pn));
-        const cloudOnly=cloudProds.filter((p:any)=>!localPNs.has(p.pn));
-        const merged=[...localProds,...cloudOnly];
-        setProducts(merged);saveCatLocal(merged);
-        const ts=new Date().toISOString();
-        await sbSet(CAT_KEY,{products:merged,ts});
-        setSyncStatus("ok");
-        setSyncMsg(`✓ ${merged.length} produits (fusion local+cloud)`);
-      } else {
-        // Cloud is newer — merge: cloud + local-only products
-        const cloudPNs=new Set(cloudProds.map((p:any)=>p.pn));
-        const localOnly=localProds.filter((p:any)=>!cloudPNs.has(p.pn));
-        const merged=[...cloudProds,...localOnly];
-        setProducts(merged);saveCatLocal(merged);
-        if(localOnly.length>0){
-          const ts=new Date().toISOString();
-          await sbSet(CAT_KEY,{products:merged,ts});
-        }
-        setSyncStatus("ok");
-        setSyncMsg(`✓ ${merged.length} produits synchronisés`);
-      }
-    }catch(e){
-      setSyncStatus("error");
-      setSyncMsg("⚠️ Erreur de connexion");
-      console.warn("[forceSync]",e);
-    }
-  };
-
-  // ── File upload & parse ────────────────────────────────────────────────────
-  const handleMultiFile=async(e:any)=>{
-    const files=Array.from(e.target.files||[]) as File[];
-    if(!files.length)return;
-    if(files.length===1){
-      // Single file — show preview as before
-      await handleFile(files[0]);
-    } else {
-      // Multiple files — process all directly without preview
-      setMultiFiles(files);
-      setUploading(true);
-      setUploadMsg(`Traitement de ${files.length} fichiers…`);
-      let totalImported=0,totalUpdated=0;
-      const newProducts=[...products];
-      for(let fi=0;fi<files.length;fi++){
-        const file=files[fi];
-        setProcessingIdx(fi);
-        setUploadMsg(`Traitement ${fi+1}/${files.length} : ${file.name}…`);
-        const rows=await parseExcel(file);
-        if(!rows.length)continue;
-        const{headerIdx,colMap:detected,}=findHeaderRow(rows);
-        const fileCustomer=extractCustomer(rows,headerIdx);
-        const dataRows=rows.slice(headerIdx+1).filter((r:any)=>r.some((x:any)=>x!==null&&x!==undefined&&x!==""));
-        for(const row of dataRows){
-          const pnVal=String(row[detected.pn]||"").trim();
-          if(!pnVal||pnVal==="PN"||pnVal==="Part Number")continue;
-          const descVal=detected.desc>=0?String(row[detected.desc]||"").trim():"";
-          const rawPrice=detected.price>=0?String(row[detected.price]||""):"";
-          let priceVal=0;
-          if(rawPrice){
-            let p=rawPrice.trim().replace(/[€$£\s]/g,"");
-            const lastComma=p.lastIndexOf(","),lastDot=p.lastIndexOf(".");
-            if(lastComma>lastDot)p=p.replace(/\./g,"").replace(",",".");
-            else p=p.replace(/,/g,"");
-            priceVal=parseFloat(p)||0;
-            if(priceVal>1000000)priceVal=0;
-          }
-          const custVal=detected.customer>=0?String(row[detected.customer]||"").trim():fileCustomer;
-          const today=new Date().toISOString().slice(0,10);
-          const existing=newProducts.findIndex((p:any)=>p.pn===pnVal);
-          if(existing>=0){
-            if(priceVal>0){
-              if(!newProducts[existing].prices)newProducts[existing].prices=[];
-              newProducts[existing].prices.push({price:priceVal,currency:"EUR",customer:custVal,date:today,source:file.name});
-            }
-            if(descVal&&descVal!==pnVal&&!newProducts[existing].description)newProducts[existing].description=descVal;
-            totalUpdated++;
-          } else {
-            newProducts.push({
-              id:Date.now().toString()+Math.random().toString(36).slice(2,6),
-              pn:pnVal,description:descVal!==pnVal?descVal:"",
-              prices:priceVal>0?[{price:priceVal,currency:"EUR",customer:custVal,date:today,source:file.name}]:[],
-              lastUpdated:today
-            });
-            totalImported++;
-          }
-        }
-      }
-      await saveProducts(newProducts);
-      setUploadMsg(`✓ ${totalImported} produits ajoutés, ${totalUpdated} mis à jour (${files.length} fichiers traités)`);
-      setMultiFiles([]);setProcessingIdx(-1);setUploading(false);
-      if(fileRef.current)fileRef.current.value="";
-    }
-  };
-
-  const handleFile=async(file:File)=>{
-    if(!file)return;
-    setUploading(true);setUploadMsg("Analyse du fichier…");
-    const ext=file.name.split(".").pop()?.toLowerCase();
-    if(ext==="xlsx"||ext==="xls"||ext==="csv"){
-      const rows=await parseExcel(file);
-      if(rows.length>0){
-        const{headerIdx,colMap:detected}=findHeaderRow(rows);
-        const customer=extractCustomer(rows,headerIdx);
-        const dataRows=rows.slice(headerIdx+1).filter((r:any)=>r.some((x:any)=>x!==null&&x!==undefined&&x!==""));
-        setColMap(detected);
-        setAllRows([rows[headerIdx],...dataRows]); // header + all data rows
-        setPreviewRows([rows[headerIdx],...dataRows.slice(0,5)]); // header + 5 rows preview
-        setPendingFile(file.name);
-        const clientHint=customer?` · Client détecté : ${customer}`:"";
-        setUploadMsg(`${dataRows.length} lignes détectées (en-tête ligne ${headerIdx+1})${clientHint} — vérifiez le mapping`);
-        setUploading(false);
-        return;
-      }
-    }
-    setUploadMsg("Format non supporté pour l'extraction automatique. Utilisez Excel (.xlsx).");
-    setUploading(false);
-    if(fileRef.current)fileRef.current.value="";
-  };
-
-  const confirmImport=async()=>{
-    if(!allRows.length||colMap.pn<0){setUploadMsg("Colonne PN non mappée — assignez la colonne PN dans le tableau ci-dessous");return;}
-    setUploading(true);setUploadMsg("Import en cours…");
-    const fileCustomer=uploadMsg.includes("Client détecté")?uploadMsg.split("Client détecté : ")[1]?.split(" —")[0]?.trim()||""  :"";
-
-    // Detect if file has multiple periods (like BERNABE EXTRA DISCOUNT)
-    const allDataRows=allRows.slice(1);
-    const hasPeriods=allDataRows.some((r:any)=>isPeriodLabel(r));
-    let imported=0,updated=0;
-    const newProducts=[...products];
-
-    if(hasPeriods){
-      // Multi-period file: scan for period labels and process each section
-      setUploadMsg("Fichier multi-périodes détecté — import en cours…");
-      let currentDate=new Date().toISOString().slice(0,10);
-      let currentColMap={...colMap};
-
-      for(const row of allDataRows){
-        // Check if this row is a period label
-        const period=isPeriodLabel(row);
-        if(period){
-          currentDate=frMonthToISO(period);
-          setUploadMsg(`Import: ${period}…`);
-          continue;
-        }
-        // Check if this row is a header row
-        const rowStr=row.map((x:any)=>String(x||"").toLowerCase());
-        const isHeader=rowStr.some((s:string)=>s==="pn"||s==="product"||s==="item");
-        if(isHeader){
-          currentColMap=detectColumns(row.map((x:any)=>String(x||"")));
-          continue;
-        }
-        // Process data row
-        const pnCol=currentColMap.pn>=0?currentColMap.pn:1; // fallback col 1 (PN)
-        const descCol=currentColMap.desc>=0?currentColMap.desc:2; // fallback col 2 (PRODUCT)
-        const priceCol=currentColMap.price>=0?currentColMap.price:4; // fallback col 4 (UP)
-        const pnVal=String(row[pnCol]||"").trim();
-        if(!pnVal||pnVal==="PN"||/^(ITEM|N°)$/i.test(pnVal)||isNaN(Number(pnVal.replace(/[^0-9]/g,""))&&pnVal.length>10?0:1)){}
-        if(!pnVal||pnVal==="PN"||pnVal==="Part Number")continue;
-        const priceRaw=String(row[priceCol]||"").trim();
-        if(priceRaw.startsWith("="))continue; // skip formula cells without value
-        let priceVal=0;
-        if(priceRaw){
-          let p=priceRaw.replace(/[€$£\s]/g,"");
-          const lc=p.lastIndexOf(","),ld=p.lastIndexOf(".");
-          if(lc>ld)p=p.replace(/\./g,"").replace(",",".");
-          else p=p.replace(/,/g,"");
-          priceVal=parseFloat(p)||0;
-          if(priceVal>999999)priceVal=0;
-        }
-        const descVal=String(row[descCol]||"").trim();
-        const existing=newProducts.findIndex((p:any)=>String(p.pn)===pnVal);
-        if(existing>=0){
-          if(!newProducts[existing].prices)newProducts[existing].prices=[];
-          // Don't add duplicate price for same date
-          const alreadyHas=newProducts[existing].prices.some((pr:any)=>pr.date===currentDate&&pr.price===priceVal);
-          if(priceVal>0&&!alreadyHas){
-            newProducts[existing].prices.push({price:priceVal,currency:"EUR",customer:fileCustomer,date:currentDate,source:pendingFile});
-          }
-          if(descVal&&descVal!==pnVal&&!newProducts[existing].description)newProducts[existing].description=descVal;
-          updated++;
-        } else {
-          if(!pnVal||pnVal.length<4)continue;
-          newProducts.push({
-            id:Date.now().toString()+Math.random().toString(36).slice(2,6),
-            pn:pnVal,description:descVal!==pnVal?descVal:"",
-            prices:priceVal>0?[{price:priceVal,currency:"EUR",customer:fileCustomer,date:currentDate,source:pendingFile}]:[],
-            lastUpdated:currentDate
-          });
-          imported++;
-        }
-      }
-    } else {
-    // Standard single-period file
-    const rows=allDataRows;
-    for(const row of rows){
-      const pnVal=String(row[colMap.pn]||"").trim();
-      if(!pnVal||pnVal==="PN"||pnVal==="Part Number")continue; // skip header leftovers
-      const rawPrice=colMap.price>=0?String(row[colMap.price]||""):""
-      // Handle French number format: "1 234,56" or "1.234,56" or "1234.56"
-      let priceVal=0;
-      if(rawPrice){
-        let p=rawPrice.trim();
-        // Remove currency symbols and spaces
-        p=p.replace(/[€$£\s]/g,"");
-        // Detect format: if comma before dot = English (1,234.56), if dot before comma = French (1.234,56)
-        const lastComma=p.lastIndexOf(",");
-        const lastDot=p.lastIndexOf(".");
-        if(lastComma>lastDot){
-          // French format: 1.234,56 → remove dots, replace comma with dot
-          p=p.replace(/\./g,"").replace(",",".");
-        } else if(lastDot>lastComma){
-          // English format: 1,234.56 → remove commas
-          p=p.replace(/,/g,"");
-        } else {
-          // No separator or same position
-          p=p.replace(/[^0-9.]/g,"");
-        }
-        priceVal=parseFloat(p)||0;
-        // Sanity check: if price > 1,000,000 it's probably a parse error
-        if(priceVal>1000000){
-          console.warn("[Import] Suspicious price:",rawPrice,"→",priceVal,"for PN:",row[colMap.pn]);
-          priceVal=0; // Ignore suspicious prices
-        }
-      }
-      const descVal=colMap.desc>=0?String(row[colMap.desc]||"").trim():"";
-      const qtyVal=colMap.qty>=0?parseInt(String(row[colMap.qty]||"0"))||0:0;
-      const custVal=colMap.customer>=0?String(row[colMap.customer]||"").trim():"";
-      const availVal=colMap.avail>=0?String(row[colMap.avail]||"").trim():"";
-      const today=new Date().toISOString().slice(0,10);
-      const existing=newProducts.findIndex((p:any)=>p.pn===pnVal);
-      if(existing>=0){
-        // Add price entry if new
-        if(priceVal>0){
-          if(!newProducts[existing].prices)newProducts[existing].prices=[];
-          newProducts[existing].prices.push({price:priceVal,currency:"EUR",customer:custVal,date:today,source:pendingFile});
-        }
-        if(descVal&&descVal!==pnVal&&!newProducts[existing].description)newProducts[existing].description=descVal;
-        updated++;
-      } else {
-        newProducts.push({
-          id:Date.now().toString()+Math.random().toString(36).slice(2,6),
-          pn:pnVal,description:descVal!==pnVal?descVal:"",
-          prices:priceVal>0?[{price:priceVal,currency:"EUR",customer:custVal,date:today,source:pendingFile}]:[],
-          lastQty:qtyVal,lastAvail:availVal,lastUpdated:today
-        });
-        imported++;
-      }
-    }
-    await saveProducts(newProducts);
-    } // end else standard import
-    const noPrice=newProducts.filter((p:any)=>p.prices?.length===0).length;
-    const periods=allDataRows.filter((r:any)=>isPeriodLabel(r)).length;
-    const periodInfo=periods>0?` · ${periods} périodes détectées`:"";
-    setUploadMsg(`✓ ${imported} produits ajoutés, ${updated} mis à jour${periodInfo}${noPrice>0?` · ⚠️ ${noPrice} sans prix`:""}` );
-    setPreviewRows([]);setAllRows([]);setPendingFile("");
-    setUploading(false);
-    if(fileRef.current)fileRef.current.value="";
-  };
-
-  // ── Quote line helpers ─────────────────────────────────────────────────────
-  const lookupPN=(idx:number,pn:string)=>{
-    // Exact match first, then partial
-    const exact=products.find((p:any)=>p.pn.toLowerCase()===pn.toLowerCase());
-    const partial=pn.length>=3?products.filter((p:any)=>
-      p.pn.toLowerCase().includes(pn.toLowerCase())||
-      (p.description||"").toLowerCase().includes(pn.toLowerCase())
-    ):[];
-    const found=exact?[exact,...partial.filter((p:any)=>p.pn!==exact.pn)]:partial;
-    const bestMatch=found[0];
-    const opts=found.flatMap((p:any)=>(p.prices||[]).map((pr:any)=>({...pr,pn:p.pn,desc:p.description})));
-    // Sort by date descending
-    opts.sort((a:any,b:any)=>new Date(b.date).getTime()-new Date(a.date).getTime());
-    const newDesc=bestMatch?.description&&bestMatch.description.trim()&&bestMatch.description!==pn
-      ?bestMatch.description
+  const generateDraftQuote=async()=>{
+    const effectiveClient=useManualClient?qClientManual:qClient;
+    if(!effectiveClient){alert("Sélectionnez ou saisissez un client");return;}
+    if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert("Ajoutez au moins une ligne avec PN et prix");return;}
+    const validLines=qLines.filter((l:any)=>l.pn);
+    const w=window.open("","_blank","width=900,height=700");
+    if(!w)return;
+    const dateStr=new Date(qDate).toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});
+    const totStr=totalHT.toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const addrHtml=(useManualClient&&qClientAddr)
+      ?'<div style="font-size:11px;color:#444;margin-top:3px">'+qClientAddr.split("\n").join("<br/>")+"</div>"
       :"";
-    setQLines(lines=>lines.map((l:any,i:number)=>i===idx?{...l,
-      pn,
-      desc:newDesc,
-      priceOptions:opts,
-      selectedPriceIdx:opts.length>0?0:-1,
-      unitPrice:opts.length>0?opts[0].price:l.unitPrice
-    }:l));
+    const linesHtml=validLines.map((l:any)=>[
+      "<tr>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px">'+l.pn+"</td>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px">'+(l.desc||"—")+"</td>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px;text-align:right">'+(+l.unitPrice||0).toLocaleString("fr-FR",{minimumFractionDigits:2})+"</td>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px;text-align:center">'+l.qty+"</td>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px;text-align:right">'+((+l.qty||0)*(+l.unitPrice||0)).toLocaleString("fr-FR",{minimumFractionDigits:2})+"</td>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px;color:#6B7280">'+(l.avail||"")+"</td>",
+      "</tr>"
+    ].join("")).join("");
+    const th=(txt:string,align:string="left",w:string="")=>
+      '<th style="padding:7px 10px;border:1px solid #81c784;font-size:11px;text-align:'+align+';font-weight:bold'+(w?";width:"+w:"")+'">'+txt+"</th>";
+    const parts=[
+      "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Draft</title>",
+      "<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:15mm}",
+      "@page{size:A4;margin:15mm}@media print{body{padding:0}}",
+      ".ttl{font-size:16px;font-weight:bold;border:2px solid #000;padding:6px 20px;display:inline-block}</style></head><body>",
+      "<table style='width:100%;margin-bottom:8px'><tr>",
+      "<td style='width:40%'></td>",
+      "<td style='text-align:center;width:20%'><span class='ttl'>DRAFT QUOTE</span></td>",
+      "<td style='text-align:right;width:40%;font-size:11px'>"+dateStr+"</td></tr></table>",
+      "<table style='width:100%;margin-bottom:16px'><tr>",
+      "<td style='width:50%'><div style='font-weight:bold;font-size:13px'>"+effectiveClient+"</div>",
+      addrHtml,
+      "<div style='font-size:11px;margin-top:4px'>PROJECT : "+(qNotes||"")+"</div></td>",
+      "<td style='text-align:right'><div style='font-size:16px;font-weight:bold'>GRUNDFOS</div></td></tr></table>",
+      "<table style='width:100%;border-collapse:collapse'>",
+      "<thead><tr style='background:#a5d6a7'>",
+      th("p/n","left","100px"),th("Product"),th("UNIT PRICE","right","110px"),
+      th("Qty","center","60px"),th("Total (€)","right","110px"),th("Availability","left","130px"),
+      "</tr></thead><tbody>"+linesHtml+"</tbody>",
+      "<tfoot><tr>",
+      "<td colspan='4' style='padding:8px 10px;text-align:right;font-weight:bold'>TOT=</td>",
+      "<td style='padding:8px 10px;text-align:right;font-weight:bold;font-size:13px;border-top:2px solid #000'>"+totStr+"</td>",
+      "<td></td></tr></tfoot></table>",
+      qValidity?"<div style='margin-top:20px;font-size:10px;color:#666'>Valable "+qValidity+" jours.</div>":"",
+      "<scr"+"ipt>setTimeout(function(){window.print();},400);</scr"+"ipt>",
+      "</body></html>"
+    ];
+    w.document.write(parts.join("\n"));
+    w.document.close();
   };
 
-  // Search by description — returns matching products
-  const searchByDesc=(term:string):any[]=>{
-    if(!term||term.length<2)return[];
-    const t=term.toLowerCase();
-    return products.filter((p:any)=>{
-      const desc=(p.description||"").toLowerCase();
-      const pn=(p.pn||"").toLowerCase();
-      // Split search term into words for generic matching
-      const words=t.split(/\s+/).filter((w:string)=>w.length>1);
-      return words.every((w:string)=>desc.includes(w)||pn.includes(w));
-    }).slice(0,8);
-  };
-
-  // When user selects a product from description suggestions
-  const selectFromDesc=(lineIdx:number,product:any)=>{
-    lookupPN(lineIdx, product.pn);
-  };
-
-  const updateLine=(idx:number,field:string,val:any)=>{
-    setQLines(lines=>lines.map((l:any,i:number)=>i===idx?{...l,[field]:val}:l));
-  };
-
-  const selectPrice=(lineIdx:number,priceIdx:number)=>{
-    const opt=qLines[lineIdx].priceOptions[priceIdx];
-    setQLines(lines=>lines.map((l:any,i:number)=>i===lineIdx?{...l,selectedPriceIdx:priceIdx,unitPrice:opt?.price||l.unitPrice}:l));
-  };
-
-  const addLine=()=>setQLines(l=>[...l,{pn:"",desc:"",qty:1,unitPrice:0,avail:"Stock",priceOptions:[],selectedPriceIdx:-1}]);
-  const removeLine=(i:number)=>setQLines(l=>l.filter((_:any,j:number)=>j!==i));
-  const totalHT=qLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
-
-  // ── Generate quote PDF ─────────────────────────────────────────────────────
   const generateQuote=async()=>{
     const effectiveClient=useManualClient?qClientManual:qClient;
     if(!effectiveClient){alert("Sélectionnez ou saisissez un client");return;}
@@ -4690,6 +3689,11 @@ function CataloguePage({clients,lang,isMobile}:any){
                 <i className="ti ti-printer" style={{fontSize:16}} aria-hidden="true"/>
                 Générer le devis PDF
               </button>
+              <button onClick={generateDraftQuote}
+                style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:"#fff",color:C.t2,border:`1px solid ${C.b}`,borderRadius:C.r,padding:"9px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                <i className="ti ti-file-text" style={{fontSize:14}} aria-hidden="true"/>
+                Draft / Sans en-tête
+              </button>
               <button onClick={()=>{setQLines([{pn:"",desc:"",qty:1,unitPrice:0,avail:"Stock",priceOptions:[],selectedPriceIdx:-1}]);setQClient("");setQNotes("");setQRef(`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);}}
                 style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:"#F1F5F9",color:C.t3,border:"none",borderRadius:C.r,padding:"8px",fontSize:12,cursor:"pointer"}}>
                 <i className="ti ti-refresh" style={{fontSize:13}} aria-hidden="true"/> Nouveau devis
@@ -4700,7 +3704,16 @@ function CataloguePage({clients,lang,isMobile}:any){
           {/* Quote history */}
           {quotes.length>0&&(
             <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
-              <div style={{padding:"12px 18px",borderBottom:`1px solid ${C.b}`,fontSize:12,fontWeight:600,color:C.t1}}>Devis récents ({quotes.length})</div>
+              <div style={{padding:"12px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span style={{fontSize:12,fontWeight:600,color:C.t1}}>Devis récents ({quotes.length})</span>
+                <button onClick={async()=>{
+                  const headers=["Référence","Client","Date","Lignes","Total HT (€)"];
+                  const rows=quotes.map((q:any)=>[q.number,q.client,q.date,q.lines?.length||0,q.totalHT||0]);
+                  await exportToExcel([headers,...rows],"devis_grundfos_"+new Date().toISOString().slice(0,10)+".xlsx","Devis");
+                }} style={{display:"flex",alignItems:"center",gap:5,background:C.greenL,color:C.greenDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer"}}>
+                  <i className="ti ti-file-spreadsheet" style={{fontSize:12}} aria-hidden="true"/> Export
+                </button>
+              </div>
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                   <thead><tr style={{background:"#F8FAFC"}}>
@@ -4728,6 +3741,15 @@ function CataloguePage({clients,lang,isMobile}:any){
       {tab==="catalogue"&&(
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+            <button onClick={async()=>{
+              const headers=["Part Number","Description","Prix (€)","Date prix","Source"];
+              const rows=filteredProducts.flatMap((p:any)=>
+                (p.prices||[{price:"",date:"",source:""}]).map((pr:any)=>[p.pn,p.description||"",pr.price||"",pr.date||"",pr.source||""])
+              );
+              await exportToExcel([headers,...rows],"catalogue_grundfos_"+new Date().toISOString().slice(0,10)+".xlsx","Catalogue");
+            }} style={{display:"flex",alignItems:"center",gap:6,background:C.greenL,color:C.greenDk,border:"none",borderRadius:C.r,padding:"7px 12px",fontSize:11,fontWeight:600,cursor:"pointer",flexShrink:0}}>
+              <i className="ti ti-file-spreadsheet" style={{fontSize:13}} aria-hidden="true"/> Export
+            </button>
             <div style={{flex:1,minWidth:200,position:"relative"}}>
               <i className="ti ti-search" style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.t3}} aria-hidden="true"/>
               <input value={catSearch} onChange={e=>setCatSearch(e.target.value)} placeholder="Rechercher un PN ou description…"
@@ -4932,9 +3954,110 @@ function CataloguePage({clients,lang,isMobile}:any){
   );
 }
 
+function PriceHistoryChart({prices}:any){
+  if(!prices||prices.length<2)return null;
+  const sorted=[...prices].sort((a:any,b:any)=>String(a.date||"").localeCompare(String(b.date||"")));
+  const maxP=Math.max(...sorted.map((p:any)=>Number(p.price)||0))||1;
+  return(
+    <div>
+      <div style={{fontSize:10,color:C.t3,fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",marginBottom:8}}>Évolution du prix</div>
+      <div style={{display:"flex",gap:4,alignItems:"flex-end",height:70,background:"#F8FAFC",borderRadius:8,border:`1px solid ${C.b}`,padding:"10px 12px",overflowX:"auto"}}>
+        {sorted.map((p:any,i:number)=>{
+          const pct=Math.max(8,(Number(p.price)/maxP)*100);
+          return(
+            <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:48,flex:1}}>
+              <span style={{fontSize:9,fontWeight:700,color:C.blue,whiteSpace:"nowrap"}}>{fmt(Number(p.price))}€</span>
+              <div style={{width:"100%",height:pct+"%",background:`linear-gradient(180deg,${C.blue},${C.blueL})`,borderRadius:"3px 3px 0 0",minHeight:6}}/>
+              <span style={{fontSize:8,color:C.t3,whiteSpace:"nowrap"}}>{String(p.date||"").substring(2,7)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── ACTIVITY LOGS PAGE ──────────────────────────────────────────────────────
+function ActivityLogsPage({session}:any){
+  const[logs,setLogs]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  const[filter,setFilter]=useState("");
+  const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+  const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+  useEffect(()=>{
+    fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+LOG_KEY+"&select=payload&limit=1",
+      {headers:{"apikey":K,"Authorization":"Bearer "+K}})
+      .then(r=>r.ok?r.json():null)
+      .then(rows=>{setLogs(rows?.[0]?.payload?.logs||[]);setLoading(false);})
+      .catch(()=>setLoading(false));
+  },[]);
+  const exportLogs=async()=>{
+    const headers=["Date & Heure","Action","Détail","Utilisateur"];
+    const rows=logs.map((l:any)=>[new Date(l.ts).toLocaleString("fr-FR"),l.action,l.detail,l.user]);
+    await exportToExcel([headers,...rows],"logs_ordertrack_"+new Date().toISOString().slice(0,10)+".xlsx","Logs");
+  };
+  const filtered=logs.filter((l:any)=>!filter||
+    l.action?.toLowerCase().includes(filter.toLowerCase())||
+    l.user?.toLowerCase().includes(filter.toLowerCase())
+  );
+  const ACTION_COLORS:any={Commande:C.blue,Facture:C.teal,Paiement:C.green,Suppression:C.red,Connexion:"#7C3AED",Devis:C.amber};
+  const getColor=(action:string)=>{for(const[k,v] of Object.entries(ACTION_COLORS)){if(action?.includes(k))return v;}return C.t3;};
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+        <div>
+          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Logs d'activité</h1>
+          <p style={{margin:0,color:C.t3,fontSize:13}}>{logs.length} événements enregistrés</p>
+        </div>
+        <button onClick={exportLogs} style={{display:"flex",alignItems:"center",gap:7,background:C.greenL,color:C.greenDk,border:"none",borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          <i className="ti ti-file-spreadsheet" style={{fontSize:14}} aria-hidden="true"/> Exporter Excel
+        </button>
+      </div>
+      <div style={{position:"relative"}}>
+        <i className="ti ti-search" style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.t3}} aria-hidden="true"/>
+        <input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filtrer par action, utilisateur…"
+          style={{width:"100%",padding:"9px 12px 9px 34px",border:`1px solid ${C.b}`,borderRadius:C.r,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+      </div>
+      <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+        {loading?<div style={{padding:32,textAlign:"center",color:C.t3}}>Chargement…</div>:
+        filtered.length===0?<div style={{padding:32,textAlign:"center",color:C.t3}}>Aucune activité enregistrée</div>:(
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{background:"#0D1B2A"}}>
+                {["Date & Heure","Action","Utilisateur"].map(h=>(
+                  <th key={h} style={{padding:"8px 14px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {filtered.slice(0,200).map((l:any,i:number)=>(
+                  <tr key={i} style={{borderBottom:`1px solid ${C.b}`,background:i%2===0?"#fff":"#FAFBFD"}}>
+                    <td style={{padding:"8px 14px",color:C.t3,fontSize:11,whiteSpace:"nowrap"}}>{new Date(l.ts).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"})}</td>
+                    <td style={{padding:"8px 14px"}}>
+                      <span style={{background:String(getColor(l.action))+"18",color:String(getColor(l.action)),borderRadius:4,padding:"2px 8px",fontSize:10,fontWeight:700}}>{l.action||"—"}</span>
+                    </td>
+                    <td style={{padding:"8px 14px"}}>
+                      <span style={{display:"flex",alignItems:"center",gap:5}}>
+                        <span style={{width:24,height:24,borderRadius:99,background:C.blueL,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:C.blueDk}}>
+                          {(l.user||"?")[0].toUpperCase()}
+                        </span>
+                        <span style={{fontSize:11,color:C.t2}}>{l.user||"—"}</span>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── DOCUMENTS PAGE ──────────────────────────────────────────────────────────
 const DOCS_KEY="ordertrack-docs";
 const DOCS_LS="ordertrack_docs_cache";
+
 
 const saveDocsCloud=async(docs:any[]):Promise<boolean>=>{
   const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
