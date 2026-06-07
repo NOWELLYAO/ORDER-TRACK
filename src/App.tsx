@@ -3933,9 +3933,127 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   );
 }
 
+function PriceHistoryChart({prices}:any){
+  if(!prices||prices.length<2)return null;
+  const sorted=[...prices].sort((a:any,b:any)=>String(a.date||"").localeCompare(String(b.date||"")));
+  const maxP=Math.max(...sorted.map((p:any)=>Number(p.price)||0))||1;
+  return(
+    <div>
+      <div style={{fontSize:10,color:C.t3,fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",marginBottom:8}}>Évolution du prix</div>
+      <div style={{display:"flex",gap:4,alignItems:"flex-end",height:70,background:"#F8FAFC",borderRadius:8,border:`1px solid ${C.b}`,padding:"10px 12px",overflowX:"auto"}}>
+        {sorted.map((p:any,i:number)=>{
+          const pct=Math.max(8,(Number(p.price)/maxP)*100);
+          return(
+            <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:48,flex:1}}>
+              <span style={{fontSize:9,fontWeight:700,color:C.blue,whiteSpace:"nowrap"}}>{fmt(Number(p.price))}€</span>
+              <div style={{width:"100%",height:pct+"%",background:`linear-gradient(180deg,${C.blue},${C.blueL})`,borderRadius:"3px 3px 0 0",minHeight:6}}/>
+              <span style={{fontSize:8,color:C.t3,whiteSpace:"nowrap"}}>{String(p.date||"").substring(2,7)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── ACTIVITY LOGS PAGE ──────────────────────────────────────────────────────
+function ActivityLogsPage({session}:any){
+  const[logs,setLogs]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  const[filter,setFilter]=useState("");
+  const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+  const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+  useEffect(()=>{
+    fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+LOG_KEY+"&select=payload&limit=1",
+      {headers:{"apikey":K,"Authorization":"Bearer "+K}})
+      .then(r=>r.ok?r.json():null)
+      .then(rows=>{setLogs(rows?.[0]?.payload?.logs||[]);setLoading(false);})
+      .catch(()=>setLoading(false));
+  },[]);
+  const exportLogs=async()=>{
+    const headers=["Date & Heure","Action","Détail","Utilisateur"];
+    const rows=logs.map((l:any)=>[new Date(l.ts).toLocaleString("fr-FR"),l.action,l.detail,l.user]);
+    await exportToExcel([headers,...rows],"logs_ordertrack_"+new Date().toISOString().slice(0,10)+".xlsx","Logs");
+  };
+  const filtered=logs.filter((l:any)=>!filter||
+    l.action?.toLowerCase().includes(filter.toLowerCase())||
+    l.user?.toLowerCase().includes(filter.toLowerCase())
+  );
+  const ACTION_COLORS:any={Commande:C.blue,Facture:C.teal,Paiement:C.green,Suppression:C.red,Connexion:"#7C3AED",Devis:C.amber};
+  const getColor=(action:string)=>{for(const[k,v] of Object.entries(ACTION_COLORS)){if(action?.includes(k))return v;}return C.t3;};
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+        <div>
+          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Logs d'activité</h1>
+          <p style={{margin:0,color:C.t3,fontSize:13}}>{logs.length} événements enregistrés</p>
+        </div>
+        <button onClick={exportLogs} style={{display:"flex",alignItems:"center",gap:7,background:C.greenL,color:C.greenDk,border:"none",borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          <i className="ti ti-file-spreadsheet" style={{fontSize:14}} aria-hidden="true"/> Exporter Excel
+        </button>
+      </div>
+      <div style={{position:"relative"}}>
+        <i className="ti ti-search" style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.t3}} aria-hidden="true"/>
+        <input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filtrer par action, utilisateur…"
+          style={{width:"100%",padding:"9px 12px 9px 34px",border:`1px solid ${C.b}`,borderRadius:C.r,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+      </div>
+      <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+        {loading?<div style={{padding:32,textAlign:"center",color:C.t3}}>Chargement…</div>:
+        filtered.length===0?<div style={{padding:32,textAlign:"center",color:C.t3}}>Aucune activité enregistrée</div>:(
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{background:"#0D1B2A"}}>
+                {["Date & Heure","Action","Utilisateur"].map(h=>(
+                  <th key={h} style={{padding:"8px 14px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {filtered.slice(0,200).map((l:any,i:number)=>(
+                  <tr key={i} style={{borderBottom:`1px solid ${C.b}`,background:i%2===0?"#fff":"#FAFBFD"}}>
+                    <td style={{padding:"8px 14px",color:C.t3,fontSize:11,whiteSpace:"nowrap"}}>{new Date(l.ts).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"})}</td>
+                    <td style={{padding:"8px 14px"}}>
+                      <span style={{background:String(getColor(l.action))+"18",color:String(getColor(l.action)),borderRadius:4,padding:"2px 8px",fontSize:10,fontWeight:700}}>{l.action||"—"}</span>
+                    </td>
+                    <td style={{padding:"8px 14px"}}>
+                      <span style={{display:"flex",alignItems:"center",gap:5}}>
+                        <span style={{width:24,height:24,borderRadius:99,background:C.blueL,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:C.blueDk}}>
+                          {(l.user||"?")[0].toUpperCase()}
+                        </span>
+                        <span style={{fontSize:11,color:C.t2}}>{l.user||"—"}</span>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── DOCUMENTS PAGE ──────────────────────────────────────────────────────────
 const DOCS_KEY="ordertrack-docs";
 const DOCS_LS="ordertrack_docs_cache";
+const LOG_KEY="ordertrack-activitylog";
+const logActivity=async(action:string,detail:string,user:string)=>{
+  try{
+    const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+    const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+    const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+LOG_KEY+"&select=payload&limit=1",
+      {headers:{"apikey":K,"Authorization":"Bearer "+K}});
+    const rows=r.ok?await r.json():[];
+    const logs=rows?.[0]?.payload?.logs||[];
+    const entry={ts:new Date().toISOString(),action,detail,user};
+    const updated=[entry,...logs].slice(0,500);
+    await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify({user_key:LOG_KEY,payload:{logs:updated}})
+    });
+  }catch{}
+};
 
 const saveDocsCloud=async(docs:any[]):Promise<boolean>=>{
   const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
