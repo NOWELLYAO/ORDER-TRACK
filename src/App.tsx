@@ -3983,7 +3983,7 @@ function CataloguePage({clients,lang,isMobile}:any){
 
   // Quote form state
   const[qClient,setQClient]=useState("");
-  const[qLines,setQLines]=useState<any[]>([{pn:"",desc:"",qty:1,unitPrice:0,avail:"Stock",priceOptions:[],selectedPriceIdx:-1}]);
+  const[qLines,setQLines]=useState<any[]>([{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1}]);
   const[dropdownPos,setDropdownPos]=useState<{top:number,left:number,width:number}|null>(null);
   const[dropdownType,setDropdownType]=useState<"pn"|"desc"|null>(null);
   const[dropdownLineIdx,setDropdownLineIdx]=useState<number>(-1);
@@ -4423,7 +4423,7 @@ function CataloguePage({clients,lang,isMobile}:any){
     setQLines(lines=>lines.map((l:any,i:number)=>i===lineIdx?{...l,selectedPriceIdx:priceIdx,unitPrice:opt?.price||l.unitPrice}:l));
   };
 
-  const addLine=()=>setQLines(l=>[...l,{pn:"",desc:"",qty:1,unitPrice:0,avail:"Stock",priceOptions:[],selectedPriceIdx:-1}]);
+  const addLine=()=>setQLines(l=>[...l,{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1}]);
   const removeLine=(i:number)=>setQLines(l=>l.filter((_:any,j:number)=>j!==i));
   const totalHT=qLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
 
@@ -4432,6 +4432,8 @@ function CataloguePage({clients,lang,isMobile}:any){
     const effectiveClient=useManualClient?qClientManual:qClient;
     if(!effectiveClient){alert("Sélectionnez ou saisissez un client");return;}
     if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert("Ajoutez au moins une ligne avec PN et prix");return;}
+    const missingAvail=qLines.filter((l:any)=>l.pn&&!l.avail);
+    if(missingAvail.length>0){alert("Délai de livraison manquant sur "+missingAvail.length+" ligne(s).");return;}
     const validLines=qLines.filter((l:any)=>l.pn);
     const w=window.open("","_blank","width=900,height=700");
     if(!w)return;
@@ -4488,6 +4490,8 @@ function CataloguePage({clients,lang,isMobile}:any){
     const effectiveClient=useManualClient?qClientManual:qClient;
     if(!effectiveClient){alert("Sélectionnez ou saisissez un client");return;}
     if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert("Ajoutez au moins une ligne avec PN et prix");return;}
+    const missingAvail=qLines.filter((l:any)=>l.pn&&!l.avail);
+    if(missingAvail.length>0){alert("Délai de livraison manquant sur "+missingAvail.length+" ligne(s).");return;}
     // Save quote
     const quote={
       id:Date.now().toString(),number:qRef,client:effectiveClient,date:qDate,
@@ -4739,9 +4743,11 @@ function CataloguePage({clients,lang,isMobile}:any){
                       </td>
                       <td style={{padding:"8px 8px",verticalAlign:"top"}}>
                         <select value={line.avail} onChange={e=>updateLine(idx,"avail",e.target.value)}
-                          style={{width:"100%",padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:11,fontFamily:"inherit"}}>
+                          style={{width:"100%",padding:"6px 8px",border:`2px solid ${!line.avail?C.red:C.b}`,borderRadius:5,fontSize:11,fontFamily:"inherit",color:line.avail?C.t1:C.red,background:line.avail?"#fff":"#FFF5F5"}}>
+                          <option value="" disabled style={{color:C.t3}}>…sélectionner…</option>
                           {AVAIL_OPTIONS.map(a=><option key={a} value={a}>{a}</option>)}
                         </select>
+                        {!line.avail&&<div style={{fontSize:9,color:C.red,marginTop:2,fontWeight:600}}>Délai requis</div>}
                       </td>
                       <td style={{padding:"8px 8px",verticalAlign:"top",textAlign:"right",fontWeight:700,color:C.blue,whiteSpace:"nowrap"}}>
                         {fmt((+line.qty||0)*(+line.unitPrice||0))} €
@@ -4828,7 +4834,7 @@ function CataloguePage({clients,lang,isMobile}:any){
                 <i className="ti ti-file-text" style={{fontSize:14}} aria-hidden="true"/>
                 Draft / Sans en-tête
               </button>
-              <button onClick={()=>{setQLines([{pn:"",desc:"",qty:1,unitPrice:0,avail:"Stock",priceOptions:[],selectedPriceIdx:-1}]);setQClient("");setQNotes("");setQRef(`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);}}
+              <button onClick={()=>{setQLines([{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1}]);setQClient("");setQNotes("");setQRef(`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);}}
                 style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:"#F1F5F9",color:C.t3,border:"none",borderRadius:C.r,padding:"8px",fontSize:12,cursor:"pointer"}}>
                 <i className="ti ti-refresh" style={{fontSize:13}} aria-hidden="true"/> Nouveau devis
               </button>
