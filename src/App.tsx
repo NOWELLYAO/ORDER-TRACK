@@ -5130,152 +5130,218 @@ function DocumentsPage({isMobile}:any){
   const catCounts:Record<string,number>={};
   docs.forEach((d:any)=>{catCounts[d.category]=(catCounts[d.category]||0)+1;});
 
+  // Search mode: show results only when query is active
+  const isSearching=search.trim().length>0||catFilter!=="all";
+
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      {/* Header */}
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
-        <div>
-          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Documents</h1>
-          <p style={{margin:0,color:C.t3,fontSize:13}}>{docs.length} fichier{docs.length>1?"s":""} · {fmtSize(totalSize)}</p>
+    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      <input ref={fileRef} type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.png,.jpg,.jpeg" onChange={e=>handleFiles(e.target.files!)} style={{display:"none"}}/>
+
+      {/* Hero search bar */}
+      <div style={{background:`linear-gradient(135deg,#0D1B2A 0%,#1E3A5F 60%,#1D4ED8 100%)`,borderRadius:C.rLg,padding:isMobile?"24px 20px":"36px 40px",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",right:0,top:0,bottom:0,width:"40%",background:"rgba(255,255,255,.03)",borderLeft:"1px solid rgba(255,255,255,.06)"}}/>
+        <div style={{position:"relative",zIndex:1}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:10}}>
+            <div>
+              <h1 style={{margin:"0 0 4px",fontSize:isMobile?18:24,fontWeight:800,color:"#fff",letterSpacing:"-.02em"}}>
+                <i className="ti ti-files" style={{marginRight:10,fontSize:isMobile?16:20}} aria-hidden="true"/>Bibliothèque de documents
+              </h1>
+              <p style={{margin:0,color:"rgba(255,255,255,.5)",fontSize:12}}>
+                {docs.length} fichier{docs.length>1?"s":""} · {fmtSize(totalSize)}
+                {syncMsg&&<span style={{marginLeft:10,color:syncMsg.startsWith("✓")?"#86EFAC":syncMsg.startsWith("⚠")?"#FCA5A5":"#93C5FD"}}>{syncMsg}</span>}
+              </p>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>loadFromCloud(false)} disabled={syncing} title="Synchroniser"
+                style={{display:"flex",alignItems:"center",gap:5,background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",
+                  border:"1px solid rgba(255,255,255,.15)",borderRadius:C.r,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                <i className={`ti ti-refresh${syncing?" rotating":""}`} style={{fontSize:13}} aria-hidden="true"/>
+                {syncing?"Sync…":"Sync"}
+              </button>
+              <button onClick={()=>fileRef.current?.click()} disabled={uploading}
+                style={{display:"flex",alignItems:"center",gap:7,background:"#fff",color:C.blue,border:"none",
+                  borderRadius:C.r,padding:"8px 18px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,.2)"}}>
+                <i className="ti ti-upload" style={{fontSize:14}} aria-hidden="true"/>
+                {uploading?"Envoi…":"Ajouter"}
+              </button>
+            </div>
+          </div>
+          {/* Search bar */}
+          <div style={{position:"relative"}}>
+            <i className="ti ti-search" style={{position:"absolute",left:16,top:"50%",transform:"translateY(-50%)",fontSize:18,color:"rgba(255,255,255,.4)"}} aria-hidden="true"/>
+            <input value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="Rechercher un document… (nom, type)"
+              style={{width:"100%",padding:"14px 44px",background:"rgba(255,255,255,.1)",
+                border:"1px solid rgba(255,255,255,.2)",borderRadius:C.rLg,
+                fontSize:14,fontFamily:"inherit",color:"#fff",outline:"none",boxSizing:"border-box",
+                backdropFilter:"blur(10px)"}}/>
+            {search&&<button onClick={()=>setSearch("")}
+              style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",
+                background:"rgba(255,255,255,.2)",border:"none",color:"#fff",cursor:"pointer",
+                borderRadius:99,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>✕</button>}
+          </div>
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          {syncMsg&&<span style={{fontSize:11,fontWeight:600,
-            color:syncMsg.startsWith("✓")?C.greenDk:syncMsg.startsWith("⚠")?C.redDk:C.blueDk,
-            background:syncMsg.startsWith("✓")?C.greenL:syncMsg.startsWith("⚠")?C.redL:C.blueL,
-            padding:"6px 12px",borderRadius:99,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-            {syncMsg}
-          </span>}
-          <button onClick={()=>loadFromCloud(false)} disabled={syncing}
-            title="Synchroniser depuis le cloud"
-            style={{display:"flex",alignItems:"center",gap:6,background:C.blueL,color:C.blueDk,border:"none",
-              borderRadius:C.r,padding:"9px 14px",fontSize:12,fontWeight:600,cursor:syncing?"not-allowed":"pointer"}}>
-            <i className={`ti ti-refresh${syncing?" rotating":""}`} style={{fontSize:14}} aria-hidden="true"/>
-            {syncing?"Sync…":"Sync"}
-          </button>
-          <button onClick={()=>fileRef.current?.click()} disabled={uploading}
-            style={{display:"flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",border:"none",
-              borderRadius:C.r,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:uploading?"not-allowed":"pointer",opacity:uploading?.7:1}}>
-            <i className="ti ti-upload" style={{fontSize:16}} aria-hidden="true"/>
-            {uploading?"Envoi…":"Ajouter des fichiers"}
-          </button>
-        </div>
-        <input ref={fileRef} type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.png,.jpg,.jpeg" onChange={e=>handleFiles(e.target.files!)} style={{display:"none"}}/>
       </div>
 
-      {/* Upload status */}
-      {uploadMsg&&(
-        <div style={{background:uploadMsg.startsWith("✓")?C.greenL:uploadMsg.startsWith("⚠")?C.amberL:C.blueL,
-          color:uploadMsg.startsWith("✓")?C.greenDk:uploadMsg.startsWith("⚠")?C.amberDk:C.blueDk,
-          padding:"10px 16px",borderRadius:C.r,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:8}}>
-          <i className={`ti ${uploadMsg.startsWith("✓")?"ti-check":uploadMsg.startsWith("⚠")?"ti-alert-triangle":"ti-loader-2 rotating"}`} style={{fontSize:15}} aria-hidden="true"/>
-          {uploadMsg}
+      {/* Upload feedback */}
+      {(uploadMsg||dragOver)&&(
+        <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)}
+          onDrop={e=>{e.preventDefault();setDragOver(false);handleFiles(e.dataTransfer.files);}}
+          style={{background:dragOver?C.blueL:uploadMsg.startsWith("✓")?C.greenL:uploadMsg.startsWith("⚠")?C.amberL:C.blueL,
+            border:`2px dashed ${dragOver?C.blue:uploadMsg.startsWith("✓")?C.green:C.blue}`,
+            color:dragOver?C.blueDk:uploadMsg.startsWith("✓")?C.greenDk:uploadMsg.startsWith("⚠")?C.amberDk:C.blueDk,
+            padding:"14px 20px",borderRadius:C.r,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:10}}>
+          <i className={`ti ${dragOver?"ti-upload":uploadMsg.startsWith("✓")?"ti-check":"ti-loader-2 rotating"}`} style={{fontSize:18}} aria-hidden="true"/>
+          {dragOver?"Déposez les fichiers ici…":uploadMsg}
         </div>
       )}
 
-      {/* Drop zone */}
-      <div
-        onDragOver={e=>{e.preventDefault();setDragOver(true);}}
-        onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);handleFiles(e.dataTransfer.files);}}
-        onClick={()=>fileRef.current?.click()}
-        style={{border:`2px dashed ${dragOver?C.blue:C.b}`,borderRadius:C.rLg,
-          padding:"24px",textAlign:"center",cursor:"pointer",
-          background:dragOver?C.blueL:"#FAFBFD",transition:"all .2s"}}>
-        <i className="ti ti-cloud-upload" style={{fontSize:32,color:dragOver?C.blue:C.t3,display:"block",marginBottom:8}} aria-hidden="true"/>
-        <div style={{fontSize:13,fontWeight:600,color:dragOver?C.blue:C.t2}}>Glisser-déposer des fichiers ici</div>
-        <div style={{fontSize:11,color:C.t3,marginTop:4}}>PDF, Excel, Word, PowerPoint, Images · Taille max 50 Mo par fichier</div>
-      </div>
-
-      {/* Category tabs + search */}
-      <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-        <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
-          {CATEGORIES.map(cat=>(
-            <button key={cat.id} onClick={()=>setCatFilter(cat.id)}
-              style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",border:"none",borderRight:`1px solid ${C.b}`,
-                background:catFilter===cat.id?C.blue:"transparent",
-                color:catFilter===cat.id?"#fff":C.t2,
-                fontWeight:catFilter===cat.id?700:400,fontSize:11,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s"}}>
-              <i className={`ti ${cat.icon}`} style={{fontSize:13}} aria-hidden="true"/>
-              {cat.label}
-              {cat.id!=="all"&&catCounts[cat.id]>0&&(
-                <span style={{background:catFilter===cat.id?"rgba(255,255,255,.3)":C.blueL,color:catFilter===cat.id?"#fff":C.blueDk,
-                  borderRadius:99,fontSize:10,padding:"0 5px",fontWeight:700}}>{catCounts[cat.id]}</span>
-              )}
-            </button>
-          ))}
-        </div>
-        <div style={{flex:1,minWidth:200,position:"relative"}}>
-          <i className="ti ti-search" style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.t3}} aria-hidden="true"/>
-          <input value={search} onChange={e=>setSearch(e.target.value)}
-            placeholder="Rechercher un document par nom…"
-            style={{width:"100%",padding:"8px 10px 8px 32px",border:`1px solid ${C.b}`,borderRadius:C.r,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-          {search&&<button onClick={()=>setSearch("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:C.t3,cursor:"pointer",fontSize:16,lineHeight:1}}>✕</button>}
-        </div>
-        <span style={{fontSize:12,color:C.t3,whiteSpace:"nowrap"}}>{filtered.length} résultat{filtered.length>1?"s":""}</span>
-      </div>
-
-      {/* Documents grid */}
-      {filtered.length===0?(
-        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,padding:"48px",textAlign:"center"}}>
-          <i className="ti ti-files" style={{fontSize:40,color:C.t3,display:"block",marginBottom:12}} aria-hidden="true"/>
-          <div style={{fontSize:14,fontWeight:600,color:C.t2,marginBottom:4}}>
-            {docs.length===0?"Aucun document — ajoutez vos premiers fichiers":"Aucun résultat pour cette recherche"}
-          </div>
-          <div style={{fontSize:12,color:C.t3}}>
-            {docs.length===0?"Glissez des fichiers ou cliquez sur 'Ajouter des fichiers'":"Essayez un autre mot-clé ou une autre catégorie"}
-          </div>
-        </div>
-      ):(
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
-          {filtered.map((doc:any)=>{
-            const cs=getCatStyle(doc.category);
-            const date=doc.uploadedAt?new Date(doc.uploadedAt).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"}):"";
-            return(
-              <div key={doc.id} style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,
-                boxShadow:C.sh,overflow:"hidden",display:"flex",flexDirection:"column",
-                transition:"box-shadow .15s"}}
-                onMouseEnter={(e:any)=>e.currentTarget.style.boxShadow=C.shMd}
-                onMouseLeave={(e:any)=>e.currentTarget.style.boxShadow=C.sh}>
-                {/* File icon header */}
-                <div style={{padding:"20px 20px 12px",display:"flex",alignItems:"flex-start",gap:12}}>
-                  <div style={{width:44,height:44,borderRadius:10,background:cs.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <i className={`ti ${cs.icon}`} style={{fontSize:22,color:cs.color}} aria-hidden="true"/>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:700,color:C.t1,lineHeight:1.4,wordBreak:"break-word",
-                      display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>
-                      {doc.name}
+      {!isSearching&&!dragOver?(
+        <>
+          {/* Category cards */}
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:C.t3,textTransform:"uppercase",letterSpacing:".08em",marginBottom:12}}>Parcourir par catégorie</div>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>
+              {CATEGORIES.filter(c=>c.id!=="all").map(cat=>{
+                const cs=getCatStyle(cat.id);
+                const count=catCounts[cat.id]||0;
+                return(
+                  <button key={cat.id} onClick={()=>setCatFilter(cat.id)}
+                    onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+                    onDrop={e=>{e.preventDefault();setDragOver(false);handleFiles(e.dataTransfer.files);}}
+                    style={{background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.rLg,padding:"20px 18px",
+                      cursor:"pointer",textAlign:"left",boxShadow:C.sh,transition:"all .15s"}}
+                    onMouseEnter={(e:any)=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=C.shMd;}}
+                    onMouseLeave={(e:any)=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=C.sh;}}>
+                    <div style={{width:40,height:40,borderRadius:10,background:cs.bg,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:12}}>
+                      <i className={`ti ${cs.icon}`} style={{fontSize:20,color:cs.color}} aria-hidden="true"/>
                     </div>
-                    <div style={{fontSize:10,color:C.t3,marginTop:4,display:"flex",gap:8}}>
-                      <span>{fmtSize(doc.size||0)}</span>
-                      <span>·</span>
-                      <span>{date}</span>
-                    </div>
-                  </div>
-                </div>
-                {/* Actions */}
-                <div style={{display:"flex",gap:6,padding:"10px 16px",borderTop:`1px solid ${C.b}`,marginTop:"auto"}}>
-                  <a href={doc.url} target="_blank" rel="noreferrer"
-                    style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,
-                      background:C.blueL,color:C.blueDk,borderRadius:6,padding:"7px",
-                      fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"none",border:"none"}}>
-                    <i className="ti ti-external-link" style={{fontSize:13}} aria-hidden="true"/> Ouvrir
-                  </a>
-                  <a href={doc.url} download={doc.name}
-                    style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,
-                      background:"#F1F5F9",color:C.t2,borderRadius:6,padding:"7px 10px",
-                      fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"none",border:"none"}}>
-                    <i className="ti ti-download" style={{fontSize:13}} aria-hidden="true"/>
-                  </a>
-                  <button onClick={()=>deleteDoc(doc)}
-                    style={{display:"flex",alignItems:"center",justifyContent:"center",
-                      background:C.redL,color:C.redDk,border:"none",borderRadius:6,padding:"7px 10px",cursor:"pointer"}}>
-                    <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
+                    <div style={{fontSize:13,fontWeight:700,color:C.t1,marginBottom:3}}>{cat.label}</div>
+                    <div style={{fontSize:22,fontWeight:800,color:cs.color}}>{count}</div>
+                    <div style={{fontSize:10,color:C.t3,marginTop:2}}>fichier{count>1?"s":""}</div>
                   </button>
-                </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Recent documents */}
+          {docs.length>0&&(
+            <div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.t3,textTransform:"uppercase",letterSpacing:".08em"}}>Documents récents</div>
+                {docs.length>5&&<button onClick={()=>setCatFilter("all")} style={{fontSize:11,color:C.blue,background:"transparent",border:"none",cursor:"pointer",fontWeight:600}}>Voir tout →</button>}
               </div>
-            );
-          })}
+              <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+                {docs.slice(0,5).map((doc:any,i:number)=>{
+                  const cs=getCatStyle(doc.category);
+                  const date=doc.uploadedAt?new Date(doc.uploadedAt).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"}):"";
+                  return(
+                    <div key={doc.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",
+                      borderBottom:i<Math.min(docs.length-1,4)?`1px solid ${C.b}`:"none",
+                      transition:"background .12s"}}
+                      onMouseEnter={(e:any)=>e.currentTarget.style.background="#F8FAFC"}
+                      onMouseLeave={(e:any)=>e.currentTarget.style.background="#fff"}>
+                      <div style={{width:36,height:36,borderRadius:8,background:cs.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        <i className={`ti ${cs.icon}`} style={{fontSize:18,color:cs.color}} aria-hidden="true"/>
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{doc.name}</div>
+                        <div style={{fontSize:10,color:C.t3,marginTop:2}}>{fmtSize(doc.size||0)} · {date}</div>
+                      </div>
+                      <div style={{display:"flex",gap:5,flexShrink:0}}>
+                        <a href={doc.url} target="_blank" rel="noreferrer"
+                          style={{background:C.blueL,color:C.blueDk,borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,textDecoration:"none",display:"flex",alignItems:"center",gap:4}}>
+                          <i className="ti ti-external-link" style={{fontSize:12}} aria-hidden="true"/> Ouvrir
+                        </a>
+                        <button onClick={()=>deleteDoc(doc)}
+                          style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                          <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Drop zone when empty */}
+          {docs.length===0&&(
+            <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)}
+              onDrop={e=>{e.preventDefault();setDragOver(false);handleFiles(e.dataTransfer.files);}}
+              onClick={()=>fileRef.current?.click()}
+              style={{border:`2px dashed ${C.b}`,borderRadius:C.rLg,padding:"48px",textAlign:"center",cursor:"pointer",background:"#FAFBFD"}}>
+              <i className="ti ti-cloud-upload" style={{fontSize:40,color:C.t3,display:"block",marginBottom:12}} aria-hidden="true"/>
+              <div style={{fontSize:14,fontWeight:600,color:C.t2,marginBottom:4}}>Aucun document — commencez par en ajouter</div>
+              <div style={{fontSize:12,color:C.t3}}>Glissez des fichiers ici ou cliquez sur "Ajouter"</div>
+            </div>
+          )}
+        </>
+      ):(
+        /* Search / filter results */
+        <div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              {catFilter!=="all"&&(
+                <button onClick={()=>setCatFilter("all")}
+                  style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:99,padding:"4px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                  <i className="ti ti-x" style={{fontSize:11}} aria-hidden="true"/> {CATEGORIES.find(c=>c.id===catFilter)?.label}
+                </button>
+              )}
+              <span style={{fontSize:12,color:C.t3}}>{filtered.length} résultat{filtered.length>1?"s":""}</span>
+            </div>
+            <button onClick={()=>{setSearch("");setCatFilter("all");}}
+              style={{fontSize:11,color:C.t3,background:"transparent",border:"none",cursor:"pointer",textDecoration:"underline"}}>
+              Effacer les filtres
+            </button>
+          </div>
+          {filtered.length===0?(
+            <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,padding:"48px",textAlign:"center"}}>
+              <i className="ti ti-search-off" style={{fontSize:36,color:C.t3,display:"block",marginBottom:12}} aria-hidden="true"/>
+              <div style={{fontSize:14,fontWeight:600,color:C.t2}}>Aucun document trouvé</div>
+              <div style={{fontSize:12,color:C.t3,marginTop:4}}>Essayez un autre mot-clé</div>
+            </div>
+          ):(
+            <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+              {filtered.map((doc:any,i:number)=>{
+                const cs=getCatStyle(doc.category);
+                const date=doc.uploadedAt?new Date(doc.uploadedAt).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"}):"";
+                return(
+                  <div key={doc.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",
+                    borderBottom:i<filtered.length-1?`1px solid ${C.b}`:"none",transition:"background .1s"}}
+                    onMouseEnter={(e:any)=>e.currentTarget.style.background="#F8FAFC"}
+                    onMouseLeave={(e:any)=>e.currentTarget.style.background="#fff"}>
+                    <div style={{width:36,height:36,borderRadius:8,background:cs.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <i className={`ti ${cs.icon}`} style={{fontSize:18,color:cs.color}} aria-hidden="true"/>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{doc.name}</div>
+                      <div style={{fontSize:10,color:C.t3,marginTop:2,display:"flex",gap:8}}>
+                        <span style={{background:cs.bg,color:cs.color,borderRadius:3,padding:"1px 6px",fontWeight:600,fontSize:9}}>{doc.category?.toUpperCase()}</span>
+                        <span>{fmtSize(doc.size||0)}</span>
+                        <span>· {date}</span>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:5,flexShrink:0}}>
+                      <a href={doc.url} target="_blank" rel="noreferrer"
+                        style={{background:C.blueL,color:C.blueDk,borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,textDecoration:"none",display:"flex",alignItems:"center",gap:4}}>
+                        <i className="ti ti-external-link" style={{fontSize:12}} aria-hidden="true"/> Ouvrir
+                      </a>
+                      <a href={doc.url} download={doc.name}
+                        style={{background:"#F1F5F9",color:C.t2,borderRadius:5,padding:"5px 8px",textDecoration:"none",display:"flex",alignItems:"center"}}>
+                        <i className="ti ti-download" style={{fontSize:12}} aria-hidden="true"/>
+                      </a>
+                      <button onClick={()=>deleteDoc(doc)}
+                        style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                        <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
