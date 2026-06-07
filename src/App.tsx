@@ -1,6 +1,26 @@
 // @ts-nocheck
 import React, { useState, useEffect, Fragment, useRef } from "react";
 
+// ─── ACTIVITY LOG (defined early — used by multiple components) ──────────────
+const LOG_KEY="ordertrack-activitylog";
+const logActivity=async(action:string,detail:string,user:string)=>{
+  try{
+    const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+    const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+    const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+LOG_KEY+"&select=payload&limit=1",
+      {headers:{"apikey":K,"Authorization":"Bearer "+K}});
+    const rows=r.ok?await r.json():[];
+    const logs=rows?.[0]?.payload?.logs||[];
+    const entry={ts:new Date().toISOString(),action,detail,user};
+    const updated=[entry,...logs].slice(0,500);
+    await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify({user_key:LOG_KEY,payload:{logs:updated}})
+    });
+  }catch(e){console.warn("[Log]",e);}
+};
+
 // ─── SUPABASE CLOUD SYNC (pure fetch — no package needed) ────────────────────
 const SUPABASE_URL = "https://vxxrxnyxfmgcdzxcigdw.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
@@ -741,6 +761,37 @@ export default function App(){
   const[lastSync,setLastSync]=useState<string|null>(null);
   const[focusOrderId,setFocusOrderId]=useState<string|null>(null);
 
+  // ── Offline detection ────────────────────────────────────────────────────
+  const[isOnline,setIsOnline]=useState(navigator.onLine);
+  useEffect(()=>{
+    const goOn=()=>setIsOnline(true);
+    const goOff=()=>setIsOnline(false);
+    window.addEventListener("online",goOn);
+    window.addEventListener("offline",goOff);
+    return()=>{window.removeEventListener("online",goOn);window.removeEventListener("offline",goOff);};
+  },[]);
+
+  // ── Session expiration (30 min) ──────────────────────────────────────────
+  const timerRef=useRef<any>(null);
+  const resetSessionTimer=React.useCallback(()=>{
+    if(timerRef.current)clearTimeout(timerRef.current);
+    timerRef.current=setTimeout(()=>{
+      alert("Votre session a expiré après 30 minutes d'inactivité.");
+      localStorage.removeItem(AUTH_KEY);
+      setSession(null);
+    },30*60*1000);
+  },[]);
+  useEffect(()=>{
+    if(!session)return;
+    const events=["mousedown","keydown","touchstart","scroll"];
+    events.forEach(ev=>window.addEventListener(ev,resetSessionTimer,{passive:true}));
+    resetSessionTimer();
+    return()=>{
+      events.forEach(ev=>window.removeEventListener(ev,resetSessionTimer));
+      if(timerRef.current)clearTimeout(timerRef.current);
+    };
+  },[session,resetSessionTimer]);
+
   useEffect(()=>{
     (async()=>{
       setSyncStatus("syncing");
@@ -956,7 +1007,7 @@ export default function App(){
 
   if(!data||!clients)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:C.t3,fontSize:14}}>Chargement…</div>;
 
-  const special=["kpi","dashboard","tresorerie","rapport","catalogue","documents"];
+  const special=["kpi","dashboard","tresorerie","rapport","catalogue","documents","logs"];
   const getConfig=(c:string)=>configs[c]||{accountNumber:"",termId:"net60",customDays:0};
 
   // ── Compute global alerts (for ticker on all pages) ──────────────
@@ -1057,6 +1108,7 @@ export default function App(){
               <div style={{display:"flex",gap:4}}>
                 {session?.role==="admin"&&<button onClick={()=>setShowUserMgr(true)} title="Gérer les accès" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-users" style={{fontSize:14}} aria-hidden="true"/></button>}
                 <button onClick={logout} title="Se déconnecter" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-logout" style={{fontSize:14}} aria-hidden="true"/></button>
+                {session?.role==="admin"&&<button onClick={()=>setPage("logs")} title="Logs d'activité" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-activity" style={{fontSize:14}} aria-hidden="true"/></button>}
               </div>
             </div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -1108,6 +1160,13 @@ export default function App(){
         )}
         {/* Alert Ticker */}
         {tickerAlerts.length>0&&<AlertTicker alerts={tickerAlerts} lang={lang}/>}
+        {/* Offline banner */}
+        {!isOnline&&(
+          <div style={{background:"#92400E",padding:"7px 20px",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+            <i className="ti ti-wifi-off" style={{fontSize:14,color:"#FCD34D"}} aria-hidden="true"/>
+            <span style={{fontSize:12,fontWeight:600,color:"#FDE68A"}}>Hors ligne — données locales uniquement</span>
+          </div>
+        )}
         {/* Update notification from another device */}
         {updateAlert&&(
           <div style={{background:"#1D4ED8",padding:"8px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,animation:"slideIn .3s ease-out"}}>
@@ -1125,6 +1184,7 @@ export default function App(){
         {page==="rapport"&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
         {page==="catalogue"&&<CataloguePage clients={clients} lang={lang} isMobile={isMobile}/>}
         {page==="documents"&&<DocumentsPage isMobile={isMobile}/>}
+        {page==="logs"&&<ActivityLogsPage session={session}/>}
         {!special.includes(page)&&(
           <ClientPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
@@ -3438,6 +3498,23 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 }
 
 // ─── CATALOGUE & DEVIS ───────────────────────────────────────────────────────
+// ─── EXPORT EXCEL (SheetJS CDN) ──────────────────────────────────────────────
+const exportToExcel=async(data:any[][],filename:string,sheetName="Export")=>{
+  if(!(window as any).XLSX){
+    await new Promise<void>((res,rej)=>{
+      const s=document.createElement("script");
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      s.onload=()=>res();s.onerror=()=>rej();
+      document.head.appendChild(s);
+    });
+  }
+  const XLSX=(window as any).XLSX;
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,sheetName);
+  XLSX.writeFile(wb,filename);
+};
+
 const CAT_KEY="ordertrack-catalogue";
 const QUOT_KEY="ordertrack-quotes";
 const CAT_K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
@@ -4350,6 +4427,62 @@ function CataloguePage({clients,lang,isMobile}:any){
   const removeLine=(i:number)=>setQLines(l=>l.filter((_:any,j:number)=>j!==i));
   const totalHT=qLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
 
+  // ── Generate DRAFT quote (no header) ────────────────────────────────────────
+  const generateDraftQuote=async()=>{
+    const effectiveClient=useManualClient?qClientManual:qClient;
+    if(!effectiveClient){alert("Sélectionnez ou saisissez un client");return;}
+    if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert("Ajoutez au moins une ligne avec PN et prix");return;}
+    const validLines=qLines.filter((l:any)=>l.pn);
+    const w=window.open("","_blank","width=900,height=700");
+    if(!w)return;
+    const dateStr=new Date(qDate).toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});
+    const totStr=totalHT.toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const addrHtml=(useManualClient&&qClientAddr)
+      ?'<div style="font-size:11px;color:#444;margin-top:3px">'+qClientAddr.split("\n").join("<br/>")+"</div>"
+      :"";
+    const linesHtml=validLines.map((l:any)=>[
+      "<tr>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px">'+l.pn+"</td>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px">'+(l.desc||"—")+"</td>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px;text-align:right">'+(+l.unitPrice||0).toLocaleString("fr-FR",{minimumFractionDigits:2})+"</td>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px;text-align:center">'+l.qty+"</td>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px;text-align:right">'+((+l.qty||0)*(+l.unitPrice||0)).toLocaleString("fr-FR",{minimumFractionDigits:2})+"</td>",
+      '<td style="padding:6px 10px;border:1px solid #c8e6c9;font-size:11px;color:#6B7280">'+(l.avail||"")+"</td>",
+      "</tr>"
+    ].join("")).join("");
+    const th=(txt:string,align:string="left",w2:string="")=>
+      '<th style="padding:7px 10px;border:1px solid #81c784;font-size:11px;text-align:'+align+';font-weight:bold'+(w2?";width:"+w2:"")+'">'+txt+"</th>";
+    const parts=[
+      "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Draft</title>",
+      "<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:15mm}",
+      "@page{size:A4;margin:15mm}@media print{body{padding:0}}",
+      ".ttl{font-size:16px;font-weight:bold;border:2px solid #000;padding:6px 20px;display:inline-block}</style></head><body>",
+      "<table style='width:100%;margin-bottom:8px'><tr>",
+      "<td style='width:40%'></td>",
+      "<td style='text-align:center;width:20%'><span class='ttl'>DRAFT QUOTE</span></td>",
+      "<td style='text-align:right;width:40%;font-size:11px'>"+dateStr+"</td></tr></table>",
+      "<table style='width:100%;margin-bottom:16px'><tr>",
+      "<td style='width:50%'><div style='font-weight:bold;font-size:13px'>"+effectiveClient+"</div>",
+      addrHtml,
+      "<div style='font-size:11px;margin-top:4px'>PROJECT : "+(qNotes||"")+"</div></td>",
+      "<td style='text-align:right'><div style='font-size:16px;font-weight:bold'>GRUNDFOS</div></td></tr></table>",
+      "<table style='width:100%;border-collapse:collapse'>",
+      "<thead><tr style='background:#a5d6a7'>",
+      th("p/n","left","100px")+th("Product")+th("UNIT PRICE","right","110px")+
+      th("Qty","center","60px")+th("Total (€)","right","110px")+th("Availability","left","130px"),
+      "</tr></thead><tbody>"+linesHtml+"</tbody>",
+      "<tfoot><tr>",
+      "<td colspan='4' style='padding:8px 10px;text-align:right;font-weight:bold'>TOT=</td>",
+      "<td style='padding:8px 10px;text-align:right;font-weight:bold;font-size:13px;border-top:2px solid #000'>"+totStr+"</td>",
+      "<td></td></tr></tfoot></table>",
+      qValidity?"<div style='margin-top:20px;font-size:10px;color:#666'>Valable "+qValidity+" jours.</div>":"",
+      "<scr"+"ipt>setTimeout(function(){window.print();},400);</scr"+"ipt>",
+      "</body></html>"
+    ];
+    w.document.write(parts.join("\n"));
+    w.document.close();
+  };
+
   // ── Generate quote PDF ─────────────────────────────────────────────────────
   const generateQuote=async()=>{
     const effectiveClient=useManualClient?qClientManual:qClient;
@@ -4689,6 +4822,11 @@ function CataloguePage({clients,lang,isMobile}:any){
                 style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:`linear-gradient(135deg,#E2051B,#B91C1C)`,color:"#fff",border:"none",borderRadius:C.r,padding:"12px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 15px rgba(226,5,27,.35)"}}>
                 <i className="ti ti-printer" style={{fontSize:16}} aria-hidden="true"/>
                 Générer le devis PDF
+              </button>
+              <button onClick={generateDraftQuote}
+                style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#F0FDF4",color:C.greenDk,border:`1px solid ${C.green}40`,borderRadius:C.r,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                <i className="ti ti-file-text" style={{fontSize:14}} aria-hidden="true"/>
+                Draft / Sans en-tête
               </button>
               <button onClick={()=>{setQLines([{pn:"",desc:"",qty:1,unitPrice:0,avail:"Stock",priceOptions:[],selectedPriceIdx:-1}]);setQClient("");setQNotes("");setQRef(`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);}}
                 style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:"#F1F5F9",color:C.t3,border:"none",borderRadius:C.r,padding:"8px",fontSize:12,cursor:"pointer"}}>
@@ -5868,5 +6006,101 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ─── PRICE HISTORY CHART ─────────────────────────────────────────────────────
+function PriceHistoryChart({prices}:any){
+  if(!prices||prices.length<2)return null;
+  const sorted=[...prices].sort((a:any,b:any)=>String(a.date||"").localeCompare(String(b.date||"")));
+  const maxP=Math.max(...sorted.map((p:any)=>Number(p.price)||0))||1;
+  return(
+    <div>
+      <div style={{fontSize:10,color:C.t3,fontWeight:700,textTransform:"uppercase",letterSpacing:".05em",marginBottom:8}}>Évolution du prix</div>
+      <div style={{display:"flex",gap:4,alignItems:"flex-end",height:70,background:"#F8FAFC",borderRadius:8,border:`1px solid ${C.b}`,padding:"10px 12px",overflowX:"auto"}}>
+        {sorted.map((p:any,i:number)=>{
+          const pct=Math.max(8,(Number(p.price)/maxP)*100);
+          return(
+            <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:48,flex:1}}>
+              <span style={{fontSize:9,fontWeight:700,color:C.blue,whiteSpace:"nowrap"}}>{fmt(Number(p.price))}€</span>
+              <div style={{width:"100%",height:pct+"%",background:`linear-gradient(180deg,${C.blue},${C.blueL})`,borderRadius:"3px 3px 0 0",minHeight:6}}/>
+              <span style={{fontSize:8,color:C.t3,whiteSpace:"nowrap"}}>{String(p.date||"").substring(2,7)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── ACTIVITY LOGS PAGE ──────────────────────────────────────────────────────
+function ActivityLogsPage({session}:any){
+  const[logs,setLogs]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  const[filter,setFilter]=useState("");
+  const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+  const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+  useEffect(()=>{
+    fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+LOG_KEY+"&select=payload&limit=1",
+      {headers:{"apikey":K,"Authorization":"Bearer "+K}})
+      .then(r=>r.ok?r.json():null)
+      .then(rows=>{setLogs(rows?.[0]?.payload?.logs||[]);setLoading(false);})
+      .catch(()=>setLoading(false));
+  },[]);
+  const exportLogs=async()=>{
+    const headers=["Date & Heure","Action","Détail","Utilisateur"];
+    const rows=logs.map((l:any)=>[new Date(l.ts).toLocaleString("fr-FR"),l.action,l.detail,l.user]);
+    await exportToExcel([headers,...rows],"logs_ordertrack_"+new Date().toISOString().slice(0,10)+".xlsx","Logs");
+  };
+  const filtered=logs.filter((l:any)=>!filter||
+    l.action?.toLowerCase().includes(filter.toLowerCase())||
+    l.user?.toLowerCase().includes(filter.toLowerCase())
+  );
+  const ACTION_COLORS:any={Commande:C.blue,Facture:C.teal,Paiement:C.green,Suppression:C.red,Connexion:"#7C3AED",Devis:C.amber};
+  const getColor=(action:string)=>{for(const[k,v] of Object.entries(ACTION_COLORS)){if(action?.includes(k))return v as string;}return C.t3;};
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+        <div>
+          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Logs d'activité</h1>
+          <p style={{margin:0,color:C.t3,fontSize:13}}>{logs.length} événements enregistrés</p>
+        </div>
+        <button onClick={exportLogs} style={{display:"flex",alignItems:"center",gap:7,background:C.greenL,color:C.greenDk,border:"none",borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          <i className="ti ti-file-spreadsheet" style={{fontSize:14}} aria-hidden="true"/> Exporter Excel
+        </button>
+      </div>
+      <div style={{position:"relative"}}>
+        <i className="ti ti-search" style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:14,color:C.t3}} aria-hidden="true"/>
+        <input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filtrer par action ou utilisateur…"
+          style={{width:"100%",padding:"9px 12px 9px 36px",border:`1px solid ${C.b}`,borderRadius:C.r,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+      </div>
+      <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+        {loading?<div style={{padding:32,textAlign:"center",color:C.t3}}>Chargement…</div>:
+        filtered.length===0?<div style={{padding:32,textAlign:"center",color:C.t3}}>Aucun log</div>:(
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+              <thead><tr style={{background:"#0D1B2A"}}>
+                {["Date & Heure","Action","Détail","Utilisateur"].map(h=>(
+                  <th key={h} style={{padding:"8px 14px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {filtered.map((l:any,i:number)=>{
+                  const color=getColor(l.action||"");
+                  return(
+                    <tr key={i} style={{borderBottom:`1px solid ${C.b}`,background:i%2===0?"#fff":"#FAFBFD"}}>
+                      <td style={{padding:"8px 14px",color:C.t3,whiteSpace:"nowrap",fontSize:10}}>{new Date(l.ts).toLocaleString("fr-FR")}</td>
+                      <td style={{padding:"8px 14px"}}><span style={{background:color+"18",color:color,padding:"2px 8px",borderRadius:4,fontWeight:600,fontSize:10}}>{l.action||"—"}</span></td>
+                      <td style={{padding:"8px 14px",color:C.t1,maxWidth:300,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.detail||"—"}</td>
+                      <td style={{padding:"8px 14px",color:C.t3}}>{l.user||"—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
