@@ -584,16 +584,13 @@ function UserManager({session,onClose}:any){
   };
   const saveUsers=async(updated:any[])=>{
     try{
-      const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+USERS_DB_KEY,{
-        method:"PATCH",headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=minimal"},
-        body:JSON.stringify({payload:{users:updated}})
+      // Always use upsert (merge-duplicates) — PATCH returns 204 even for 0 rows matched
+      const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
+        method:"POST",
+        headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
+        body:JSON.stringify({user_key:USERS_DB_KEY,payload:{users:updated}})
       });
-      if(r.status===404||!r.ok){
-        await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
-          method:"POST",headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
-          body:JSON.stringify({user_key:USERS_DB_KEY,payload:{users:updated}})
-        });
-      }
+      if(!r.ok){const e=await r.text();console.warn("[saveUsers]",r.status,e);}
       setUsers(updated);setMsg("✓ Sauvegardé");setTimeout(()=>setMsg(""),2000);
     }catch{setMsg("Erreur de sauvegarde");}
   };
