@@ -4573,19 +4573,31 @@ function CataloguePage({clients,lang,isMobile}:any){
     ];
 
     // ── Title ──────────────────────────────────────────────────────────────
-    ws.mergeCells('A1:F1');
+    ws.getRow(1).height=22;
+    // Left: DRAFT QUOTE — CLIENT (cols A-D)
+    ws.mergeCells('A1:D1');
     const titleCell=ws.getCell('A1');
     titleCell.value=`DRAFT QUOTE — ${effectiveClient}`;
-    titleCell.font={bold:true,size:13,color:{argb:'FF1D4ED8'},name:'Arial'};
+    titleCell.font={bold:true,size:14,color:{argb:'FF1D4ED8'},name:'Arial'};
     titleCell.alignment={vertical:'middle'};
-    ws.getRow(1).height=20;
+    // Right: GRUNDFOS in blue (cols E-F)
+    ws.mergeCells('E1:F1');
+    const grundCell=ws.getCell('E1');
+    grundCell.value='GRUNDFOS';
+    grundCell.font={bold:true,size:14,color:{argb:'FF2563EB'},name:'Arial'};
+    grundCell.alignment={horizontal:'right',vertical:'middle'};
 
     // ── Subtitle ───────────────────────────────────────────────────────────
     ws.mergeCells('A2:F2');
     const subCell=ws.getCell('A2');
     subCell.value=`Réf : ${qRef}   |   Date : ${dateStr}   |   Validité : ${qValidity} jours`;
     subCell.font={size:9,color:{argb:'FF6B7280'},name:'Arial'};
+    subCell.alignment={vertical:'middle'};
+    subCell.border={bottom:{style:'thin',color:{argb:'FFE5EAF0'}}};
     ws.getRow(2).height=14;
+
+    // ── Spacer ─────────────────────────────────────────────────────────────
+    ws.getRow(3).height=5;
 
     // ── Headers ────────────────────────────────────────────────────────────
     const hdrRow=ws.getRow(4);
