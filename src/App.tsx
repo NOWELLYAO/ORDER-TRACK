@@ -4488,7 +4488,6 @@ function CataloguePage({clients,lang,isMobile}:any){
     <td style="width:55%;vertical-align:top">
       <div style="font-weight:bold;font-size:14px;font-family:Arial,Helvetica,sans-serif">${effectiveClient}</div>
       ${addrHtml}
-      <div style="font-size:11px;margin-top:5px;font-family:Arial,Helvetica,sans-serif">PROJECT : ${qNotes||''}</div>
     </td>
     <td style="width:45%;text-align:right;vertical-align:middle;font-size:10px;color:#888;font-family:Arial,Helvetica,sans-serif">
       Réf : ${qRef}<br/>
@@ -4516,7 +4515,19 @@ function CataloguePage({clients,lang,isMobile}:any){
     </tr>
   </tfoot>
 </table>
-${qValidity?'<p style="margin-top:20px;font-size:10px;color:#555;font-family:Arial,Helvetica,sans-serif">Valable '+qValidity+' jours.</p>':''}
+<table style="width:100%;margin-top:20px">
+  <tr>
+    <td style="width:60%;vertical-align:top;padding-right:20px">
+      ${qNotes?`<div style="border-left:3px solid #2563EB;padding:8px 12px;background:#F8FAFF;border-radius:0 6px 6px 0">
+        <div style="font-size:9px;font-weight:bold;color:#2563EB;font-family:Arial,Helvetica,sans-serif;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Notes / Conditions</div>
+        <div style="font-size:11px;color:#333;font-family:Arial,Helvetica,sans-serif;white-space:pre-wrap;line-height:1.5">${qNotes}</div>
+      </div>`:''}
+    </td>
+    <td style="width:40%;vertical-align:bottom;text-align:right">
+      ${qValidity?`<p style="font-size:10px;color:#555;font-family:Arial,Helvetica,sans-serif">Valable ${qValidity} jours.</p>`:''}
+    </td>
+  </tr>
+</table>
 </body></html>`;
     // FIX: ouvrir la fenêtre avant d'écrire le contenu (meilleure compatibilité)
     const w=window.open('','_blank');
