@@ -4569,11 +4569,17 @@ function CataloguePage({clients,lang,isMobile}:any){
     const ws=wb.addWorksheet('Draft Quote',{pageSetup:{paperSize:9,orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0},properties:{defaultColWidth:12}});
 
     ws.columns=[
-      {width:16},{width:36},{width:18},{width:7},{width:16},{width:18}
+      {width:11},  // A: P/N
+      {width:38},  // B: Désignation
+      {width:11},  // C: P.U. (€)
+      {width:5},   // D: Qté
+      {width:11},  // E: Total (€)
+      {width:17},  // F: Disponibilité
     ];
+    ws.pageSetup.margins={left:0.5,right:0.5,top:0.6,bottom:0.6,header:0.3,footer:0.3};
 
     // ── Title ──────────────────────────────────────────────────────────────
-    ws.getRow(1).height=28;
+    ws.getRow(1).height=30;
     // Left: DRAFT QUOTE — CLIENT (cols A-D)
     ws.mergeCells('A1:D1');
     const titleCell=ws.getCell('A1');
@@ -4597,12 +4603,12 @@ function CataloguePage({clients,lang,isMobile}:any){
     ws.getRow(2).height=18;
 
     // ── Spacer ─────────────────────────────────────────────────────────────
-    ws.getRow(3).height=12;
+    ws.getRow(3).height=8;
 
     // ── Headers ────────────────────────────────────────────────────────────
     const hdrRow=ws.getRow(4);
-    hdrRow.height=22;
-    ['P/N','Désignation','Prix unitaire (€)','Qté','Total (€)','Disponibilité'].forEach((h,i)=>{
+    ws.getRow(4).height=22;
+    ['P/N','Désignation','P.U. (€)','Qté','Total (€)','Disponibilité'].forEach((h,i)=>{
       const c=hdrRow.getCell(i+1);
       c.value=h;
       c.font={bold:true,size:9,color:{argb:'FF1E3A5F'},name:'Arial'};
@@ -4616,7 +4622,7 @@ function CataloguePage({clients,lang,isMobile}:any){
     validLines.forEach((l:any,i:number)=>{
       const rowNum=DR+i;
       const row=ws.getRow(rowNum);
-      row.height=20;
+      row.height=22;
       const price=+l.unitPrice||0;
       const qty=+l.qty||1;
       const borderStyle={top:{style:'thin',color:{argb:'FFBFDBFE'}},bottom:{style:'thin',color:{argb:'FFBFDBFE'}},left:{style:'thin',color:{argb:'FFBFDBFE'}},right:{style:'thin',color:{argb:'FFBFDBFE'}}};
@@ -4681,7 +4687,9 @@ function CataloguePage({clients,lang,isMobile}:any){
       nLabel.font={bold:true,size:9,color:{argb:'FF1D4ED8'},name:'Arial'};
       nLabel.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFF6FF'}};
       nR++;
-      ws.getRow(nR).height=55;
+      const charsPerLine=90;
+      const noteLines=Math.ceil(String(qNotes).length/charsPerLine)+1;
+      ws.getRow(nR).height=Math.max(40,noteLines*14);
       ws.mergeCells(`A${nR}:F${nR}`);
       const nVal=ws.getCell(`A${nR}`);
       nVal.value=String(qNotes);
