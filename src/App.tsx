@@ -4529,6 +4529,129 @@ ${qValidity?'<p style="margin-top:20px;font-size:10px;color:#555;font-family:Ari
     w.document.close();
   };
 
+  // ── Generate draft Excel ───────────────────────────────────────────────────
+  const generateDraftExcel=()=>{
+    const effectiveClient=useManualClient?qClientManual:qClient;
+    if(!effectiveClient){alert('Sélectionnez ou saisissez un client');return;}
+    if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert('Ajoutez au moins une ligne avec PN et prix');return;}
+    const validLines=qLines.filter((l:any)=>l.pn);
+    const dateStr=new Date(qDate).toLocaleDateString('fr-FR');
+    const fileName=`Draft_${effectiveClient}_${qRef}_${qDate}.xls`;
+
+    // Build XLS via XML Spreadsheet 2003 (works in Excel + LibreOffice, no lib needed)
+    const esc=(s:any)=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const cell=(v:any,bold=false,align='',bg='',fmt='')=>{
+      const sty=[
+        bold?'font-weight:bold;':'',
+        align?`text-align:${align};`:'',
+        bg?`background:${bg};`:'',
+        'font-family:Arial,sans-serif;font-size:11pt;',
+        'border:0.5pt solid #BFDBFE;',
+        'padding:5pt 8pt;',
+        'vertical-align:middle;',
+        'mso-number-format:"@";', // force text format to preserve leading zeros etc.
+      ].join('');
+      const type=fmt==='num'?'Number':'String';
+      return `<td style="${sty}" x:str="${esc(v)}">${esc(v)}</td>`;
+    };
+    const numCell=(v:number,bg='')=>{
+      const sty=`font-family:Arial,sans-serif;font-size:11pt;text-align:right;border:0.5pt solid #BFDBFE;padding:5pt 8pt;vertical-align:middle;${bg?'background:'+bg+';':''}`;
+      return `<td style="${sty}" x:num="${v}">${v.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`;
+    };
+
+    // Header rows
+    const hdrStyle='font-family:Arial,sans-serif;font-size:14pt;font-weight:bold;color:#1D4ED8;border:none;padding:4pt 0;';
+    const subStyle='font-family:Arial,sans-serif;font-size:10pt;color:#6B7280;border:none;padding:2pt 0;';
+    const thStyle='font-family:Arial,sans-serif;font-size:10pt;font-weight:bold;background:#BFDBFE;color:#1E3A5F;border:0.5pt solid #93C5FD;padding:6pt 8pt;text-align:center;';
+
+    const linesRows=validLines.map((l:any)=>{
+      const total=(+l.qty||0)*(+l.unitPrice||0);
+      return `<tr>
+        ${cell(l.pn)}
+        ${cell(l.desc||'')}
+        ${numCell(+l.unitPrice||0)}
+        ${cell(l.qty,false,'center')}
+        ${numCell(total,'#F0FDF4')}
+        ${cell(l.avail||'TBC')}
+      </tr>`;
+    }).join('');
+
+    const totalHT_val=validLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
+
+    const xml=`<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <Styles>
+    <Style ss:ID="s1"><Font ss:FontName="Arial" ss:Size="14" ss:Bold="1" ss:Color="#1D4ED8"/></Style>
+    <Style ss:ID="s2"><Font ss:FontName="Arial" ss:Size="10" ss:Color="#6B7280"/></Style>
+    <Style ss:ID="s3"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#1E3A5F"/><Interior ss:Color="#BFDBFE" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+    <Style ss:ID="s4"><Font ss:FontName="Arial" ss:Size="10"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
+    <Style ss:ID="s5"><Alignment ss:Horizontal="Right"/><Font ss:FontName="Arial" ss:Size="10"/><Interior ss:Color="#F0FDF4" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
+    <Style ss:ID="s6"><Alignment ss:Horizontal="Right"/><Font ss:FontName="Arial" ss:Size="12" ss:Bold="1" ss:Color="#1E3A5F"/><Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2"/></Borders></Style>
+  </Styles>
+  <Worksheet ss:Name="Draft Quote">
+    <Table ss:DefaultColumnWidth="80" ss:DefaultRowHeight="18">
+      <Column ss:Width="120"/>
+      <Column ss:Width="220"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="55"/>
+      <Column ss:Width="110"/>
+      <Column ss:Width="130"/>
+      <Row ss:Height="26">
+        <Cell ss:MergeAcross="5" ss:StyleID="s1"><Data ss:Type="String">DRAFT QUOTE — ${esc(effectiveClient)}</Data></Cell>
+      </Row>
+      <Row ss:Height="16">
+        <Cell ss:MergeAcross="5" ss:StyleID="s2"><Data ss:Type="String">Réf : ${esc(qRef)}   |   Date : ${esc(dateStr)}   |   Validité : ${esc(qValidity)} jours${qNotes?'   |   Project : '+esc(qNotes):''}</Data></Cell>
+      </Row>
+      <Row ss:Height="6"><Cell><Data ss:Type="String"></Data></Cell></Row>
+      <Row ss:Height="22">
+        <Cell ss:StyleID="s3"><Data ss:Type="String">P/N</Data></Cell>
+        <Cell ss:StyleID="s3"><Data ss:Type="String">Désignation</Data></Cell>
+        <Cell ss:StyleID="s3"><Data ss:Type="String">Prix unitaire (€)</Data></Cell>
+        <Cell ss:StyleID="s3"><Data ss:Type="String">Qté</Data></Cell>
+        <Cell ss:StyleID="s3"><Data ss:Type="String">Total (€)</Data></Cell>
+        <Cell ss:StyleID="s3"><Data ss:Type="String">Disponibilité</Data></Cell>
+      </Row>
+      ${validLines.map((l:any)=>{
+        const tot=(+l.qty||0)*(+l.unitPrice||0);
+        return `<Row ss:Height="18">
+          <Cell ss:StyleID="s4"><Data ss:Type="String">${esc(l.pn)}</Data></Cell>
+          <Cell ss:StyleID="s4"><Data ss:Type="String">${esc(l.desc||'')}</Data></Cell>
+          <Cell ss:StyleID="s5"><Data ss:Type="Number">${+l.unitPrice||0}</Data></Cell>
+          <Cell ss:StyleID="s4"><Data ss:Type="Number">${+l.qty||1}</Data></Cell>
+          <Cell ss:StyleID="s5"><Data ss:Type="Number">${tot}</Data></Cell>
+          <Cell ss:StyleID="s4"><Data ss:Type="String">${esc(l.avail||'TBC')}</Data></Cell>
+        </Row>`;
+      }).join('')}
+      <Row ss:Height="6"><Cell><Data ss:Type="String"></Data></Cell></Row>
+      <Row ss:Height="24">
+        <Cell ss:MergeAcross="3" ss:StyleID="s6"><Data ss:Type="String">TOTAL HT</Data></Cell>
+        <Cell ss:StyleID="s6"><Data ss:Type="Number">${totalHT_val}</Data></Cell>
+        <Cell ss:StyleID="s4"><Data ss:Type="String"></Data></Cell>
+      </Row>
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+      <PageSetup><Layout x:Orientation="Portrait"/><PageMargins x:Bottom="0.984252" x:Left="0.787402" x:Right="0.787402" x:Top="0.984252"/></PageSetup>
+      <Print><ValidPrinterInfo/><PaperSizeIndex>9</PaperSizeIndex><HorizontalResolution>600</HorizontalResolution><VerticalResolution>600</VerticalResolution></Print>
+      <FreezePanes/><FrozenNoSplit/>
+      <SplitHorizontal>4</SplitHorizontal><TopRowBottomPane>4</TopRowBottomPane>
+      <ActivePane>2</ActivePane>
+    </WorksheetOptions>
+  </Worksheet>
+</Workbook>`;
+
+    const blob=new Blob([xml],{type:'application/vnd.ms-excel;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=fileName;
+    document.body.appendChild(a);a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // ── Generate quote PDF ─────────────────────────────────────────────────────
   const generateQuote=async()=>{
     const effectiveClient=useManualClient?qClientManual:qClient;
@@ -4894,6 +5017,11 @@ ${qValidity?'<p style="margin-top:20px;font-size:10px;color:#555;font-family:Ari
                 style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#F0FDF4",color:C.greenDk,border:`1px solid ${C.green}40`,borderRadius:C.r,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
                 <i className="ti ti-file-text" style={{fontSize:14}} aria-hidden="true"/>
                 Draft / Sans en-tête
+              </button>
+              <button onClick={generateDraftExcel}
+                style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#F0FFF4",color:"#15803D",border:`1px solid #16A34A40`,borderRadius:C.r,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                <i className="ti ti-file-spreadsheet" style={{fontSize:14}} aria-hidden="true"/>
+                Exporter en Excel (.xls)
               </button>
               <button onClick={()=>{setQLines([{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1}]);setQClient("");setQNotes("");setQRef(`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);}}
                 style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:"#F1F5F9",color:C.t3,border:"none",borderRadius:C.r,padding:"8px",fontSize:12,cursor:"pointer"}}>
