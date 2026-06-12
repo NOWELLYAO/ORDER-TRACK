@@ -4633,14 +4633,12 @@ function CataloguePage({clients,lang,isMobile}:any){
       cC.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F4F6'}};
       cC.alignment={horizontal:'right'};
       cC.border=borderStyle;
-      cC.protection={locked:true};
       // D: Qté — EDITABLE
       const cD=row.getCell(4);
       cD.value=qty;
       cD.font={size:9,name:'Arial'};
       cD.alignment={horizontal:'center'};
       cD.border=borderStyle;
-      cD.protection={locked:false};
       // E: Total — formula
       const cE=row.getCell(5);
       cE.value={formula:`C${rowNum}*D${rowNum}`,result:price*qty};
@@ -4649,7 +4647,6 @@ function CataloguePage({clients,lang,isMobile}:any){
       cE.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD1FAE5'}};
       cE.alignment={horizontal:'right'};
       cE.border=borderStyle;
-      cE.protection={locked:true};
       // F: Disponibilité
       const cF=row.getCell(6); cF.value=String(l.avail||'TBC'); cF.font={size:9,name:'Arial'}; cF.border=borderStyle;
     });
@@ -4673,7 +4670,6 @@ function CataloguePage({clients,lang,isMobile}:any){
     tVal.font={bold:true,size:11,color:{argb:'FF1E3A5F'},name:'Arial'};
     tVal.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDBEAFE'}};
     tVal.alignment={horizontal:'right',vertical:'middle'};
-    tVal.protection={locked:true};
 
     // ── Notes ──────────────────────────────────────────────────────────────
     let nR=totalR+2;
@@ -4700,7 +4696,6 @@ function CataloguePage({clients,lang,isMobile}:any){
     }
 
     // ── Sheet protection: only D (Qté) is editable ─────────────────────────
-    await ws.protect('',{selectLockedCells:true,selectUnlockedCells:true,formatCells:false,formatColumns:false,formatRows:false,insertColumns:false,insertRows:false,deleteColumns:false,deleteRows:false,sort:false,autoFilter:false});
 
     // ── Download ───────────────────────────────────────────────────────────
     const buf:ArrayBuffer=await wb.xlsx.writeBuffer();
