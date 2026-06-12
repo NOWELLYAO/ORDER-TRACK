@@ -4548,140 +4548,232 @@ function CataloguePage({clients,lang,isMobile}:any){
     const validLines=qLines.filter((l:any)=>l.pn);
     const dateStr=new Date(qDate).toLocaleDateString('fr-FR');
     const fileName=`Draft_${effectiveClient}_${qRef}_${qDate}.xlsx`;
+    const totalHT_val=validLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
 
-    // Dynamically load SheetJS (already available in the project)
-    let XLSX:any;
-    try{
-      XLSX=await import('xlsx');
-    }catch{
-      alert("Impossible de charger SheetJS. Vérifiez votre connexion.");
-      return;
+    // ── Load JSZip dynamically ─────────────────────────────────────────────
+    let JSZip:any;
+    try{ JSZip=(await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js' as any)).default||window.JSZip; }catch{}
+    if(!JSZip){
+      try{
+        await new Promise<void>((res,rej)=>{
+          if((window as any).JSZip){res();return;}
+          const s=document.createElement('script');
+          s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+          s.onload=()=>res(); s.onerror=()=>rej();
+          document.head.appendChild(s);
+        });
+        JSZip=(window as any).JSZip;
+      }catch{ alert('Impossible de charger JSZip'); return; }
     }
 
-    const wb=XLSX.utils.book_new();
-    const ws:any={};
+    // ── XML helpers ────────────────────────────────────────────────────────
+    const xe=(s:any)=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-    // ── Helper: set a cell with style ref ──────────────────────────────────
-    const sc=(r:number,c:number,v:any,t='s')=>{
-      const addr=XLSX.utils.encode_cell({r,c});
-      ws[addr]={v,t};
-      if(t==='n')ws[addr].t='n';
-      if(t==='f'){ws[addr].t='n';ws[addr].f=v;ws[addr].v=undefined;}
-    };
+    // ── Shared strings table ───────────────────────────────────────────────
+    const sst:string[]=[];
+    const si=(v:string)=>{ let i=sst.indexOf(v); if(i<0){i=sst.length;sst.push(v);} return i; };
 
-    // ── Row 0: Title ────────────────────────────────────────────────────────
-    sc(0,0,`DRAFT QUOTE — ${effectiveClient}`);
+    // ── Build rows ─────────────────────────────────────────────────────────
+    // Row index (1-based in xlsx)
+    // R1: title, R2: subtitle, R3: spacer, R4: headers, R5+: data
+    const DATA_START=5;
+    const cellAddr=(c:number,r:number)=>`${String.fromCharCode(65+c)}${r}`;
 
-    // ── Row 1: Subtitle ─────────────────────────────────────────────────────
-    sc(1,0,`Réf : ${qRef}   |   Date : ${dateStr}   |   Validité : ${qValidity} jours`);
+    const xmlRows:string[]=[];
 
-    // ── Row 2: empty spacer ──────────────────────────────────────────────────
-    sc(2,0,'');
+    // Row 1 — Title
+    xmlRows.push(`<row r="1"><c r="A1" t="s"><v>${si(`DRAFT QUOTE — ${effectiveClient}`)}</v></c></row>`);
+    // Row 2 — Subtitle
+    xmlRows.push(`<row r="2"><c r="A2" t="s"><v>${si(`Réf : ${qRef}   |   Date : ${dateStr}   |   Validité : ${qValidity} jours`)}</v></c></row>`);
+    // Row 3 — spacer (empty)
+    xmlRows.push(`<row r="3"></row>`);
+    // Row 4 — Headers
+    const hdrs=['P/N','Désignation','Prix unitaire (€)','Qté','Total (€)','Disponibilité'];
+    xmlRows.push(`<row r="4">${hdrs.map((h,c)=>`<c r="${cellAddr(c,4)}" t="s"><v>${si(h)}</v></c>`).join('')}</row>`);
 
-    // ── Row 3: Headers ───────────────────────────────────────────────────────
-    const headers=['P/N','Désignation','Prix unitaire (€)','Qté','Total (€)','Disponibilité'];
-    headers.forEach((h,c)=>sc(3,c,h));
-
-    // ── Rows 4+: Data lines ──────────────────────────────────────────────────
-    // Excel rows are 1-indexed in formulas, SheetJS rows are 0-indexed internally
-    // Data starts at SheetJS row 4 = Excel row 5
-    const dataStartXL=5; // Excel row number (1-based)
+    // Data rows
     validLines.forEach((l:any,i:number)=>{
-      const r=4+i;
-      const xlRow=dataStartXL+i;
-      sc(r,0,String(l.pn));                          // A: P/N
-      sc(r,1,String(l.desc||''));                    // B: Désignation
-      // C: Prix unitaire — valeur numérique, protégée visuellement (fond gris)
-      ws[XLSX.utils.encode_cell({r,c:2})]={v:+l.unitPrice||0,t:'n',z:'#,##0.00'};
-      // D: Qté — modifiable
-      ws[XLSX.utils.encode_cell({r,c:3})]={v:+l.qty||1,t:'n'};
-      // E: Total — formule =C*D avec valeur initiale précalculée (évite #NOM?)
-      const lineTotal=(+l.unitPrice||0)*(+l.qty||1);
-      ws[XLSX.utils.encode_cell({r,c:4})]={f:`C${xlRow}*D${xlRow}`,v:lineTotal,t:'n',z:'#,##0.00'};
-      sc(r,5,String(l.avail||'TBC'));                // F: Disponibilité
+      const r=DATA_START+i;
+      const price=+l.unitPrice||0;
+      const qty=+l.qty||1;
+      xmlRows.push(`<row r="${r}">
+        <c r="${cellAddr(0,r)}" t="s"><v>${si(String(l.pn))}</v></c>
+        <c r="${cellAddr(1,r)}" t="s"><v>${si(String(l.desc||''))}</v></c>
+        <c r="${cellAddr(2,r)}" s="3"><v>${price}</v></c>
+        <c r="${cellAddr(3,r)}"><v>${qty}</v></c>
+        <c r="${cellAddr(4,r)}" s="4"><f>C${r}*D${r}</f><v>${price*qty}</v></c>
+        <c r="${cellAddr(5,r)}" t="s"><v>${si(String(l.avail||'TBC'))}</v></c>
+      </row>`);
     });
 
-    // ── Spacer row after data ────────────────────────────────────────────────
-    const spacerR=4+validLines.length;
-    sc(spacerR,0,'');
+    // Spacer
+    const spacerR=DATA_START+validLines.length;
+    xmlRows.push(`<row r="${spacerR}"></row>`);
 
-    // ── Total row ─────────────────────────────────────────────────────────────
+    // Total row
     const totalR=spacerR+1;
-    const sumFirst=dataStartXL;
-    const sumLast=dataStartXL+validLines.length-1;
-    sc(totalR,0,'TOTAL HT');
-    ws[XLSX.utils.encode_cell({r:totalR,c:4})]={f:`SUM(E${sumFirst}:E${sumLast})`,v:totalHT_val,t:'n',z:'#,##0.00'};
+    const sumRange=`E${DATA_START}:E${DATA_START+validLines.length-1}`;
+    xmlRows.push(`<row r="${totalR}">
+      <c r="${cellAddr(0,totalR)}" t="s"><v>${si('TOTAL HT')}</v></c>
+      <c r="${cellAddr(4,totalR)}" s="5"><f>SUM(${sumRange})</f><v>${totalHT_val}</v></c>
+    </row>`);
 
-    // ── Spacer ────────────────────────────────────────────────────────────────
-    const notesR=totalR+2;
-
-    // ── Notes / Conditions ────────────────────────────────────────────────────
+    // Notes
+    let nextR=totalR+2;
     if(qNotes){
-      sc(notesR,0,'NOTES / CONDITIONS');
-      sc(notesR+1,0,qNotes);
+      xmlRows.push(`<row r="${nextR}"><c r="${cellAddr(0,nextR)}" t="s"><v>${si('NOTES / CONDITIONS')}</v></c></row>`);
+      nextR++;
+      xmlRows.push(`<row r="${nextR}"><c r="${cellAddr(0,nextR)}" t="s"><v>${si(qNotes)}</v></c></row>`);
+      nextR+=2;
     }
-
-    // ── Validité ─────────────────────────────────────────────────────────────
     if(qValidity){
-      const validR=qNotes?notesR+3:notesR;
-      sc(validR,0,`Valable ${qValidity} jours.`);
+      xmlRows.push(`<row r="${nextR}"><c r="${cellAddr(0,nextR)}" t="s"><v>${si(`Valable ${qValidity} jours.`)}</v></c></row>`);
     }
 
-    // ── Sheet range ───────────────────────────────────────────────────────────
-    const lastRow=(qNotes?notesR+3:totalR+3)+(qValidity?1:0);
-    ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:lastRow,c:5}});
-
-    // ── Column widths (characters) ────────────────────────────────────────────
-    ws['!cols']=[
-      {wch:16},  // A: P/N
-      {wch:36},  // B: Désignation
-      {wch:16},  // C: Prix unitaire
-      {wch:7},   // D: Qté
-      {wch:16},  // E: Total
-      {wch:18},  // F: Disponibilité
-    ];
-
-    // ── Merges: title + subtitle span all 6 cols ──────────────────────────────
-    ws['!merges']=[
-      {s:{r:0,c:0},e:{r:0,c:5}},
-      {s:{r:1,c:0},e:{r:1,c:5}},
-      {s:{r:totalR,c:0},e:{r:totalR,c:3}},
+    // ── Merges ─────────────────────────────────────────────────────────────
+    const merges=[
+      `<mergeCell ref="A1:F1"/>`,
+      `<mergeCell ref="A2:F2"/>`,
+      `<mergeCell ref="A${totalR}:D${totalR}"/>`,
       ...(qNotes?[
-        {s:{r:notesR,c:0},e:{r:notesR,c:5}},
-        {s:{r:notesR+1,c:0},e:{r:notesR+1,c:5}},
+        `<mergeCell ref="A${totalR+2}:F${totalR+2}"/>`,
+        `<mergeCell ref="A${totalR+3}:F${totalR+3}"/>`,
       ]:[]),
     ];
 
-    // ── Sheet protection: lock all except column D (Qté) ─────────────────────
-    ws['!protect']={
-      password:'',
-      sheet:true,
-      selectLockedCells:true,
-      selectUnlockedCells:true,
-      formatCells:false,
-      formatColumns:false,
-      formatRows:false,
-      insertColumns:false,
-      insertRows:false,
-      deleteColumns:false,
-      deleteRows:false,
-      sort:false,
-      autoFilter:false,
-    };
+    // ── Shared strings XML ─────────────────────────────────────────────────
+    const sstXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sst.length}" uniqueCount="${sst.length}">
+${sst.map(s=>`<si><t xml:space="preserve">${xe(s)}</t></si>`).join('\n')}
+</sst>`;
 
-    // Mark column D cells as unlocked so user can edit Qté
-    validLines.forEach((_:any,i:number)=>{
-      const addr=XLSX.utils.encode_cell({r:4+i,c:3});
-      if(ws[addr])ws[addr].l=undefined; // SheetJS: no lock metadata = unlocked when sheet protected
-    });
+    // ── Styles XML ────────────────────────────────────────────────────────
+    // s0=default, s1=header, s2=title, s3=price(locked,grey), s4=total-formula, s5=total-row
+    const stylesXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts>
+    <font><sz val="10"/><name val="Arial"/></font>
+    <font><sz val="13"/><b/><color rgb="FF1D4ED8"/><name val="Arial"/></font>
+    <font><sz val="9"/><color rgb="FF6B7280"/><name val="Arial"/></font>
+    <font><sz val="9"/><b/><color rgb="FF1E3A5F"/><name val="Arial"/></font>
+    <font><sz val="9"/><color rgb="FF374151"/><name val="Arial"/></font>
+    <font><sz val="10"/><b/><color rgb="FF1E3A5F"/><name val="Arial"/></font>
+    <font><sz val="9"/><name val="Arial"/></font>
+  </fonts>
+  <fills>
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFBFDBFE"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF3F4F6"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFD1FAE5"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFDBEAFE"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFEFF6FF"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF8FAFF"/></patternFill></fill>
+  </fills>
+  <borders>
+    <border><left/><right/><top/><bottom/></border>
+    <border>
+      <left style="thin"><color rgb="FF93C5FD"/></left>
+      <right style="thin"><color rgb="FF93C5FD"/></right>
+      <top style="thin"><color rgb="FF93C5FD"/></top>
+      <bottom style="thin"><color rgb="FF93C5FD"/></bottom>
+    </border>
+    <border>
+      <left style="thin"><color rgb="FFBFDBFE"/></left>
+      <right style="thin"><color rgb="FFBFDBFE"/></right>
+      <top style="thin"><color rgb="FFBFDBFE"/></top>
+      <bottom style="thin"><color rgb="FFBFDBFE"/></bottom>
+    </border>
+    <border>
+      <top style="medium"><color rgb="FF000000"/></top>
+      <bottom style="medium"><color rgb="FF000000"/></bottom>
+    </border>
+    <border>
+      <left style="thick"><color rgb="FF2563EB"/></left>
+      <right style="thin"><color rgb="FFBFDBFE"/></right>
+      <top style="thin"><color rgb="FFBFDBFE"/></top>
+      <bottom style="thin"><color rgb="FFBFDBFE"/></bottom>
+    </border>
+  </borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs>
+    <xf numFmtId="0"  fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0"  fontId="1" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0"  fontId="3" fillId="2" borderId="1" xfId="0"><alignment horizontal="center"/></xf>
+    <xf numFmtId="4"  fontId="4" fillId="3" borderId="2" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
+    <xf numFmtId="4"  fontId="6" fillId="4" borderId="2" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
+    <xf numFmtId="4"  fontId="5" fillId="5" borderId="3" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
+    <xf numFmtId="0"  fontId="6" fillId="6" borderId="4" xfId="0"><font><b/><color rgb="FF1D4ED8"/></font></xf>
+    <xf numFmtId="0"  fontId="6" fillId="7" borderId="4" xfId="0"/>
+  </cellXfs>
+</styleSheet>`;
 
-    XLSX.utils.book_append_sheet(wb,ws,'Draft Quote');
+    // ── Sheet XML ─────────────────────────────────────────────────────────
+    const sheetXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetFormatPr defaultRowHeight="15" customHeight="1"/>
+  <cols>
+    <col min="1" max="1" width="16" customWidth="1"/>
+    <col min="2" max="2" width="36" customWidth="1"/>
+    <col min="3" max="3" width="16" customWidth="1"/>
+    <col min="4" max="4" width="7"  customWidth="1"/>
+    <col min="5" max="5" width="16" customWidth="1"/>
+    <col min="6" max="6" width="18" customWidth="1"/>
+  </cols>
+  <sheetData>${xmlRows.join('')}</sheetData>
+  <mergeCells count="${merges.length}">${merges.join('')}</mergeCells>
+  <sheetProtection sheet="1" selectLockedCells="0" selectUnlockedCells="0"/>
+  <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>
+  <pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>
+</worksheet>`;
 
-    // ── Print settings ────────────────────────────────────────────────────────
-    wb.Workbook={SheetNames:wb.SheetNames,Sheets:{}};
+    // ── Workbook XML ──────────────────────────────────────────────────────
+    const wbXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Draft Quote" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`;
 
-    // Download
-    XLSX.writeFile(wb,fileName,{bookType:'xlsx',type:'binary',cellStyles:true,compression:true});
+    const wbRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`;
+
+    const rootRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+    const contentTypes=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml"  ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml"            ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml"   ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/sharedStrings.xml"       ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+  <Override PartName="/xl/styles.xml"              ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`;
+
+    // ── Assemble ZIP ──────────────────────────────────────────────────────
+    const zip=new JSZip();
+    zip.file('[Content_Types].xml', contentTypes);
+    zip.file('_rels/.rels', rootRels);
+    zip.file('xl/workbook.xml', wbXml);
+    zip.file('xl/_rels/workbook.xml.rels', wbRels);
+    zip.file('xl/worksheets/sheet1.xml', sheetXml);
+    zip.file('xl/sharedStrings.xml', sstXml);
+    zip.file('xl/styles.xml', stylesXml);
+
+    const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=fileName;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // ── Generate quote PDF ─────────────────────────────────────────────────────
