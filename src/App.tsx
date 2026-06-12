@@ -4550,118 +4550,92 @@ function CataloguePage({clients,lang,isMobile}:any){
     const fileName=`Draft_${effectiveClient}_${qRef}_${qDate}.xlsx`;
     const totalHT_val=validLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
 
-    // ── Load JSZip dynamically ─────────────────────────────────────────────
+    // Load JSZip from CDN
+    const loadJSZip=():Promise<any>=>new Promise((resolve,reject)=>{
+      if((window as any).JSZip){resolve((window as any).JSZip);return;}
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      s.onload=()=>resolve((window as any).JSZip);
+      s.onerror=()=>reject(new Error('JSZip load failed'));
+      document.head.appendChild(s);
+    });
     let JSZip:any;
-    try{ JSZip=(await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js' as any)).default||window.JSZip; }catch{}
-    if(!JSZip){
-      try{
-        await new Promise<void>((res,rej)=>{
-          if((window as any).JSZip){res();return;}
-          const s=document.createElement('script');
-          s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-          s.onload=()=>res(); s.onerror=()=>rej();
-          document.head.appendChild(s);
-        });
-        JSZip=(window as any).JSZip;
-      }catch{ alert('Impossible de charger JSZip'); return; }
-    }
+    try{JSZip=await loadJSZip();}catch{alert('Impossible de charger JSZip. Vérifiez votre connexion internet.');return;}
 
-    // ── XML helpers ────────────────────────────────────────────────────────
-    const xe=(s:any)=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const xe=(v:any)=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-    // ── Shared strings table ───────────────────────────────────────────────
+    // Shared strings
     const sst:string[]=[];
-    const si=(v:string)=>{ let i=sst.indexOf(v); if(i<0){i=sst.length;sst.push(v);} return i; };
+    const si=(v:string)=>{let i=sst.indexOf(v);if(i<0){i=sst.length;sst.push(v);}return i;};
 
-    // ── Build rows ─────────────────────────────────────────────────────────
-    // Row index (1-based in xlsx)
-    // R1: title, R2: subtitle, R3: spacer, R4: headers, R5+: data
-    const DATA_START=5;
-    const cellAddr=(c:number,r:number)=>`${String.fromCharCode(65+c)}${r}`;
+    // Cell address helper
+    const col=(c:number)=>String.fromCharCode(65+c);
+    const addr=(c:number,r:number)=>`${col(c)}${r}`;
 
-    const xmlRows:string[]=[];
-
-    // Row 1 — Title (s=1: blue bold 13pt)
-    xmlRows.push(`<row r="1"><c r="A1" s="1" t="s"><v>${si(`DRAFT QUOTE — ${effectiveClient}`)}</v></c></row>`);
-    // Row 2 — Subtitle (s=2: grey 9pt)
-    xmlRows.push(`<row r="2"><c r="A2" s="2" t="s"><v>${si(`Réf : ${qRef}   |   Date : ${dateStr}   |   Validité : ${qValidity} jours`)}</v></c></row>`);
-    // Row 3 — spacer (empty)
-    xmlRows.push(`<row r="3"></row>`);
-    // Row 4 — Headers (s=3: center bold blue-bg)
+    // Build rows XML
+    const rows:string[]=[];
+    // Row 1: Title
+    rows.push(`<row r="1"><c r="A1" s="1" t="s"><v>${si(`DRAFT QUOTE — ${effectiveClient}`)}</v></c></row>`);
+    // Row 2: Subtitle
+    rows.push(`<row r="2"><c r="A2" s="2" t="s"><v>${si(`Réf : ${qRef}   |   Date : ${dateStr}   |   Validité : ${qValidity} jours`)}</v></c></row>`);
+    // Row 3: spacer
+    rows.push(`<row r="3"></row>`);
+    // Row 4: Headers
     const hdrs=['P/N','Désignation','Prix unitaire (€)','Qté','Total (€)','Disponibilité'];
-    xmlRows.push(`<row r="4">${hdrs.map((h,c)=>`<c r="${cellAddr(c,4)}" s="3" t="s"><v>${si(h)}</v></c>`).join('')}</row>`);
-
-    // Data rows
+    rows.push(`<row r="4">${hdrs.map((h,c)=>`<c r="${addr(c,4)}" s="3" t="s"><v>${si(h)}</v></c>`).join('')}</row>`);
+    // Data rows (start at row 5)
+    const DR=5;
     validLines.forEach((l:any,i:number)=>{
-      const r=DATA_START+i;
+      const r=DR+i;
       const price=+l.unitPrice||0;
       const qty=+l.qty||1;
-      xmlRows.push(`<row r="${r}">
-        <c r="${cellAddr(0,r)}" t="s"><v>${si(String(l.pn))}</v></c>
-        <c r="${cellAddr(1,r)}" t="s"><v>${si(String(l.desc||''))}</v></c>
-        <c r="${cellAddr(2,r)}" s="3"><v>${price}</v></c>
-        <c r="${cellAddr(3,r)}"><v>${qty}</v></c>
-        <c r="${cellAddr(4,r)}" s="4"><f>C${r}*D${r}</f><v>${price*qty}</v></c>
-        <c r="${cellAddr(5,r)}" t="s"><v>${si(String(l.avail||'TBC'))}</v></c>
-      </row>`);
+      rows.push(`<row r="${r}">` +
+        `<c r="${addr(0,r)}" t="s"><v>${si(String(l.pn))}</v></c>` +
+        `<c r="${addr(1,r)}" t="s"><v>${si(String(l.desc||''))}</v></c>` +
+        `<c r="${addr(2,r)}" s="4"><v>${price}</v></c>` +
+        `<c r="${addr(3,r)}"><v>${qty}</v></c>` +
+        `<c r="${addr(4,r)}" s="5"><f>${addr(2,r)}*${addr(3,r)}</f><v>${price*qty}</v></c>` +
+        `<c r="${addr(5,r)}" t="s"><v>${si(String(l.avail||'TBC'))}</v></c>` +
+      `</row>`);
     });
-
     // Spacer
-    const spacerR=DATA_START+validLines.length;
-    xmlRows.push(`<row r="${spacerR}"></row>`);
-
+    const spacerR=DR+validLines.length;
+    rows.push(`<row r="${spacerR}"></row>`);
     // Total row
     const totalR=spacerR+1;
-    const sumRange=`E${DATA_START}:E${DATA_START+validLines.length-1}`;
-    xmlRows.push(`<row r="${totalR}">
-      <c r="${cellAddr(0,totalR)}" t="s"><v>${si('TOTAL HT')}</v></c>
-      <c r="${cellAddr(4,totalR)}" s="5"><f>SUM(${sumRange})</f><v>${totalHT_val}</v></c>
-    </row>`);
-
+    rows.push(`<row r="${totalR}">` +
+      `<c r="${addr(0,totalR)}" s="6" t="s"><v>${si('TOTAL HT')}</v></c>` +
+      `<c r="${addr(4,totalR)}" s="7"><f>SUM(E${DR}:E${spacerR-1})</f><v>${totalHT_val}</v></c>` +
+    `</row>`);
     // Notes
-    let nextR=totalR+2;
+    let nR=totalR+2;
     if(qNotes){
-      xmlRows.push(`<row r="${nextR}"><c r="${cellAddr(0,nextR)}" t="s"><v>${si('NOTES / CONDITIONS')}</v></c></row>`);
-      nextR++;
-      xmlRows.push(`<row r="${nextR}"><c r="${cellAddr(0,nextR)}" t="s"><v>${si(qNotes)}</v></c></row>`);
-      nextR+=2;
+      rows.push(`<row r="${nR}"><c r="A${nR}" s="8" t="s"><v>${si('NOTES / CONDITIONS')}</v></c></row>`);
+      nR++;
+      rows.push(`<row r="${nR}"><c r="A${nR}" s="9" t="s"><v>${si(String(qNotes))}</v></c></row>`);
+      nR+=2;
     }
     if(qValidity){
-      xmlRows.push(`<row r="${nextR}"><c r="${cellAddr(0,nextR)}" t="s"><v>${si(`Valable ${qValidity} jours.`)}</v></c></row>`);
+      rows.push(`<row r="${nR}"><c r="A${nR}" s="2" t="s"><v>${si(`Valable ${qValidity} jours.`)}</v></c></row>`);
     }
 
-    // ── Merges ─────────────────────────────────────────────────────────────
-    const merges=[
-      `<mergeCell ref="A1:F1"/>`,
-      `<mergeCell ref="A2:F2"/>`,
-      `<mergeCell ref="A${totalR}:D${totalR}"/>`,
-      ...(qNotes?[
-        `<mergeCell ref="A${totalR+2}:F${totalR+2}"/>`,
-        `<mergeCell ref="A${totalR+3}:F${totalR+3}"/>`,
-      ]:[]),
-    ];
+    // Merges
+    const merges=[`<mergeCell ref="A1:F1"/>`,`<mergeCell ref="A2:F2"/>`,`<mergeCell ref="A${totalR}:D${totalR}"/>`];
+    if(qNotes){merges.push(`<mergeCell ref="A${totalR+2}:F${totalR+2}"/>`);merges.push(`<mergeCell ref="A${totalR+3}:F${totalR+3}"/>`);}
 
-    // ── Shared strings XML ─────────────────────────────────────────────────
-    const sstXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sst.length}" uniqueCount="${sst.length}">
-${sst.map(s=>`<si><t xml:space="preserve">${xe(s)}</t></si>`).join('\n')}
-</sst>`;
+    // SST XML
+    const sstXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sst.length}" uniqueCount="${sst.length}">\n${sst.map(s=>`<si><t xml:space="preserve">${xe(s)}</t></si>`).join('\n')}\n</sst>`;
 
-    // ── Styles XML (valid OOXML — no nested <font> in <xf>) ──────────────
-    // fontId: 0=normal 1=title-blue-bold 2=subtitle-grey 3=header-bold-dark 4=price-grey 5=total-bold 6=normal9
-    // fillId: 0=none 1=gray125 2=header-blue 3=price-grey 4=total-green 5=total-blue
-    // borderId: 0=none 1=thin-blue 2=medium-top-bottom
-    // xfId (cellXfs): 0=default 1=title 2=subtitle 3=header 4=price-locked 5=total-formula 6=total-row 7=notes-label 8=notes-body
+    // Styles XML — validated structure, no nested <font> in <xf>
     const stylesXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="7">
+  <fonts count="6">
     <font><sz val="10"/><name val="Arial"/></font>
     <font><b/><sz val="13"/><color rgb="FF1D4ED8"/><name val="Arial"/></font>
     <font><sz val="9"/><color rgb="FF6B7280"/><name val="Arial"/></font>
     <font><b/><sz val="9"/><color rgb="FF1E3A5F"/><name val="Arial"/></font>
     <font><sz val="9"/><color rgb="FF374151"/><name val="Arial"/></font>
     <font><b/><sz val="10"/><color rgb="FF1E3A5F"/><name val="Arial"/></font>
-    <font><sz val="9"/><name val="Arial"/></font>
   </fonts>
   <fills count="6">
     <fill><patternFill patternType="none"/></fill>
@@ -4671,104 +4645,63 @@ ${sst.map(s=>`<si><t xml:space="preserve">${xe(s)}</t></si>`).join('\n')}
     <fill><patternFill patternType="solid"><fgColor rgb="FFD1FAE5"/><bgColor indexed="64"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFDBEAFE"/><bgColor indexed="64"/></patternFill></fill>
   </fills>
-  <borders count="3">
+  <borders count="2">
     <border><left/><right/><top/><bottom/><diagonal/></border>
-    <border>
-      <left style="thin"><color rgb="FF93C5FD"/></left>
-      <right style="thin"><color rgb="FF93C5FD"/></right>
-      <top style="thin"><color rgb="FF93C5FD"/></top>
-      <bottom style="thin"><color rgb="FF93C5FD"/></bottom>
-      <diagonal/>
-    </border>
-    <border>
-      <left style="thin"><color rgb="FFBFDBFE"/></left>
-      <right style="thin"><color rgb="FFBFDBFE"/></right>
-      <top style="thin"><color rgb="FFBFDBFE"/></top>
-      <bottom style="thin"><color rgb="FFBFDBFE"/></bottom>
-      <diagonal/>
-    </border>
+    <border><left style="thin"><color rgb="FF93C5FD"/></left><right style="thin"><color rgb="FF93C5FD"/></right><top style="thin"><color rgb="FF93C5FD"/></top><bottom style="thin"><color rgb="FF93C5FD"/></bottom><diagonal/></border>
   </borders>
-  <cellStyleXfs count="1">
-    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
-  </cellStyleXfs>
-  <cellXfs count="9">
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="10">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0"><alignment horizontal="center"/></xf>
-    <xf numFmtId="4" fontId="4" fillId="3" borderId="2" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
-    <xf numFmtId="4" fontId="6" fillId="4" borderId="2" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
-    <xf numFmtId="4" fontId="5" fillId="5" borderId="2" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
-    <xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="0" fontId="6" fillId="0" borderId="0" xfId="0"><alignment wrapText="1" vertical="top"/></xf>
+    <xf numFmtId="4" fontId="4" fillId="3" borderId="1" xfId="0"><alignment horizontal="right"/></xf>
+    <xf numFmtId="4" fontId="4" fillId="4" borderId="1" xfId="0"><alignment horizontal="right"/></xf>
+    <xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="4" fontId="5" fillId="5" borderId="1" xfId="0"><alignment horizontal="right"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0"/>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment wrapText="1" vertical="top"/></xf>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 
-    // ── Sheet XML ─────────────────────────────────────────────────────────
+    // Sheet XML
     const sheetXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheetFormatPr defaultRowHeight="15" customHeight="1"/>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <cols>
     <col min="1" max="1" width="16" customWidth="1"/>
     <col min="2" max="2" width="36" customWidth="1"/>
     <col min="3" max="3" width="16" customWidth="1"/>
-    <col min="4" max="4" width="7"  customWidth="1"/>
+    <col min="4" max="4" width="7" customWidth="1"/>
     <col min="5" max="5" width="16" customWidth="1"/>
     <col min="6" max="6" width="18" customWidth="1"/>
   </cols>
-  <sheetData>${xmlRows.join('')}</sheetData>
+  <sheetData>${rows.join('')}</sheetData>
   <mergeCells count="${merges.length}">${merges.join('')}</mergeCells>
-  <sheetProtection sheet="1" selectLockedCells="0" selectUnlockedCells="0"/>
   <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>
   <pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>
 </worksheet>`;
 
-    // ── Workbook XML ──────────────────────────────────────────────────────
-    const wbXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets><sheet name="Draft Quote" sheetId="1" r:id="rId1"/></sheets>
-</workbook>`;
+    // Workbook + rels
+    const wbXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Draft Quote" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+    const wbRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+    const rootRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+    const contentTypes=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`;
 
-    const wbRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
-  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>`;
-
-    const rootRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`;
-
-    const contentTypes=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml"  ContentType="application/xml"/>
-  <Override PartName="/xl/workbook.xml"            ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml"   ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-  <Override PartName="/xl/sharedStrings.xml"       ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
-  <Override PartName="/xl/styles.xml"              ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-</Types>`;
-
-    // ── Assemble ZIP ──────────────────────────────────────────────────────
+    // Assemble zip
     const zip=new JSZip();
-    zip.file('[Content_Types].xml', contentTypes);
-    zip.file('_rels/.rels', rootRels);
-    zip.file('xl/workbook.xml', wbXml);
-    zip.file('xl/_rels/workbook.xml.rels', wbRels);
-    zip.file('xl/worksheets/sheet1.xml', sheetXml);
-    zip.file('xl/sharedStrings.xml', sstXml);
-    zip.file('xl/styles.xml', stylesXml);
-
+    zip.file('[Content_Types].xml',contentTypes);
+    zip.file('_rels/.rels',rootRels);
+    zip.file('xl/workbook.xml',wbXml);
+    zip.file('xl/_rels/workbook.xml.rels',wbRels);
+    zip.file('xl/worksheets/sheet1.xml',sheetXml);
+    zip.file('xl/sharedStrings.xml',sstXml);
+    zip.file('xl/styles.xml',stylesXml);
     const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
-    a.href=url; a.download=fileName;
-    document.body.appendChild(a); a.click();
+    a.href=url;a.download=fileName;
+    document.body.appendChild(a);a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
