@@ -4434,8 +4434,7 @@ function CataloguePage({clients,lang,isMobile}:any){
     const effectiveClient=useManualClient?qClientManual:qClient;
     if(!effectiveClient){alert('Sélectionnez ou saisissez un client');return;}
     if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert('Ajoutez au moins une ligne avec PN et prix');return;}
-    const missingAvail=qLines.filter((l:any)=>l.pn&&!l.avail);
-    if(missingAvail.length>0){alert('Délai de livraison manquant sur '+missingAvail.length+' ligne(s).');return;}
+    // FIX: pas de validation avail pour le draft — affiche TBC si vide
     const validLines=qLines.filter((l:any)=>l.pn);
     const dateStr=new Date(qDate).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
     const totStr=totalHT.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -4450,7 +4449,7 @@ function CataloguePage({clients,lang,isMobile}:any){
       '<td style="padding:7px 10px;border:1px solid #DBEAFE;font-family:Arial,Helvetica,sans-serif;font-size:11px;text-align:right">'+(+l.unitPrice||0).toLocaleString('fr-FR',{minimumFractionDigits:2})+'</td>',
       '<td style="padding:7px 10px;border:1px solid #DBEAFE;font-family:Arial,Helvetica,sans-serif;font-size:11px;text-align:center">'+l.qty+'</td>',
       '<td style="padding:7px 10px;border:1px solid #DBEAFE;font-family:Arial,Helvetica,sans-serif;font-size:11px;text-align:right">'+((+l.qty||0)*(+l.unitPrice||0)).toLocaleString('fr-FR',{minimumFractionDigits:2})+'</td>',
-      '<td style="padding:7px 10px;border:1px solid #DBEAFE;font-family:Arial,Helvetica,sans-serif;font-size:11px">'+(l.avail||'')+'</td>',
+      '<td style="padding:7px 10px;border:1px solid #DBEAFE;font-family:Arial,Helvetica,sans-serif;font-size:11px">'+(l.avail||'TBC')+'</td>',
       '</tr>'
     ].join('')).join('');
     const thStyle=(align:string,w2:string='')=>'padding:8px 10px;border:1px solid #93C5FD;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:bold;text-align:'+align+(w2?';width:'+w2:'');
@@ -4488,8 +4487,9 @@ function CataloguePage({clients,lang,isMobile}:any){
       ${addrHtml}
       <div style="font-size:11px;margin-top:5px;font-family:Arial,Helvetica,sans-serif">PROJECT : ${qNotes||''}</div>
     </td>
-    <td style="width:45%;text-align:right;vertical-align:middle">
-      <img src="data:image/png;base64,${LOGO_PLACEHOLDER}" style="max-height:52px;max-width:210px" alt="Grundfos"/>
+    <td style="width:45%;text-align:right;vertical-align:middle;font-size:10px;color:#888;font-family:Arial,Helvetica,sans-serif">
+      Réf : ${qRef}<br/>
+      Validité : ${qValidity} jours
     </td>
   </tr>
 </table>
@@ -4515,10 +4515,14 @@ function CataloguePage({clients,lang,isMobile}:any){
 </table>
 ${qValidity?'<p style="margin-top:20px;font-size:10px;color:#555;font-family:Arial,Helvetica,sans-serif">Valable '+qValidity+' jours.</p>':''}
 </body></html>`;
-    const htmlFinal=html.replace('LOGO_PLACEHOLDER',DRAFT_LOGO_B64);
-    const w=window.open('','_blank','width=950,height=750');
-    if(!w){alert('Popup bloqué. Veuillez autoriser les popups pour ce site.');return;}
-    w.document.write(htmlFinal);
+    // FIX: ouvrir la fenêtre avant d'écrire le contenu (meilleure compatibilité)
+    const w=window.open('','_blank');
+    if(!w){
+      alert("Popup bloqué par le navigateur.\nAutorisez les popups pour ce site dans votre barre d'adresse, puis réessayez.");
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
     w.document.close();
   };
 
