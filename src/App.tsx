@@ -4516,10 +4516,10 @@ function CataloguePage({clients,lang,isMobile}:any){
 ${qValidity?'<p style="margin-top:20px;font-size:10px;color:#555;font-family:Arial,Helvetica,sans-serif">Valable '+qValidity+' jours.</p>':''}
 </body></html>`;
     const htmlFinal=html.replace('LOGO_PLACEHOLDER',DRAFT_LOGO_B64);
-    const blob=new Blob([htmlFinal],{type:'text/html;charset=utf-8'});
-    const blobUrl=URL.createObjectURL(blob);
-    const w=window.open(blobUrl,'_blank','width=950,height=750');
-    if(!w){alert('Popup bloqué. Veuillez autoriser les popups pour ce site.');URL.revokeObjectURL(blobUrl);}
+    const w=window.open('','_blank','width=950,height=750');
+    if(!w){alert('Popup bloqué. Veuillez autoriser les popups pour ce site.');return;}
+    w.document.write(htmlFinal);
+    w.document.close();
   };
 
   // ── Generate quote PDF ─────────────────────────────────────────────────────
@@ -4841,7 +4841,8 @@ ${qValidity?'<p style="margin-top:20px;font-size:10px;color:#555;font-family:Ari
               </div>
               {dropdownItems.map((p:any,di:number)=>(
                 <button key={di}
-                  onClick={()=>{
+                  onMouseDown={e=>{
+                    e.preventDefault();
                     if(dropdownType==="pn") lookupPN(dropdownLineIdx,p.pn);
                     else selectFromDesc(dropdownLineIdx,p);
                     closeDropdown();
