@@ -4619,47 +4619,25 @@ function CataloguePage({clients,lang,isMobile}:any){
 
     // ── Data rows ──────────────────────────────────────────────────────────
     const DR=5;
+    const bs={top:{style:'thin',color:{argb:'FFE5EAF0'}},bottom:{style:'thin',color:{argb:'FFE5EAF0'}},left:{style:'thin',color:{argb:'FFE5EAF0'}},right:{style:'thin',color:{argb:'FFE5EAF0'}}};
     validLines.forEach((l:any,i:number)=>{
       const rowNum=DR+i;
       const row=ws.getRow(rowNum);
-      row.height=22;
+      row.height=24; // taller rows = more breathing room
       const price=+l.unitPrice||0;
-      const qty=+l.qty||1;
-      const borderStyle={top:{style:'thin',color:{argb:'FFBFDBFE'}},bottom:{style:'thin',color:{argb:'FFBFDBFE'}},left:{style:'thin',color:{argb:'FFBFDBFE'}},right:{style:'thin',color:{argb:'FFBFDBFE'}}};
+      const qty=+(l.qty??1); // FIX: use ?? not || so qty=0 stays 0
 
-      // A: P/N
-      const cA=row.getCell(1); cA.value=String(l.pn); cA.font={size:9,name:'Arial'}; cA.border=borderStyle;
-      // B: Description
-      const cB=row.getCell(2); cB.value=String(l.desc||''); cB.font={size:9,name:'Arial'}; cB.border=borderStyle;
-      // C: Prix unitaire — LOCKED (grey bg)
-      const cC=row.getCell(3);
-      cC.value=price;
-      cC.numFmt='#,##0.00';
-      cC.font={size:9,color:{argb:'FF374151'},name:'Arial'};
-      cC.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F4F6'}};
-      cC.alignment={horizontal:'right'};
-      cC.border=borderStyle;
-      // D: Qté — EDITABLE
-      const cD=row.getCell(4);
-      cD.value=qty;
-      cD.font={size:9,name:'Arial'};
-      cD.alignment={horizontal:'center'};
-      cD.border=borderStyle;
-      // E: Total — formula
-      const cE=row.getCell(5);
-      cE.value={formula:`C${rowNum}*D${rowNum}`,result:price*qty};
-      cE.numFmt='#,##0.00';
-      cE.font={size:9,name:'Arial'};
-      cE.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD1FAE5'}};
-      cE.alignment={horizontal:'right'};
-      cE.border=borderStyle;
-      // F: Disponibilité
-      const cF=row.getCell(6); cF.value=String(l.avail||'TBC'); cF.font={size:9,name:'Arial'}; cF.border=borderStyle;
+      const cA=row.getCell(1); cA.value=String(l.pn||''); cA.font={size:9,name:'Arial'}; cA.border=bs; cA.alignment={vertical:'middle'};
+      const cB=row.getCell(2); cB.value=String(l.desc||''); cB.font={size:9,name:'Arial'}; cB.border=bs; cB.alignment={vertical:'middle',wrapText:false};
+      const cC=row.getCell(3); cC.value=price; cC.numFmt='#,##0.00'; cC.font={size:9,color:{argb:'FF374151'},name:'Arial'}; cC.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF8FAFC'}}; cC.alignment={horizontal:'right',vertical:'middle'}; cC.border=bs;
+      const cD=row.getCell(4); cD.value=qty; cD.numFmt='0'; cD.font={size:9,name:'Arial'}; cD.alignment={horizontal:'center',vertical:'middle'}; cD.border=bs;
+      const cE=row.getCell(5); cE.value={formula:`C${rowNum}*D${rowNum}`,result:price*qty}; cE.numFmt='#,##0.00'; cE.font={size:9,name:'Arial'}; cE.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF0FDF4'}}; cE.alignment={horizontal:'right',vertical:'middle'}; cE.border=bs;
+      const cF=row.getCell(6); cF.value=String(l.avail||'TBC'); cF.font={size:9,name:'Arial'}; cF.border=bs; cF.alignment={vertical:'middle'};
     });
 
     // ── Spacer ─────────────────────────────────────────────────────────────
     const spacerR=DR+validLines.length;
-    ws.getRow(spacerR).height=10;
+    ws.getRow(spacerR).height=14;
 
     // ── Total row ──────────────────────────────────────────────────────────
     const totalR=spacerR+1;
