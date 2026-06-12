@@ -4540,164 +4540,148 @@ function CataloguePage({clients,lang,isMobile}:any){
     w.document.close();
   };
 
-  // ── Generate draft Excel ───────────────────────────────────────────────────
-  const generateDraftExcel=()=>{
+  // ── Generate draft Excel (.xlsx via SheetJS) ──────────────────────────────
+  const generateDraftExcel=async()=>{
     const effectiveClient=useManualClient?qClientManual:qClient;
     if(!effectiveClient){alert('Sélectionnez ou saisissez un client');return;}
     if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert('Ajoutez au moins une ligne avec PN et prix');return;}
     const validLines=qLines.filter((l:any)=>l.pn);
     const dateStr=new Date(qDate).toLocaleDateString('fr-FR');
-    const fileName=`Draft_${effectiveClient}_${qRef}_${qDate}.xls`;
+    const fileName=`Draft_${effectiveClient}_${qRef}_${qDate}.xlsx`;
 
-    // Build XLS via XML Spreadsheet 2003 (works in Excel + LibreOffice, no lib needed)
-    const esc=(s:any)=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    const cell=(v:any,bold=false,align='',bg='',fmt='')=>{
-      const sty=[
-        bold?'font-weight:bold;':'',
-        align?`text-align:${align};`:'',
-        bg?`background:${bg};`:'',
-        'font-family:Arial,sans-serif;font-size:11pt;',
-        'border:0.5pt solid #BFDBFE;',
-        'padding:5pt 8pt;',
-        'vertical-align:middle;',
-        'mso-number-format:"@";', // force text format to preserve leading zeros etc.
-      ].join('');
-      const type=fmt==='num'?'Number':'String';
-      return `<td style="${sty}" x:str="${esc(v)}">${esc(v)}</td>`;
+    // Dynamically load SheetJS (already available in the project)
+    let XLSX:any;
+    try{
+      XLSX=await import('xlsx');
+    }catch{
+      alert("Impossible de charger SheetJS. Vérifiez votre connexion.");
+      return;
+    }
+
+    const wb=XLSX.utils.book_new();
+    const ws:any={};
+
+    // ── Helper: set a cell with style ref ──────────────────────────────────
+    const sc=(r:number,c:number,v:any,t='s')=>{
+      const addr=XLSX.utils.encode_cell({r,c});
+      ws[addr]={v,t};
+      if(t==='n')ws[addr].t='n';
+      if(t==='f'){ws[addr].t='n';ws[addr].f=v;ws[addr].v=undefined;}
     };
-    const numCell=(v:number,bg='')=>{
-      const sty=`font-family:Arial,sans-serif;font-size:11pt;text-align:right;border:0.5pt solid #BFDBFE;padding:5pt 8pt;vertical-align:middle;${bg?'background:'+bg+';':''}`;
-      return `<td style="${sty}" x:num="${v}">${v.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`;
+
+    // ── Row 0: Title ────────────────────────────────────────────────────────
+    sc(0,0,`DRAFT QUOTE — ${effectiveClient}`);
+
+    // ── Row 1: Subtitle ─────────────────────────────────────────────────────
+    sc(1,0,`Réf : ${qRef}   |   Date : ${dateStr}   |   Validité : ${qValidity} jours`);
+
+    // ── Row 2: empty spacer ──────────────────────────────────────────────────
+    sc(2,0,'');
+
+    // ── Row 3: Headers ───────────────────────────────────────────────────────
+    const headers=['P/N','Désignation','Prix unitaire (€)','Qté','Total (€)','Disponibilité'];
+    headers.forEach((h,c)=>sc(3,c,h));
+
+    // ── Rows 4+: Data lines ──────────────────────────────────────────────────
+    // Excel rows are 1-indexed in formulas, SheetJS rows are 0-indexed internally
+    // Data starts at SheetJS row 4 = Excel row 5
+    const dataStartXL=5; // Excel row number (1-based)
+    validLines.forEach((l:any,i:number)=>{
+      const r=4+i;
+      const xlRow=dataStartXL+i;
+      sc(r,0,String(l.pn));                          // A: P/N
+      sc(r,1,String(l.desc||''));                    // B: Désignation
+      // C: Prix unitaire — valeur numérique, protégée visuellement (fond gris)
+      ws[XLSX.utils.encode_cell({r,c:2})]={v:+l.unitPrice||0,t:'n',z:'#,##0.00'};
+      // D: Qté — modifiable
+      ws[XLSX.utils.encode_cell({r,c:3})]={v:+l.qty||1,t:'n'};
+      // E: Total — formule =C*D avec valeur initiale précalculée (évite #NOM?)
+      const lineTotal=(+l.unitPrice||0)*(+l.qty||1);
+      ws[XLSX.utils.encode_cell({r,c:4})]={f:`C${xlRow}*D${xlRow}`,v:lineTotal,t:'n',z:'#,##0.00'};
+      sc(r,5,String(l.avail||'TBC'));                // F: Disponibilité
+    });
+
+    // ── Spacer row after data ────────────────────────────────────────────────
+    const spacerR=4+validLines.length;
+    sc(spacerR,0,'');
+
+    // ── Total row ─────────────────────────────────────────────────────────────
+    const totalR=spacerR+1;
+    const sumFirst=dataStartXL;
+    const sumLast=dataStartXL+validLines.length-1;
+    sc(totalR,0,'TOTAL HT');
+    ws[XLSX.utils.encode_cell({r:totalR,c:4})]={f:`SUM(E${sumFirst}:E${sumLast})`,v:totalHT_val,t:'n',z:'#,##0.00'};
+
+    // ── Spacer ────────────────────────────────────────────────────────────────
+    const notesR=totalR+2;
+
+    // ── Notes / Conditions ────────────────────────────────────────────────────
+    if(qNotes){
+      sc(notesR,0,'NOTES / CONDITIONS');
+      sc(notesR+1,0,qNotes);
+    }
+
+    // ── Validité ─────────────────────────────────────────────────────────────
+    if(qValidity){
+      const validR=qNotes?notesR+3:notesR;
+      sc(validR,0,`Valable ${qValidity} jours.`);
+    }
+
+    // ── Sheet range ───────────────────────────────────────────────────────────
+    const lastRow=(qNotes?notesR+3:totalR+3)+(qValidity?1:0);
+    ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:lastRow,c:5}});
+
+    // ── Column widths (characters) ────────────────────────────────────────────
+    ws['!cols']=[
+      {wch:16},  // A: P/N
+      {wch:36},  // B: Désignation
+      {wch:16},  // C: Prix unitaire
+      {wch:7},   // D: Qté
+      {wch:16},  // E: Total
+      {wch:18},  // F: Disponibilité
+    ];
+
+    // ── Merges: title + subtitle span all 6 cols ──────────────────────────────
+    ws['!merges']=[
+      {s:{r:0,c:0},e:{r:0,c:5}},
+      {s:{r:1,c:0},e:{r:1,c:5}},
+      {s:{r:totalR,c:0},e:{r:totalR,c:3}},
+      ...(qNotes?[
+        {s:{r:notesR,c:0},e:{r:notesR,c:5}},
+        {s:{r:notesR+1,c:0},e:{r:notesR+1,c:5}},
+      ]:[]),
+    ];
+
+    // ── Sheet protection: lock all except column D (Qté) ─────────────────────
+    ws['!protect']={
+      password:'',
+      sheet:true,
+      selectLockedCells:true,
+      selectUnlockedCells:true,
+      formatCells:false,
+      formatColumns:false,
+      formatRows:false,
+      insertColumns:false,
+      insertRows:false,
+      deleteColumns:false,
+      deleteRows:false,
+      sort:false,
+      autoFilter:false,
     };
 
-    // Header rows
-    const hdrStyle='font-family:Arial,sans-serif;font-size:14pt;font-weight:bold;color:#1D4ED8;border:none;padding:4pt 0;';
-    const subStyle='font-family:Arial,sans-serif;font-size:10pt;color:#6B7280;border:none;padding:2pt 0;';
-    const thStyle='font-family:Arial,sans-serif;font-size:10pt;font-weight:bold;background:#BFDBFE;color:#1E3A5F;border:0.5pt solid #93C5FD;padding:6pt 8pt;text-align:center;';
+    // Mark column D cells as unlocked so user can edit Qté
+    validLines.forEach((_:any,i:number)=>{
+      const addr=XLSX.utils.encode_cell({r:4+i,c:3});
+      if(ws[addr])ws[addr].l=undefined; // SheetJS: no lock metadata = unlocked when sheet protected
+    });
 
-    const linesRows=validLines.map((l:any)=>{
-      const total=(+l.qty||0)*(+l.unitPrice||0);
-      return `<tr>
-        ${cell(l.pn)}
-        ${cell(l.desc||'')}
-        ${numCell(+l.unitPrice||0)}
-        ${cell(l.qty,false,'center')}
-        ${numCell(total,'#F0FDF4')}
-        ${cell(l.avail||'TBC')}
-      </tr>`;
-    }).join('');
+    XLSX.utils.book_append_sheet(wb,ws,'Draft Quote');
 
-    const totalHT_val=validLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
+    // ── Print settings ────────────────────────────────────────────────────────
+    wb.Workbook={SheetNames:wb.SheetNames,Sheets:{}};
 
-    const xml=`<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-  xmlns:o="urn:schemas-microsoft-com:office:office"
-  xmlns:x="urn:schemas-microsoft-com:office:excel"
-  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-  <Styles>
-    <Style ss:ID="s1"><Font ss:FontName="Arial" ss:Size="12" ss:Bold="1" ss:Color="#1D4ED8"/></Style>
-    <Style ss:ID="s2"><Font ss:FontName="Arial" ss:Size="9" ss:Color="#6B7280"/></Style>
-    <Style ss:ID="s3"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#1E3A5F"/><Interior ss:Color="#BFDBFE" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-    <Style ss:ID="s4"><Font ss:FontName="Arial" ss:Size="9"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
-    <Style ss:ID="s5"><Alignment ss:Horizontal="Right"/><Font ss:FontName="Arial" ss:Size="9"/><Interior ss:Color="#F0FDF4" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
-    <Style ss:ID="s6"><Alignment ss:Horizontal="Right"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#1E3A5F"/><Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2"/></Borders></Style>
-    <Style ss:ID="s7"><Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#1D4ED8"/><Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/><Borders><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="3" ss:Color="#2563EB"/><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
-    <Style ss:ID="s8"><Alignment ss:Vertical="Top" ss:WrapText="1"/><Font ss:FontName="Arial" ss:Size="9" ss:Color="#1F2937"/><Interior ss:Color="#F8FAFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="3" ss:Color="#2563EB"/><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
-  </Styles>
-  <Worksheet ss:Name="Draft Quote">
-    <Table ss:DefaultColumnWidth="60" ss:DefaultRowHeight="16">
-      <Column ss:Width="95"/>
-      <Column ss:Width="185"/>
-      <Column ss:Width="80"/>
-      <Column ss:Width="40"/>
-      <Column ss:Width="80"/>
-      <Column ss:Width="95"/>
-      <Row ss:Height="26">
-        <Cell ss:MergeAcross="5" ss:StyleID="s1"><Data ss:Type="String">DRAFT QUOTE — ${esc(effectiveClient)}</Data></Cell>
-      </Row>
-      <Row ss:Height="16">
-        <Cell ss:MergeAcross="5" ss:StyleID="s2"><Data ss:Type="String">Réf : ${esc(qRef)}   |   Date : ${esc(dateStr)}   |   Validité : ${esc(qValidity)} jours</Data></Cell>
-      </Row>
-      <Row ss:Height="6"><Cell><Data ss:Type="String"></Data></Cell></Row>
-      <Row ss:Height="22">
-        <Cell ss:StyleID="s3"><Data ss:Type="String">P/N</Data></Cell>
-        <Cell ss:StyleID="s3"><Data ss:Type="String">Désignation</Data></Cell>
-        <Cell ss:StyleID="s3"><Data ss:Type="String">Prix unitaire (€)</Data></Cell>
-        <Cell ss:StyleID="s3"><Data ss:Type="String">Qté</Data></Cell>
-        <Cell ss:StyleID="s3"><Data ss:Type="String">Total (€)</Data></Cell>
-        <Cell ss:StyleID="s3"><Data ss:Type="String">Disponibilité</Data></Cell>
-      </Row>
-      ${(()=>{
-        // Rows 1=title, 2=subtitle, 3=spacer, 4=header → data starts at row 5
-        const dataStartRow=5;
-        const rows=validLines.map((l:any,i:number)=>{
-          const rowNum=dataStartRow+i;
-          // C=Prix unitaire, D=Qté, E=Total → formula =C*D
-          return `<Row ss:Height="18">
-          <Cell ss:StyleID="s4"><Data ss:Type="String">${esc(l.pn)}</Data></Cell>
-          <Cell ss:StyleID="s4"><Data ss:Type="String">${esc(l.desc||'')}</Data></Cell>
-          <Cell ss:StyleID="s5"><Data ss:Type="Number">${+l.unitPrice||0}</Data></Cell>
-          <Cell ss:StyleID="s4"><Data ss:Type="Number">${+l.qty||1}</Data></Cell>
-          <Cell ss:StyleID="s5" ss:Formula="=C${rowNum}*D${rowNum}"><Data ss:Type="Number">${(+l.qty||0)*(+l.unitPrice||0)}</Data></Cell>
-          <Cell ss:StyleID="s4"><Data ss:Type="String">${esc(l.avail||'TBC')}</Data></Cell>
-        </Row>`;
-        });
-        // Total row = 2 rows after last data row (spacer row in between)
-        const totalRow=dataStartRow+validLines.length+1;
-        const sumFirst=dataStartRow;
-        const sumLast=dataStartRow+validLines.length-1;
-        rows.push(`<Row ss:Height="6"><Cell><Data ss:Type="String"></Data></Cell></Row>`);
-        rows.push(`<Row ss:Height="24">
-        <Cell ss:MergeAcross="3" ss:StyleID="s6"><Data ss:Type="String">TOTAL HT</Data></Cell>
-        <Cell ss:StyleID="s6" ss:Formula="=SUM(E${sumFirst}:E${sumLast})"><Data ss:Type="Number">${totalHT_val}</Data></Cell>
-        <Cell ss:StyleID="s4"><Data ss:Type="String"></Data></Cell>
-      </Row>`);
-        return rows.join('');
-      })()}
-      <Row ss:Height="12"><Cell><Data ss:Type="String"></Data></Cell></Row>
-      ${qNotes?`<Row ss:Height="14">
-        <Cell ss:MergeAcross="5" ss:StyleID="s7"><Data ss:Type="String">NOTES / CONDITIONS</Data></Cell>
-      </Row>
-      <Row ss:Height="50">
-        <Cell ss:MergeAcross="5" ss:StyleID="s8"><Data ss:Type="String">${esc(qNotes)}</Data></Cell>
-      </Row>`:''}
-      ${qValidity?`<Row ss:Height="14">
-        <Cell ss:MergeAcross="5" ss:StyleID="s2"><Data ss:Type="String">Valable ${esc(qValidity)} jours.</Data></Cell>
-      </Row>`:''}
-    </Table>
-    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
-      <PageSetup>
-        <Layout x:Orientation="Portrait"/>
-        <PageMargins x:Bottom="0.6" x:Left="0.5" x:Right="0.5" x:Top="0.6"/>
-        <Header x:Data="&amp;C&amp;B${esc(effectiveClient)} — Draft Quote ${esc(qRef)}" x:Margin="0.3"/>
-        <Footer x:Data="&amp;LDate : ${esc(dateStr)}&amp;RPage &amp;P / &amp;N" x:Margin="0.3"/>
-      </PageSetup>
-      <Print>
-        <ValidPrinterInfo/>
-        <PaperSizeIndex>9</PaperSizeIndex>
-        <Scale>85</Scale>
-        <HorizontalResolution>600</HorizontalResolution>
-        <VerticalResolution>600</VerticalResolution>
-        <FitWidth>1</FitWidth>
-        <FitHeight>99</FitHeight>
-      </Print>
-      <FreezePanes/>
-      <FrozenNoSplit/>
-      <SplitHorizontal>4</SplitHorizontal>
-      <TopRowBottomPane>4</TopRowBottomPane>
-      <ActivePane>2</ActivePane>
-    </WorksheetOptions>
-  </Worksheet>
-</Workbook>`;
-
-    const blob=new Blob([xml],{type:'application/vnd.ms-excel;charset=utf-8'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;a.download=fileName;
-    document.body.appendChild(a);a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Download
+    XLSX.writeFile(wb,fileName,{bookType:'xlsx',type:'binary',cellStyles:true,compression:true});
   };
 
   // ── Generate quote PDF ─────────────────────────────────────────────────────
