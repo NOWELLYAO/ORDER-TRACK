@@ -4454,18 +4454,21 @@ function CataloguePage({clients,lang,isMobile}:any){
     ].join('')).join('');
     const thStyle=(align:string,w2:string='')=>'padding:8px 10px;border:1px solid #93C5FD;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:bold;text-align:'+align+(w2?';width:'+w2:'');
     const html=`<!DOCTYPE html>
-<html lang=fr>
+<html lang="fr">
 <head>
-<meta charset=utf-8>
-<meta name=viewport content=width=device-width,initial-scale=1>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${docTitle}</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  @page{size:A4 portrait;margin:0}
-  body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000;background:#fff;padding:15mm 18mm 18mm 18mm}
-  @media print{body{padding:15mm 18mm 15mm 18mm}.no-print{display:none!important}}
+  @page{size:A4 portrait;margin:12mm 14mm}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000;background:#fff;padding:12mm 14mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @media print{body{padding:0}.no-print{display:none!important}}
+  *{-webkit-user-select:text!important;user-select:text!important;cursor:text}
+  button{cursor:pointer!important}
   .ttl{font-size:15px;font-weight:bold;border:2px solid #000;padding:6px 22px;display:inline-block;font-family:Arial,Helvetica,sans-serif}
   table{border-collapse:collapse;width:100%}
+  td,th{font-family:Arial,Helvetica,sans-serif;font-size:11px}
 </style>
 </head>
 <body>
