@@ -4585,21 +4585,21 @@ ${qValidity?'<p style="margin-top:20px;font-size:10px;color:#555;font-family:Ari
   xmlns:x="urn:schemas-microsoft-com:office:excel"
   xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
   <Styles>
-    <Style ss:ID="s1"><Font ss:FontName="Arial" ss:Size="14" ss:Bold="1" ss:Color="#1D4ED8"/></Style>
-    <Style ss:ID="s2"><Font ss:FontName="Arial" ss:Size="10" ss:Color="#6B7280"/></Style>
-    <Style ss:ID="s3"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#1E3A5F"/><Interior ss:Color="#BFDBFE" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-    <Style ss:ID="s4"><Font ss:FontName="Arial" ss:Size="10"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
-    <Style ss:ID="s5"><Alignment ss:Horizontal="Right"/><Font ss:FontName="Arial" ss:Size="10"/><Interior ss:Color="#F0FDF4" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
-    <Style ss:ID="s6"><Alignment ss:Horizontal="Right"/><Font ss:FontName="Arial" ss:Size="12" ss:Bold="1" ss:Color="#1E3A5F"/><Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2"/></Borders></Style>
+    <Style ss:ID="s1"><Font ss:FontName="Arial" ss:Size="12" ss:Bold="1" ss:Color="#1D4ED8"/></Style>
+    <Style ss:ID="s2"><Font ss:FontName="Arial" ss:Size="9" ss:Color="#6B7280"/></Style>
+    <Style ss:ID="s3"><Alignment ss:Horizontal="Center"/><Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#1E3A5F"/><Interior ss:Color="#BFDBFE" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+    <Style ss:ID="s4"><Font ss:FontName="Arial" ss:Size="9"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
+    <Style ss:ID="s5"><Alignment ss:Horizontal="Right"/><Font ss:FontName="Arial" ss:Size="9"/><Interior ss:Color="#F0FDF4" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
+    <Style ss:ID="s6"><Alignment ss:Horizontal="Right"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#1E3A5F"/><Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2"/></Borders></Style>
   </Styles>
   <Worksheet ss:Name="Draft Quote">
-    <Table ss:DefaultColumnWidth="80" ss:DefaultRowHeight="18">
-      <Column ss:Width="120"/>
-      <Column ss:Width="220"/>
-      <Column ss:Width="100"/>
-      <Column ss:Width="55"/>
-      <Column ss:Width="110"/>
-      <Column ss:Width="130"/>
+    <Table ss:DefaultColumnWidth="60" ss:DefaultRowHeight="16">
+      <Column ss:Width="95"/>
+      <Column ss:Width="185"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="40"/>
+      <Column ss:Width="80"/>
+      <Column ss:Width="95"/>
       <Row ss:Height="26">
         <Cell ss:MergeAcross="5" ss:StyleID="s1"><Data ss:Type="String">DRAFT QUOTE — ${esc(effectiveClient)}</Data></Cell>
       </Row>
@@ -4634,10 +4634,25 @@ ${qValidity?'<p style="margin-top:20px;font-size:10px;color:#555;font-family:Ari
       </Row>
     </Table>
     <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
-      <PageSetup><Layout x:Orientation="Portrait"/><PageMargins x:Bottom="0.984252" x:Left="0.787402" x:Right="0.787402" x:Top="0.984252"/></PageSetup>
-      <Print><ValidPrinterInfo/><PaperSizeIndex>9</PaperSizeIndex><HorizontalResolution>600</HorizontalResolution><VerticalResolution>600</VerticalResolution></Print>
-      <FreezePanes/><FrozenNoSplit/>
-      <SplitHorizontal>4</SplitHorizontal><TopRowBottomPane>4</TopRowBottomPane>
+      <PageSetup>
+        <Layout x:Orientation="Portrait"/>
+        <PageMargins x:Bottom="0.6" x:Left="0.5" x:Right="0.5" x:Top="0.6"/>
+        <Header x:Data="&amp;C&amp;B${esc(effectiveClient)} — Draft Quote ${esc(qRef)}" x:Margin="0.3"/>
+        <Footer x:Data="&amp;LDate : ${esc(dateStr)}&amp;RPage &amp;P / &amp;N" x:Margin="0.3"/>
+      </PageSetup>
+      <Print>
+        <ValidPrinterInfo/>
+        <PaperSizeIndex>9</PaperSizeIndex>
+        <Scale>85</Scale>
+        <HorizontalResolution>600</HorizontalResolution>
+        <VerticalResolution>600</VerticalResolution>
+        <FitWidth>1</FitWidth>
+        <FitHeight>99</FitHeight>
+      </Print>
+      <FreezePanes/>
+      <FrozenNoSplit/>
+      <SplitHorizontal>4</SplitHorizontal>
+      <TopRowBottomPane>4</TopRowBottomPane>
       <ActivePane>2</ActivePane>
     </WorksheetOptions>
   </Worksheet>
