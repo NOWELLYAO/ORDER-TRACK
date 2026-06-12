@@ -4602,6 +4602,8 @@ function CataloguePage({clients,lang,isMobile}:any){
     <Style ss:ID="s4"><Font ss:FontName="Arial" ss:Size="9"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
     <Style ss:ID="s5"><Alignment ss:Horizontal="Right"/><Font ss:FontName="Arial" ss:Size="9"/><Interior ss:Color="#F0FDF4" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
     <Style ss:ID="s6"><Alignment ss:Horizontal="Right"/><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#1E3A5F"/><Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2"/></Borders></Style>
+    <Style ss:ID="s7"><Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#1D4ED8"/><Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/><Borders><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="3" ss:Color="#2563EB"/><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
+    <Style ss:ID="s8"><Alignment ss:Vertical="Top" ss:WrapText="1"/><Font ss:FontName="Arial" ss:Size="9" ss:Color="#1F2937"/><Interior ss:Color="#F8FAFF" ss:Pattern="Solid"/><Borders><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="3" ss:Color="#2563EB"/><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders></Style>
   </Styles>
   <Worksheet ss:Name="Draft Quote">
     <Table ss:DefaultColumnWidth="60" ss:DefaultRowHeight="16">
@@ -4615,7 +4617,7 @@ function CataloguePage({clients,lang,isMobile}:any){
         <Cell ss:MergeAcross="5" ss:StyleID="s1"><Data ss:Type="String">DRAFT QUOTE — ${esc(effectiveClient)}</Data></Cell>
       </Row>
       <Row ss:Height="16">
-        <Cell ss:MergeAcross="5" ss:StyleID="s2"><Data ss:Type="String">Réf : ${esc(qRef)}   |   Date : ${esc(dateStr)}   |   Validité : ${esc(qValidity)} jours${qNotes?'   |   Project : '+esc(qNotes):''}</Data></Cell>
+        <Cell ss:MergeAcross="5" ss:StyleID="s2"><Data ss:Type="String">Réf : ${esc(qRef)}   |   Date : ${esc(dateStr)}   |   Validité : ${esc(qValidity)} jours</Data></Cell>
       </Row>
       <Row ss:Height="6"><Cell><Data ss:Type="String"></Data></Cell></Row>
       <Row ss:Height="22">
@@ -4626,23 +4628,43 @@ function CataloguePage({clients,lang,isMobile}:any){
         <Cell ss:StyleID="s3"><Data ss:Type="String">Total (€)</Data></Cell>
         <Cell ss:StyleID="s3"><Data ss:Type="String">Disponibilité</Data></Cell>
       </Row>
-      ${validLines.map((l:any)=>{
-        const tot=(+l.qty||0)*(+l.unitPrice||0);
-        return `<Row ss:Height="18">
+      ${(()=>{
+        // Rows 1=title, 2=subtitle, 3=spacer, 4=header → data starts at row 5
+        const dataStartRow=5;
+        const rows=validLines.map((l:any,i:number)=>{
+          const rowNum=dataStartRow+i;
+          // C=Prix unitaire, D=Qté, E=Total → formula =C*D
+          return `<Row ss:Height="18">
           <Cell ss:StyleID="s4"><Data ss:Type="String">${esc(l.pn)}</Data></Cell>
           <Cell ss:StyleID="s4"><Data ss:Type="String">${esc(l.desc||'')}</Data></Cell>
           <Cell ss:StyleID="s5"><Data ss:Type="Number">${+l.unitPrice||0}</Data></Cell>
           <Cell ss:StyleID="s4"><Data ss:Type="Number">${+l.qty||1}</Data></Cell>
-          <Cell ss:StyleID="s5"><Data ss:Type="Number">${tot}</Data></Cell>
+          <Cell ss:StyleID="s5" ss:Formula="=C${rowNum}*D${rowNum}"><Data ss:Type="Number">${(+l.qty||0)*(+l.unitPrice||0)}</Data></Cell>
           <Cell ss:StyleID="s4"><Data ss:Type="String">${esc(l.avail||'TBC')}</Data></Cell>
         </Row>`;
-      }).join('')}
-      <Row ss:Height="6"><Cell><Data ss:Type="String"></Data></Cell></Row>
-      <Row ss:Height="24">
+        });
+        // Total row = 2 rows after last data row (spacer row in between)
+        const totalRow=dataStartRow+validLines.length+1;
+        const sumFirst=dataStartRow;
+        const sumLast=dataStartRow+validLines.length-1;
+        rows.push(`<Row ss:Height="6"><Cell><Data ss:Type="String"></Data></Cell></Row>`);
+        rows.push(`<Row ss:Height="24">
         <Cell ss:MergeAcross="3" ss:StyleID="s6"><Data ss:Type="String">TOTAL HT</Data></Cell>
-        <Cell ss:StyleID="s6"><Data ss:Type="Number">${totalHT_val}</Data></Cell>
+        <Cell ss:StyleID="s6" ss:Formula="=SUM(E${sumFirst}:E${sumLast})"><Data ss:Type="Number">${totalHT_val}</Data></Cell>
         <Cell ss:StyleID="s4"><Data ss:Type="String"></Data></Cell>
+      </Row>`);
+        return rows.join('');
+      })()}
+      <Row ss:Height="12"><Cell><Data ss:Type="String"></Data></Cell></Row>
+      ${qNotes?`<Row ss:Height="14">
+        <Cell ss:MergeAcross="5" ss:StyleID="s7"><Data ss:Type="String">NOTES / CONDITIONS</Data></Cell>
       </Row>
+      <Row ss:Height="50">
+        <Cell ss:MergeAcross="5" ss:StyleID="s8"><Data ss:Type="String">${esc(qNotes)}</Data></Cell>
+      </Row>`:''}
+      ${qValidity?`<Row ss:Height="14">
+        <Cell ss:MergeAcross="5" ss:StyleID="s2"><Data ss:Type="String">Valable ${esc(qValidity)} jours.</Data></Cell>
+      </Row>`:''}
     </Table>
     <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
       <PageSetup>
