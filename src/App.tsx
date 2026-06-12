@@ -4573,7 +4573,7 @@ function CataloguePage({clients,lang,isMobile}:any){
     ];
 
     // ── Title ──────────────────────────────────────────────────────────────
-    ws.getRow(1).height=22;
+    ws.getRow(1).height=28;
     // Left: DRAFT QUOTE — CLIENT (cols A-D)
     ws.mergeCells('A1:D1');
     const titleCell=ws.getCell('A1');
@@ -4594,14 +4594,14 @@ function CataloguePage({clients,lang,isMobile}:any){
     subCell.font={size:9,color:{argb:'FF6B7280'},name:'Arial'};
     subCell.alignment={vertical:'middle'};
     subCell.border={bottom:{style:'thin',color:{argb:'FFE5EAF0'}}};
-    ws.getRow(2).height=14;
+    ws.getRow(2).height=18;
 
     // ── Spacer ─────────────────────────────────────────────────────────────
-    ws.getRow(3).height=5;
+    ws.getRow(3).height=12;
 
     // ── Headers ────────────────────────────────────────────────────────────
     const hdrRow=ws.getRow(4);
-    hdrRow.height=18;
+    hdrRow.height=22;
     ['P/N','Désignation','Prix unitaire (€)','Qté','Total (€)','Disponibilité'].forEach((h,i)=>{
       const c=hdrRow.getCell(i+1);
       c.value=h;
@@ -4616,7 +4616,7 @@ function CataloguePage({clients,lang,isMobile}:any){
     validLines.forEach((l:any,i:number)=>{
       const rowNum=DR+i;
       const row=ws.getRow(rowNum);
-      row.height=16;
+      row.height=20;
       const price=+l.unitPrice||0;
       const qty=+l.qty||1;
       const borderStyle={top:{style:'thin',color:{argb:'FFBFDBFE'}},bottom:{style:'thin',color:{argb:'FFBFDBFE'}},left:{style:'thin',color:{argb:'FFBFDBFE'}},right:{style:'thin',color:{argb:'FFBFDBFE'}}};
@@ -4653,7 +4653,7 @@ function CataloguePage({clients,lang,isMobile}:any){
 
     // ── Spacer ─────────────────────────────────────────────────────────────
     const spacerR=DR+validLines.length;
-    ws.getRow(spacerR).height=4;
+    ws.getRow(spacerR).height=10;
 
     // ── Total row ──────────────────────────────────────────────────────────
     const totalR=spacerR+1;
@@ -4663,7 +4663,7 @@ function CataloguePage({clients,lang,isMobile}:any){
     tLabel.font={bold:true,size:10,color:{argb:'FF1E3A5F'},name:'Arial'};
     tLabel.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDBEAFE'}};
     tLabel.alignment={horizontal:'right',vertical:'middle'};
-    ws.getRow(totalR).height=20;
+    ws.getRow(totalR).height=24;
     const tVal=ws.getCell(`E${totalR}`);
     tVal.value={formula:`SUM(E${DR}:E${spacerR-1})`,result:totalHT_val};
     tVal.numFmt='#,##0.00';
@@ -4674,14 +4674,14 @@ function CataloguePage({clients,lang,isMobile}:any){
     // ── Notes ──────────────────────────────────────────────────────────────
     let nR=totalR+2;
     if(qNotes){
-      ws.getRow(nR).height=14;
+      ws.getRow(nR).height=20;
       ws.mergeCells(`A${nR}:F${nR}`);
       const nLabel=ws.getCell(`A${nR}`);
       nLabel.value='NOTES / CONDITIONS';
       nLabel.font={bold:true,size:9,color:{argb:'FF1D4ED8'},name:'Arial'};
       nLabel.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFF6FF'}};
       nR++;
-      ws.getRow(nR).height=45;
+      ws.getRow(nR).height=55;
       ws.mergeCells(`A${nR}:F${nR}`);
       const nVal=ws.getCell(`A${nR}`);
       nVal.value=String(qNotes);
@@ -4690,7 +4690,7 @@ function CataloguePage({clients,lang,isMobile}:any){
       nR+=2;
     }
     if(qValidity){
-      ws.getRow(nR).height=14;
+      ws.getRow(nR).height=18;
       ws.getCell(`A${nR}`).value=`Valable ${qValidity} jours.`;
       ws.getCell(`A${nR}`).font={size:9,color:{argb:'FF6B7280'},name:'Arial'};
     }
