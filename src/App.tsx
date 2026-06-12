@@ -4550,158 +4550,153 @@ function CataloguePage({clients,lang,isMobile}:any){
     const fileName=`Draft_${effectiveClient}_${qRef}_${qDate}.xlsx`;
     const totalHT_val=validLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
 
-    // Load JSZip from CDN
-    const loadJSZip=():Promise<any>=>new Promise((resolve,reject)=>{
-      if((window as any).JSZip){resolve((window as any).JSZip);return;}
+    // Load ExcelJS from CDN (always available, no CSP issue)
+    const loadExcelJS=():Promise<any>=>new Promise((resolve,reject)=>{
+      if((window as any).ExcelJS){resolve((window as any).ExcelJS);return;}
       const s=document.createElement('script');
-      s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-      s.onload=()=>resolve((window as any).JSZip);
-      s.onerror=()=>reject(new Error('JSZip load failed'));
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+      s.crossOrigin='anonymous';
+      s.onload=()=>resolve((window as any).ExcelJS);
+      s.onerror=()=>reject(new Error('ExcelJS load failed'));
       document.head.appendChild(s);
     });
-    let JSZip:any;
-    try{JSZip=await loadJSZip();}catch{alert('Impossible de charger JSZip. Vérifiez votre connexion internet.');return;}
+    let ExcelJS:any;
+    try{ExcelJS=await loadExcelJS();}
+    catch{alert('Impossible de charger ExcelJS. Vérifiez votre connexion internet.');return;}
 
-    const xe=(v:any)=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const wb=new ExcelJS.Workbook();
+    wb.created=new Date();
+    const ws=wb.addWorksheet('Draft Quote',{pageSetup:{paperSize:9,orientation:'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0},properties:{defaultColWidth:12}});
 
-    // Shared strings
-    const sst:string[]=[];
-    const si=(v:string)=>{let i=sst.indexOf(v);if(i<0){i=sst.length;sst.push(v);}return i;};
+    ws.columns=[
+      {width:16},{width:36},{width:18},{width:7},{width:16},{width:18}
+    ];
 
-    // Cell address helper
-    const col=(c:number)=>String.fromCharCode(65+c);
-    const addr=(c:number,r:number)=>`${col(c)}${r}`;
+    // ── Title ──────────────────────────────────────────────────────────────
+    ws.mergeCells('A1:F1');
+    const titleCell=ws.getCell('A1');
+    titleCell.value=`DRAFT QUOTE — ${effectiveClient}`;
+    titleCell.font={bold:true,size:13,color:{argb:'FF1D4ED8'},name:'Arial'};
+    titleCell.alignment={vertical:'middle'};
+    ws.getRow(1).height=20;
 
-    // Build rows XML
-    const rows:string[]=[];
-    // Row 1: Title
-    rows.push(`<row r="1"><c r="A1" s="1" t="s"><v>${si(`DRAFT QUOTE — ${effectiveClient}`)}</v></c></row>`);
-    // Row 2: Subtitle
-    rows.push(`<row r="2"><c r="A2" s="2" t="s"><v>${si(`Réf : ${qRef}   |   Date : ${dateStr}   |   Validité : ${qValidity} jours`)}</v></c></row>`);
-    // Row 3: spacer
-    rows.push(`<row r="3"></row>`);
-    // Row 4: Headers
-    const hdrs=['P/N','Désignation','Prix unitaire (€)','Qté','Total (€)','Disponibilité'];
-    rows.push(`<row r="4">${hdrs.map((h,c)=>`<c r="${addr(c,4)}" s="3" t="s"><v>${si(h)}</v></c>`).join('')}</row>`);
-    // Data rows (start at row 5)
+    // ── Subtitle ───────────────────────────────────────────────────────────
+    ws.mergeCells('A2:F2');
+    const subCell=ws.getCell('A2');
+    subCell.value=`Réf : ${qRef}   |   Date : ${dateStr}   |   Validité : ${qValidity} jours`;
+    subCell.font={size:9,color:{argb:'FF6B7280'},name:'Arial'};
+    ws.getRow(2).height=14;
+
+    // ── Headers ────────────────────────────────────────────────────────────
+    const hdrRow=ws.getRow(4);
+    hdrRow.height=18;
+    ['P/N','Désignation','Prix unitaire (€)','Qté','Total (€)','Disponibilité'].forEach((h,i)=>{
+      const c=hdrRow.getCell(i+1);
+      c.value=h;
+      c.font={bold:true,size:9,color:{argb:'FF1E3A5F'},name:'Arial'};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFBFDBFE'}};
+      c.alignment={horizontal:'center',vertical:'middle'};
+      c.border={top:{style:'thin',color:{argb:'FF93C5FD'}},bottom:{style:'thin',color:{argb:'FF93C5FD'}},left:{style:'thin',color:{argb:'FF93C5FD'}},right:{style:'thin',color:{argb:'FF93C5FD'}}};
+    });
+
+    // ── Data rows ──────────────────────────────────────────────────────────
     const DR=5;
     validLines.forEach((l:any,i:number)=>{
-      const r=DR+i;
+      const rowNum=DR+i;
+      const row=ws.getRow(rowNum);
+      row.height=16;
       const price=+l.unitPrice||0;
       const qty=+l.qty||1;
-      rows.push(`<row r="${r}">` +
-        `<c r="${addr(0,r)}" t="s"><v>${si(String(l.pn))}</v></c>` +
-        `<c r="${addr(1,r)}" t="s"><v>${si(String(l.desc||''))}</v></c>` +
-        `<c r="${addr(2,r)}" s="4"><v>${price}</v></c>` +
-        `<c r="${addr(3,r)}"><v>${qty}</v></c>` +
-        `<c r="${addr(4,r)}" s="5"><f>${addr(2,r)}*${addr(3,r)}</f><v>${price*qty}</v></c>` +
-        `<c r="${addr(5,r)}" t="s"><v>${si(String(l.avail||'TBC'))}</v></c>` +
-      `</row>`);
+      const borderStyle={top:{style:'thin',color:{argb:'FFBFDBFE'}},bottom:{style:'thin',color:{argb:'FFBFDBFE'}},left:{style:'thin',color:{argb:'FFBFDBFE'}},right:{style:'thin',color:{argb:'FFBFDBFE'}}};
+
+      // A: P/N
+      const cA=row.getCell(1); cA.value=String(l.pn); cA.font={size:9,name:'Arial'}; cA.border=borderStyle;
+      // B: Description
+      const cB=row.getCell(2); cB.value=String(l.desc||''); cB.font={size:9,name:'Arial'}; cB.border=borderStyle;
+      // C: Prix unitaire — LOCKED (grey bg)
+      const cC=row.getCell(3);
+      cC.value=price;
+      cC.numFmt='#,##0.00';
+      cC.font={size:9,color:{argb:'FF374151'},name:'Arial'};
+      cC.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F4F6'}};
+      cC.alignment={horizontal:'right'};
+      cC.border=borderStyle;
+      cC.protection={locked:true};
+      // D: Qté — EDITABLE
+      const cD=row.getCell(4);
+      cD.value=qty;
+      cD.font={size:9,name:'Arial'};
+      cD.alignment={horizontal:'center'};
+      cD.border=borderStyle;
+      cD.protection={locked:false};
+      // E: Total — formula
+      const cE=row.getCell(5);
+      cE.value={formula:`C${rowNum}*D${rowNum}`,result:price*qty};
+      cE.numFmt='#,##0.00';
+      cE.font={size:9,name:'Arial'};
+      cE.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFD1FAE5'}};
+      cE.alignment={horizontal:'right'};
+      cE.border=borderStyle;
+      cE.protection={locked:true};
+      // F: Disponibilité
+      const cF=row.getCell(6); cF.value=String(l.avail||'TBC'); cF.font={size:9,name:'Arial'}; cF.border=borderStyle;
     });
-    // Spacer
+
+    // ── Spacer ─────────────────────────────────────────────────────────────
     const spacerR=DR+validLines.length;
-    rows.push(`<row r="${spacerR}"></row>`);
-    // Total row
+    ws.getRow(spacerR).height=4;
+
+    // ── Total row ──────────────────────────────────────────────────────────
     const totalR=spacerR+1;
-    rows.push(`<row r="${totalR}">` +
-      `<c r="${addr(0,totalR)}" s="6" t="s"><v>${si('TOTAL HT')}</v></c>` +
-      `<c r="${addr(4,totalR)}" s="7"><f>SUM(E${DR}:E${spacerR-1})</f><v>${totalHT_val}</v></c>` +
-    `</row>`);
-    // Notes
+    ws.mergeCells(`A${totalR}:D${totalR}`);
+    const tLabel=ws.getCell(`A${totalR}`);
+    tLabel.value='TOTAL HT';
+    tLabel.font={bold:true,size:10,color:{argb:'FF1E3A5F'},name:'Arial'};
+    tLabel.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDBEAFE'}};
+    tLabel.alignment={horizontal:'right',vertical:'middle'};
+    ws.getRow(totalR).height=20;
+    const tVal=ws.getCell(`E${totalR}`);
+    tVal.value={formula:`SUM(E${DR}:E${spacerR-1})`,result:totalHT_val};
+    tVal.numFmt='#,##0.00';
+    tVal.font={bold:true,size:11,color:{argb:'FF1E3A5F'},name:'Arial'};
+    tVal.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDBEAFE'}};
+    tVal.alignment={horizontal:'right',vertical:'middle'};
+    tVal.protection={locked:true};
+
+    // ── Notes ──────────────────────────────────────────────────────────────
     let nR=totalR+2;
     if(qNotes){
-      rows.push(`<row r="${nR}"><c r="A${nR}" s="8" t="s"><v>${si('NOTES / CONDITIONS')}</v></c></row>`);
+      ws.getRow(nR).height=14;
+      ws.mergeCells(`A${nR}:F${nR}`);
+      const nLabel=ws.getCell(`A${nR}`);
+      nLabel.value='NOTES / CONDITIONS';
+      nLabel.font={bold:true,size:9,color:{argb:'FF1D4ED8'},name:'Arial'};
+      nLabel.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFF6FF'}};
       nR++;
-      rows.push(`<row r="${nR}"><c r="A${nR}" s="9" t="s"><v>${si(String(qNotes))}</v></c></row>`);
+      ws.getRow(nR).height=45;
+      ws.mergeCells(`A${nR}:F${nR}`);
+      const nVal=ws.getCell(`A${nR}`);
+      nVal.value=String(qNotes);
+      nVal.font={size:9,name:'Arial'};
+      nVal.alignment={wrapText:true,vertical:'top'};
       nR+=2;
     }
     if(qValidity){
-      rows.push(`<row r="${nR}"><c r="A${nR}" s="2" t="s"><v>${si(`Valable ${qValidity} jours.`)}</v></c></row>`);
+      ws.getRow(nR).height=14;
+      ws.getCell(`A${nR}`).value=`Valable ${qValidity} jours.`;
+      ws.getCell(`A${nR}`).font={size:9,color:{argb:'FF6B7280'},name:'Arial'};
     }
 
-    // Merges
-    const merges=[`<mergeCell ref="A1:F1"/>`,`<mergeCell ref="A2:F2"/>`,`<mergeCell ref="A${totalR}:D${totalR}"/>`];
-    if(qNotes){merges.push(`<mergeCell ref="A${totalR+2}:F${totalR+2}"/>`);merges.push(`<mergeCell ref="A${totalR+3}:F${totalR+3}"/>`);}
+    // ── Sheet protection: only D (Qté) is editable ─────────────────────────
+    await ws.protect('',{selectLockedCells:true,selectUnlockedCells:true,formatCells:false,formatColumns:false,formatRows:false,insertColumns:false,insertRows:false,deleteColumns:false,deleteRows:false,sort:false,autoFilter:false});
 
-    // SST XML
-    const sstXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sst.length}" uniqueCount="${sst.length}">\n${sst.map(s=>`<si><t xml:space="preserve">${xe(s)}</t></si>`).join('\n')}\n</sst>`;
-
-    // Styles XML — validated structure, no nested <font> in <xf>
-    const stylesXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="6">
-    <font><sz val="10"/><name val="Arial"/></font>
-    <font><b/><sz val="13"/><color rgb="FF1D4ED8"/><name val="Arial"/></font>
-    <font><sz val="9"/><color rgb="FF6B7280"/><name val="Arial"/></font>
-    <font><b/><sz val="9"/><color rgb="FF1E3A5F"/><name val="Arial"/></font>
-    <font><sz val="9"/><color rgb="FF374151"/><name val="Arial"/></font>
-    <font><b/><sz val="10"/><color rgb="FF1E3A5F"/><name val="Arial"/></font>
-  </fonts>
-  <fills count="6">
-    <fill><patternFill patternType="none"/></fill>
-    <fill><patternFill patternType="gray125"/></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFBFDBFE"/><bgColor indexed="64"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFF3F4F6"/><bgColor indexed="64"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFD1FAE5"/><bgColor indexed="64"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFDBEAFE"/><bgColor indexed="64"/></patternFill></fill>
-  </fills>
-  <borders count="2">
-    <border><left/><right/><top/><bottom/><diagonal/></border>
-    <border><left style="thin"><color rgb="FF93C5FD"/></left><right style="thin"><color rgb="FF93C5FD"/></right><top style="thin"><color rgb="FF93C5FD"/></top><bottom style="thin"><color rgb="FF93C5FD"/></bottom><diagonal/></border>
-  </borders>
-  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="10">
-    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0"><alignment horizontal="center"/></xf>
-    <xf numFmtId="4" fontId="4" fillId="3" borderId="1" xfId="0"><alignment horizontal="right"/></xf>
-    <xf numFmtId="4" fontId="4" fillId="4" borderId="1" xfId="0"><alignment horizontal="right"/></xf>
-    <xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="4" fontId="5" fillId="5" borderId="1" xfId="0"><alignment horizontal="right"/></xf>
-    <xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0"/>
-    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment wrapText="1" vertical="top"/></xf>
-  </cellXfs>
-  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
-</styleSheet>`;
-
-    // Sheet XML
-    const sheetXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <cols>
-    <col min="1" max="1" width="16" customWidth="1"/>
-    <col min="2" max="2" width="36" customWidth="1"/>
-    <col min="3" max="3" width="16" customWidth="1"/>
-    <col min="4" max="4" width="7" customWidth="1"/>
-    <col min="5" max="5" width="16" customWidth="1"/>
-    <col min="6" max="6" width="18" customWidth="1"/>
-  </cols>
-  <sheetData>${rows.join('')}</sheetData>
-  <mergeCells count="${merges.length}">${merges.join('')}</mergeCells>
-  <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>
-  <pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>
-</worksheet>`;
-
-    // Workbook + rels
-    const wbXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Draft Quote" sheetId="1" r:id="rId1"/></sheets></workbook>`;
-    const wbRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
-    const rootRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
-    const contentTypes=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`;
-
-    // Assemble zip
-    const zip=new JSZip();
-    zip.file('[Content_Types].xml',contentTypes);
-    zip.file('_rels/.rels',rootRels);
-    zip.file('xl/workbook.xml',wbXml);
-    zip.file('xl/_rels/workbook.xml.rels',wbRels);
-    zip.file('xl/worksheets/sheet1.xml',sheetXml);
-    zip.file('xl/sharedStrings.xml',sstXml);
-    zip.file('xl/styles.xml',stylesXml);
-    const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
+    // ── Download ───────────────────────────────────────────────────────────
+    const buf:ArrayBuffer=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
-    a.href=url;a.download=fileName;
-    document.body.appendChild(a);a.click();
+    a.href=url; a.download=fileName;
+    document.body.appendChild(a); a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
