@@ -4581,15 +4581,15 @@ function CataloguePage({clients,lang,isMobile}:any){
 
     const xmlRows:string[]=[];
 
-    // Row 1 — Title
-    xmlRows.push(`<row r="1"><c r="A1" t="s"><v>${si(`DRAFT QUOTE — ${effectiveClient}`)}</v></c></row>`);
-    // Row 2 — Subtitle
-    xmlRows.push(`<row r="2"><c r="A2" t="s"><v>${si(`Réf : ${qRef}   |   Date : ${dateStr}   |   Validité : ${qValidity} jours`)}</v></c></row>`);
+    // Row 1 — Title (s=1: blue bold 13pt)
+    xmlRows.push(`<row r="1"><c r="A1" s="1" t="s"><v>${si(`DRAFT QUOTE — ${effectiveClient}`)}</v></c></row>`);
+    // Row 2 — Subtitle (s=2: grey 9pt)
+    xmlRows.push(`<row r="2"><c r="A2" s="2" t="s"><v>${si(`Réf : ${qRef}   |   Date : ${dateStr}   |   Validité : ${qValidity} jours`)}</v></c></row>`);
     // Row 3 — spacer (empty)
     xmlRows.push(`<row r="3"></row>`);
-    // Row 4 — Headers
+    // Row 4 — Headers (s=3: center bold blue-bg)
     const hdrs=['P/N','Désignation','Prix unitaire (€)','Qté','Total (€)','Disponibilité'];
-    xmlRows.push(`<row r="4">${hdrs.map((h,c)=>`<c r="${cellAddr(c,4)}" t="s"><v>${si(h)}</v></c>`).join('')}</row>`);
+    xmlRows.push(`<row r="4">${hdrs.map((h,c)=>`<c r="${cellAddr(c,4)}" s="3" t="s"><v>${si(h)}</v></c>`).join('')}</row>`);
 
     // Data rows
     validLines.forEach((l:any,i:number)=>{
@@ -4647,65 +4647,62 @@ function CataloguePage({clients,lang,isMobile}:any){
 ${sst.map(s=>`<si><t xml:space="preserve">${xe(s)}</t></si>`).join('\n')}
 </sst>`;
 
-    // ── Styles XML ────────────────────────────────────────────────────────
-    // s0=default, s1=header, s2=title, s3=price(locked,grey), s4=total-formula, s5=total-row
+    // ── Styles XML (valid OOXML — no nested <font> in <xf>) ──────────────
+    // fontId: 0=normal 1=title-blue-bold 2=subtitle-grey 3=header-bold-dark 4=price-grey 5=total-bold 6=normal9
+    // fillId: 0=none 1=gray125 2=header-blue 3=price-grey 4=total-green 5=total-blue
+    // borderId: 0=none 1=thin-blue 2=medium-top-bottom
+    // xfId (cellXfs): 0=default 1=title 2=subtitle 3=header 4=price-locked 5=total-formula 6=total-row 7=notes-label 8=notes-body
     const stylesXml=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts>
+  <fonts count="7">
     <font><sz val="10"/><name val="Arial"/></font>
-    <font><sz val="13"/><b/><color rgb="FF1D4ED8"/><name val="Arial"/></font>
+    <font><b/><sz val="13"/><color rgb="FF1D4ED8"/><name val="Arial"/></font>
     <font><sz val="9"/><color rgb="FF6B7280"/><name val="Arial"/></font>
-    <font><sz val="9"/><b/><color rgb="FF1E3A5F"/><name val="Arial"/></font>
+    <font><b/><sz val="9"/><color rgb="FF1E3A5F"/><name val="Arial"/></font>
     <font><sz val="9"/><color rgb="FF374151"/><name val="Arial"/></font>
-    <font><sz val="10"/><b/><color rgb="FF1E3A5F"/><name val="Arial"/></font>
+    <font><b/><sz val="10"/><color rgb="FF1E3A5F"/><name val="Arial"/></font>
     <font><sz val="9"/><name val="Arial"/></font>
   </fonts>
-  <fills>
+  <fills count="6">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFBFDBFE"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFF3F4F6"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFD1FAE5"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFDBEAFE"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFEFF6FF"/></patternFill></fill>
-    <fill><patternFill patternType="solid"><fgColor rgb="FFF8FAFF"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFBFDBFE"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF3F4F6"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFD1FAE5"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFDBEAFE"/><bgColor indexed="64"/></patternFill></fill>
   </fills>
-  <borders>
-    <border><left/><right/><top/><bottom/></border>
+  <borders count="3">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
     <border>
       <left style="thin"><color rgb="FF93C5FD"/></left>
       <right style="thin"><color rgb="FF93C5FD"/></right>
       <top style="thin"><color rgb="FF93C5FD"/></top>
       <bottom style="thin"><color rgb="FF93C5FD"/></bottom>
+      <diagonal/>
     </border>
     <border>
       <left style="thin"><color rgb="FFBFDBFE"/></left>
       <right style="thin"><color rgb="FFBFDBFE"/></right>
       <top style="thin"><color rgb="FFBFDBFE"/></top>
       <bottom style="thin"><color rgb="FFBFDBFE"/></bottom>
-    </border>
-    <border>
-      <top style="medium"><color rgb="FF000000"/></top>
-      <bottom style="medium"><color rgb="FF000000"/></bottom>
-    </border>
-    <border>
-      <left style="thick"><color rgb="FF2563EB"/></left>
-      <right style="thin"><color rgb="FFBFDBFE"/></right>
-      <top style="thin"><color rgb="FFBFDBFE"/></top>
-      <bottom style="thin"><color rgb="FFBFDBFE"/></bottom>
+      <diagonal/>
     </border>
   </borders>
-  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs>
-    <xf numFmtId="0"  fontId="0" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="0"  fontId="1" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="0"  fontId="3" fillId="2" borderId="1" xfId="0"><alignment horizontal="center"/></xf>
-    <xf numFmtId="4"  fontId="4" fillId="3" borderId="2" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
-    <xf numFmtId="4"  fontId="6" fillId="4" borderId="2" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
-    <xf numFmtId="4"  fontId="5" fillId="5" borderId="3" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
-    <xf numFmtId="0"  fontId="6" fillId="6" borderId="4" xfId="0"><font><b/><color rgb="FF1D4ED8"/></font></xf>
-    <xf numFmtId="0"  fontId="6" fillId="7" borderId="4" xfId="0"/>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
+  <cellXfs count="9">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0"><alignment horizontal="center"/></xf>
+    <xf numFmtId="4" fontId="4" fillId="3" borderId="2" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
+    <xf numFmtId="4" fontId="6" fillId="4" borderId="2" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
+    <xf numFmtId="4" fontId="5" fillId="5" borderId="2" xfId="0"><alignment horizontal="right"/><protection locked="1"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="6" fillId="0" borderId="0" xfId="0"><alignment wrapText="1" vertical="top"/></xf>
   </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 
     // ── Sheet XML ─────────────────────────────────────────────────────────
