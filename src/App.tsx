@@ -3097,17 +3097,17 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;backgr
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}.no-print{display:none!important}.page{page-break-after:always;break-after:page;}.page:last-child{page-break-after:avoid;}}
 .page{padding:8mm 12mm 10mm;position:relative;min-height:0;}
 .no-print{position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px;}
-.cover{background:linear-gradient(135deg,#0D1B2A 0%,#1D4ED8 60%,#7C3AED 100%);color:#fff;display:flex;flex-direction:column;justify-content:space-between;min-height:277mm;}
-.brand{font-size:11px;opacity:.5;letter-spacing:.1em;text-transform:uppercase;}
-.main-title{font-size:44px;font-weight:900;line-height:1;letter-spacing:-.02em;margin-top:8px;}
-.year-badge{font-size:18px;opacity:.8;margin-top:6px;font-weight:700;}
-.watermark{font-size:120px;font-weight:900;color:rgba(255,255,255,.05);position:absolute;right:8mm;top:40%;transform:translateY(-50%);letter-spacing:-.04em;}
-.cover-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:0;}
-.ck{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px 14px;}
-.ck-label{font-size:9px;opacity:.6;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
-.ck-val{font-size:22px;font-weight:900;}
-.ck-sub{font-size:9px;opacity:.55;margin-top:3px;}
-.cover-footer{font-size:9px;opacity:.45;display:flex;justify-content:space-between;}
+.cover{background:linear-gradient(135deg,#0D1B2A 0%,#1D4ED8 60%,#7C3AED 100%);color:#fff;display:flex;flex-direction:column;min-height:277mm;padding:12mm!important;}
+.brand{font-size:12px;opacity:.5;letter-spacing:.12em;text-transform:uppercase;}
+.main-title{font-size:72px;font-weight:900;line-height:.95;letter-spacing:-.03em;margin-top:12px;}
+.year-badge{font-size:22px;opacity:.85;margin-top:10px;font-weight:600;letter-spacing:.01em;}
+.watermark{font-size:200px;font-weight:900;color:rgba(255,255,255,.04);position:absolute;right:-10mm;bottom:60mm;letter-spacing:-.06em;line-height:1;}
+.cover-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:0;}
+.ck{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:20px 22px;}
+.ck-label{font-size:11px;opacity:.65;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;font-weight:600;}
+.ck-val{font-size:36px;font-weight:900;line-height:1;}
+.ck-sub{font-size:12px;opacity:.6;margin-top:6px;}
+.cover-footer{font-size:10px;opacity:.4;display:flex;justify-content:space-between;margin-top:auto;padding-top:10px;}
 .sh{border-bottom:3px solid #0D1B2A;padding-bottom:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end;}
 .sh-title{font-size:16px;font-weight:900;color:#0D1B2A;}
 .sh-sub{font-size:10px;color:#8FA0B3;margin-top:2px;}
@@ -3150,16 +3150,16 @@ tr:nth-child(even) td{background:#F8FAFC;}
 
 <!-- ══ PAGE 1: COVER ══ -->
 <div class="page cover">
+  <div class="watermark">${thisYear}</div>
   <div>
     <div class="brand">OrderTrack — ${isFR?"Rapport de Performance Annuelle":"Annual Performance Report"}</div>
-    <div style="margin-top:14px">
+    <div style="margin-top:18px">
       <div class="main-title">${isFR?"RAPPORT\nANNUEL":"YEARLY\nREPORT"}</div>
       <div class="year-badge">${periodLabel} · ${isFR?"Afrique de l'Ouest":"West Africa"}</div>
     </div>
   </div>
-  <div class="watermark">${thisYear}</div>
-  <div>
-    <div class="cover-kpi">
+  <div style="flex:1;display:flex;align-items:center;padding:30px 0 20px">
+    <div class="cover-kpi" style="width:100%">
       <div class="ck"><div class="ck-label">${isFR?"PO Reçus (YTD)":"PO Received (YTD)"}</div><div class="ck-val">${fmtK(ytdPO)} €</div><div class="ck-sub">${ytdOrders.length} ${isFR?"commande":"order"}${ytdOrders.length>1?"s":""}</div></div>
       <div class="ck"><div class="ck-label">${isFR?"Facturé (YTD)":"Invoiced (YTD)"}</div><div class="ck-val">${fmtK(ytdInv)} €</div><div class="ck-sub">${invRate.toFixed(1)}% ${isFR?"du PO":"of PO"}</div></div>
       <div class="ck"><div class="ck-label">${isFR?"Encaissé (YTD)":"Collected (YTD)"}</div><div class="ck-val">${fmtK(ytdPay)} €</div><div class="ck-sub">${collRate.toFixed(1)}% ${isFR?"des factures":"of invoiced"}</div></div>
