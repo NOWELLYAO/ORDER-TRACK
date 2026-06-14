@@ -3756,12 +3756,12 @@ tr:nth-child(even) td{background:#F8FAFC;}
   .total-row td{background:#0D1B2A!important;color:#fff!important;font-weight:700;}
 
   /* Activity */
-  .activity-row{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid #F1F5F9;}
-  .priority-badge{padding:3px 8px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
-  .status-icon{font-size:14px;flex-shrink:0;}
+  .activity-row{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #F1F5F9;}
+  .priority-badge{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
+  .status-icon{font-size:16px;flex-shrink:0;}
   .activity-content{flex:1;}
-  .activity-client{font-weight:700;font-size:11px;color:#0D1B2A;}
-  .activity-desc{font-size:10px;color:#4A5568;margin-top:1px;}
+  .activity-client{font-weight:700;font-size:13px;color:#0D1B2A;}
+  .activity-desc{font-size:12px;color:#4A5568;margin-top:2px;}
 
   /* Two column layout */
   .two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
@@ -3984,15 +3984,15 @@ tr:nth-child(even) td{background:#F8FAFC;}
       <div class="section-badge" style="background:#EDE9FE;color:#7C3AED">${weekLabel} · ${period}</div>
     </div>
   </div>
-  <div>
+  <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px">
     ${lastWeekItems.filter((item:any)=>item.client||item.action).length===0
-      ?'<div style="text-align:center;padding:40px;color:#8FA0B3">No activities entered for last week</div>'
+      ?'<div style="text-align:center;padding:60px;color:#8FA0B3;font-size:18px">No activities entered for last week</div>'
       :lastWeekItems.filter((item:any)=>item.client||item.action).map((item:any)=>`
-        <div class="activity-row">
-          <span class="status-icon">${item.status}</span>
-          <div class="activity-content">
-            ${item.client?`<div class="activity-client">${item.client}</div>`:""}
-            ${item.action?`<div class="activity-desc">${item.action}</div>`:""}
+        <div style="display:flex;align-items:flex-start;gap:16px;background:#F8F7FF;border-left:5px solid #7C3AED;border-radius:0 10px 10px 0;padding:14px 18px">
+          <span style="font-size:26px;flex-shrink:0;line-height:1">${item.status||"📋"}</span>
+          <div style="flex:1;min-width:0">
+            ${item.client?`<div style="font-weight:800;font-size:18px;color:#0D1B2A;letter-spacing:-.01em">${item.client}</div>`:""}
+            ${item.action?`<div style="font-size:15px;color:#4A5568;margin-top:4px;line-height:1.4">${item.action}</div>`:""}
           </div>
         </div>`).join("")
     }
@@ -4015,15 +4015,15 @@ tr:nth-child(even) td{background:#F8FAFC;}
       <div class="section-badge" style="background:#D1FAE5;color:#059669">${weekLabel} · ${period}</div>
     </div>
   </div>
-  <div>
+  <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px">
     ${thisWeekItems.filter((item:any)=>item.client||item.action).length===0
-      ?'<div style="text-align:center;padding:40px;color:#8FA0B3">No activities entered for this week</div>'
+      ?'<div style="text-align:center;padding:60px;color:#8FA0B3;font-size:18px">No activities entered for this week</div>'
       :thisWeekItems.filter((item:any)=>item.client||item.action).map((item:any)=>`
-        <div class="activity-row">
-          <span class="status-icon">${item.status}</span>
-          <div class="activity-content">
-            ${item.client?`<div class="activity-client">${item.client}</div>`:""}
-            ${item.action?`<div class="activity-desc">${item.action}</div>`:""}
+        <div style="display:flex;align-items:flex-start;gap:16px;background:#F0FDF4;border-left:5px solid #059669;border-radius:0 10px 10px 0;padding:14px 18px">
+          <span style="font-size:26px;flex-shrink:0;line-height:1">${item.status||"📋"}</span>
+          <div style="flex:1;min-width:0">
+            ${item.client?`<div style="font-weight:800;font-size:18px;color:#0D1B2A;letter-spacing:-.01em">${item.client}</div>`:""}
+            ${item.action?`<div style="font-size:15px;color:#4A5568;margin-top:4px;line-height:1.4">${item.action}</div>`:""}
           </div>
         </div>`).join("")
     }
