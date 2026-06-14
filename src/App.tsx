@@ -133,7 +133,7 @@ const T:Record<Lang,Record<string,string>>={
     // Compilation
     consol_view:"Vue consolidée · tous les clients · {n} comptes actifs",
     total_po_year:"Total PO {y}", invoiced_total:"Facturé", open_orders:"Open Orders",
-    open_label:"OPEN ORDERS", remain_to_invoice:"Remaining to invoice",
+    open_label:"OPEN ORDERS", remain_to_invoice:"${T2.remainInv}",
     ranking_po:"Classement PO par client", monthly_activity:"Activité mensuelle {y}",
     // Customer page
     order_management:"Gestion des commandes {y}",
@@ -1613,7 +1613,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
                 );
               })}
               <tr style={{background:"#FEE2E2",borderTop:`2px solid ${C.red}30`}}>
-                <td colSpan={8} style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:C.redDk,fontSize:13}}>TOTAL OVERDUE À RECOUVRER</td>
+                <td colSpan={8} style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:C.redDk,fontSize:13}}>${T2.totalOverdue} À RECOUVRER</td>
                 <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,color:C.redDk,fontSize:14}}>{fmt(echuesAmt)} €</td>
               </tr>
             </tbody>
@@ -2970,10 +2970,13 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const MONTH_NAMES=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
   // ── Print function ─────────────────────────────────────────────────────────
-  const printMonthlyReport=()=>{
+  const printMonthlyReport=(reportLang:"en"|"fr"="en")=>{
+    const isFR=reportLang==="fr";
     const w=window.open("","_blank","width=1200,height=900");
     if(!w)return;
-    const MN=["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const MN_EN=["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const MN_FR=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+    const MN=isFR?MN_FR:MN_EN;
     const monthName=MN[thisMonth];
     const prevMonthName=MN[prevMonth];
 
@@ -3028,7 +3031,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 
     w.document.write(`<!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8">
-<title>Monthly Report — ${monthName} ${thisYear}</title>
+<title>${isFR?"Rapport Mensuel":"Monthly Report"} — ${monthName} ${thisYear}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;background:#fff;}
@@ -3104,33 +3107,33 @@ tr:nth-child(even) td{background:#F8FAFC;}
 </head><body>
 
 <div class="no-print">
-  <button onclick="window.print()" style="background:#0D9488;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
-  <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial">✕ Close</button>
+  <button onclick="window.print()" style="background:#0D9488;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,.3)">${isFR?"🖨️ Imprimer / PDF":"🖨️ Print / PDF"}</button>
+  <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial">${isFR?"✕ Fermer":"✕ Close"}</button>
 </div>
 
 <!-- ══ PAGE 1: COVER ══ -->
 <div class="page cover">
   <div>
-    <div class="brand">OrderTrack — Monthly Performance Report</div>
+    <div class="brand">${isFR?"OrderTrack — Rapport de Performance Mensuelle":"OrderTrack — Monthly Performance Report"}</div>
     <div style="margin-top:14px">
-      <div class="main-title">MONTHLY<br>REPORT</div>
-      <div class="month-badge">${monthName} ${thisYear} · West Africa</div>
+      <div class="main-title">${isFR?"RAPPORT<br>MENSUEL":"MONTHLY<br>REPORT"}</div>
+      <div class="month-badge">${monthName} ${thisYear} · ${isFR?"Afrique de l'Ouest":"West Africa"}</div>
     </div>
   </div>
   <div class="watermark">${monthName.slice(0,3).toUpperCase()}</div>
   <div>
     <div class="cover-kpi">
-      <div class="ck"><div class="ck-label">PO Received (${monthName})</div><div class="ck-val">${fmtK(poThisMonthAmt)} €</div><div class="ck-sub">${poThisMonth.length} order${poThisMonth.length>1?"s":""}</div></div>
-      <div class="ck"><div class="ck-label">Invoiced (${monthName})</div><div class="ck-val">${fmtK(invThisMonthAmt)} €</div><div class="ck-sub">${invThisMonth.length} invoice${invThisMonth.length>1?"s":""}</div></div>
-      <div class="ck"><div class="ck-label">Collected (${monthName})</div><div class="ck-val">${fmtK(payThisMonthAmt)} €</div><div class="ck-sub">${payThisMonth.length} payment${payThisMonth.length>1?"s":""}</div></div>
-      <div class="ck"><div class="ck-label">YTD Orders</div><div class="ck-val">${fmtK(ytdPO)} €</div><div class="ck-sub">Since Jan 1st</div></div>
-      <div class="ck"><div class="ck-label">YTD Invoiced</div><div class="ck-val">${fmtK(ytdInv)} €</div><div class="ck-sub">${invRate.toFixed(1)}% of PO</div></div>
-      <div class="ck"><div class="ck-label">Open Orders</div><div class="ck-val">${fmtK(openOrders)} €</div><div class="ck-sub">Remaining to invoice</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"PO Reçus":"PO Received"} (${monthName})</div><div class="ck-val">${fmtK(poThisMonthAmt)} €</div><div class="ck-sub">${poThisMonth.length} ${isFR?"commande":"order"}${poThisMonth.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Facturé":"Invoiced"} (${monthName})</div><div class="ck-val">${fmtK(invThisMonthAmt)} €</div><div class="ck-sub">${invThisMonth.length} ${isFR?"facture":"invoice"}${invThisMonth.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Encaissé":"Collected"} (${monthName})</div><div class="ck-val">${fmtK(payThisMonthAmt)} €</div><div class="ck-sub">${payThisMonth.length} ${isFR?"paiement":"payment"}${payThisMonth.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Commandes (YTD)":"YTD Orders"}</div><div class="ck-val">${fmtK(ytdPO)} €</div><div class="ck-sub">${isFR?"Depuis le 1er janvier":"Since Jan 1st"}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Facturé (YTD)":"YTD Invoiced"}</div><div class="ck-val">${fmtK(ytdInv)} €</div><div class="ck-sub">${invRate.toFixed(1)}% ${isFR?"du PO":"of PO"}</div></div>
+      <div class="ck"><div class="ck-label">Open Orders</div><div class="ck-val">${fmtK(openOrders)} €</div><div class="ck-sub">${isFR?"Reste à facturer":"Remaining to invoice"}</div></div>
     </div>
   </div>
   <div class="cover-footer">
-    <span>CONFIDENTIAL — Internal use only</span>
-    <span>Generated on ${genDate}</span>
+    <span>${isFR?"CONFIDENTIEL — Usage interne":"CONFIDENTIAL — Internal use only"}</span>
+    <span>${isFR?"Généré le":"Generated on"} ${genDate}</span>
   </div>
   <div class="footer"><span></span></div>
 </div>
@@ -3138,7 +3141,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
 <!-- ══ PAGE 2: KPI & ANALYSIS ══ -->
 <div class="page">
   <div class="sh">
-    <div><div class="sh-title">📊 Performance Overview — ${monthName} ${thisYear}</div><div class="sh-sub">Key indicators and comparative analysis</div></div>
+    <div><div class="sh-title">${isFR?"📊 Vue d'ensemble — ":"📊 Performance Overview — "}${monthName} ${thisYear}</div><div class="sh-sub">${isFR?"Indicateurs clés et analyse comparative":"Key indicators and comparative analysis"}</div></div>
     <span class="sh-badge" style="background:#CCFBF1;color:#0D9488">${monthName} ${thisYear}</span>
   </div>
 
@@ -3170,16 +3173,16 @@ tr:nth-child(even) td{background:#F8FAFC;}
   <!-- YTD rates -->
   <div class="gauge-row">
     <div class="gauge">
-      <div class="gauge-label">📈 YTD Invoicing Rate</div>
+      <div class="gauge-label">${isFR?"📈 Taux de Facturation (YTD)":"📈 YTD Invoicing Rate"}</div>
       <div class="gauge-val" style="color:${invRate>=80?"#059669":invRate>=50?"#D97706":"#DC2626"}">${invRate.toFixed(1)}%</div>
       <div class="bar"><div class="bar-fill" style="width:${Math.min(100,invRate)}%;background:${invRate>=80?"#059669":invRate>=50?"#D97706":"#DC2626"}"></div></div>
-      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">${fmtK(ytdInv)} € invoiced out of ${fmtK(ytdPO)} € ordered</div>
+      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">${isFR?fmtK(ytdInv)+" € facturés sur "+fmtK(ytdPO)+" € commandés":fmtK(ytdInv)+" € invoiced out of "+fmtK(ytdPO)+" € ordered"}</div>
     </div>
     <div class="gauge">
-      <div class="gauge-label">💰 YTD Collection Rate</div>
+      <div class="gauge-label">${isFR?"💰 Taux d'Encaissement (YTD)":"💰 YTD Collection Rate"}</div>
       <div class="gauge-val" style="color:${collRate>=80?"#059669":collRate>=50?"#D97706":"#DC2626"}">${collRate.toFixed(1)}%</div>
       <div class="bar"><div class="bar-fill" style="width:${Math.min(100,collRate)}%;background:${collRate>=80?"#059669":collRate>=50?"#D97706":"#DC2626"}"></div></div>
-      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">${fmtK(ytdPay)} € collected out of ${fmtK(ytdInv)} € invoiced</div>
+      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">${isFR?fmtK(ytdPay)+" € encaissés sur "+fmtK(ytdInv)+" € facturés":fmtK(ytdPay)+" € collected out of "+fmtK(ytdInv)+" € invoiced"}</div>
     </div>
     <div class="gauge">
       <div class="gauge-label">📦 Open Orders</div>
@@ -3190,28 +3193,28 @@ tr:nth-child(even) td{background:#F8FAFC;}
   </div>
 
   <!-- Analysis -->
-  ${overdueAmt>0?`<div class="alert-box"><div class="alert-title">⚠ Alert — Overdue Invoices</div>${overdueInv.slice(0,3).map((i:any)=>{const ps=payStatus(i);const days=i.dueDate?Math.abs(diffD(i.dueDate)):0;return`<div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span><b>${i._client}</b> — ${i.invoiceNumber||i._po||"—"} · ${fmt(ps.rem)} € overdue by ${days} day${days>1?"s":""}</span></div>`;}).join("")}${overdueInv.length>3?`<div style="font-size:9px;color:#DC2626;margin-top:4px">+ ${overdueInv.length-3} more overdue invoice${overdueInv.length-3>1?"s":""} · Total: ${fmt(overdueAmt)} €</div>`:""}</div>`:""}
+  ${overdueAmt>0?`<div class="alert-box"><div class="alert-title">${isFR?"⚠ Alerte — Factures Échues":"⚠ Alert — Overdue Invoices"}</div>${overdueInv.slice(0,3).map((i:any)=>{const ps=payStatus(i);const days=i.dueDate?Math.abs(diffD(i.dueDate)):0;return`<div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span><b>${i._client}</b> — ${i.invoiceNumber||i._po||"—"} · ${fmt(ps.rem)} € ${isFR?"en retard de "+days+" jour"+(days>1?"s":""):"overdue by "+days+" day"+(days>1?"s":"")}</span></div>`;}).join("")}${overdueInv.length>3?`<div style="font-size:9px;color:#DC2626;margin-top:4px">${isFR?"+ "+(overdueInv.length-3)+" autre"+(overdueInv.length-3>1?"s":"")+" facture échue · Total : "+fmt(overdueAmt)+" €":"+ "+(overdueInv.length-3)+" more overdue invoice"+(overdueInv.length-3>1?"s":"")+" · Total: "+fmt(overdueAmt)+" €"}</div>`:""}</div>`:""}
 
-  ${invRate>=80?`<div class="analysis"><div class="analysis-title">✅ Strong Invoicing Performance</div><div class="analysis-item"><div class="dot"></div><span>YTD invoicing rate of ${invRate.toFixed(1)}% is excellent — above the 80% target.</span></div><div class="analysis-item"><div class="dot"></div><span>Month-on-month invoiced: ${fmtK(invThisMonthAmt)} € (${invLastMonth>0?(((invThisMonthAmt-invLastMonth)/invLastMonth)*100).toFixed(0):"—"}% vs ${prevMonthName}).</span></div></div>`:invRate>=50?`<div class="warn-box"><div class="warn-title">⚡ Invoicing Needs Attention</div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>YTD invoicing rate of ${invRate.toFixed(1)}% is below the 80% target. ${fmtK(ytdPO-ytdInv)} € still to invoice.</span></div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>Open orders: ${fmtK(openOrders)} € — acceleration recommended.</span></div></div>`:`<div class="alert-box"><div class="alert-title">🔴 Low Invoicing Rate</div><div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span>Only ${invRate.toFixed(1)}% of orders invoiced YTD — significant catch-up needed.</span></div></div>`}
+  ${invRate>=80?`<div class="analysis"><div class="analysis-title">${isFR?"✅ Excellente Performance de Facturation":"✅ Strong Invoicing Performance"}</div><div class="analysis-item"><div class="dot"></div><span>${isFR?"Taux de facturation YTD de "+invRate.toFixed(1)+"% — excellent, au-dessus de la cible de 80%.":"YTD invoicing rate of "+invRate.toFixed(1)+"% is excellent — above the 80% target."}</span></div><div class="analysis-item"><div class="dot"></div><span>${isFR?"Facturé ce mois : "+fmtK(invThisMonthAmt)+" €.":"Month-on-month invoiced: "+fmtK(invThisMonthAmt)+" €."}</span></div></div>`:invRate>=50?`<div class="warn-box"><div class="warn-title">${isFR?"⚡ Facturation à Améliorer":"⚡ Invoicing Needs Attention"}</div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>${isFR?"Taux YTD de "+invRate.toFixed(1)+"% en dessous de 80%. "+fmtK(ytdPO-ytdInv)+" € restants à facturer.":"YTD invoicing rate of "+invRate.toFixed(1)+"% is below the 80% target. "+fmtK(ytdPO-ytdInv)+" € still to invoice."}</span></div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>${isFR?"Open orders : "+fmtK(openOrders)+" € — accélération recommandée.":"Open orders: "+fmtK(openOrders)+" € — acceleration recommended."}</span></div></div>`:`<div class="alert-box"><div class="alert-title">${isFR?"🔴 Taux de Facturation Faible":"🔴 Low Invoicing Rate"}</div><div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span>${isFR?"Seulement "+invRate.toFixed(1)+"% des commandes facturées (YTD).":"Only "+invRate.toFixed(1)+"% of orders invoiced YTD — significant catch-up needed."}</span></div></div>`}
 
-  ${upcomingAmt>0?`<div class="analysis"><div class="analysis-title">🔔 Upcoming Collections (next 30 days)</div>${upcomingInv.slice(0,4).map((i:any)=>{const ps=payStatus(i);return`<div class="analysis-item"><div class="dot"></div><span><b>${i._client}</b> — ${i.invoiceNumber||"—"} · ${fmt(ps.rem)} € due ${fmtD(i.dueDate)}</span></div>`;}).join("")}<div style="font-size:9px;color:#0D9488;margin-top:4px;font-weight:600">Total upcoming: ${fmt(upcomingAmt)} €</div></div>`:""}
+  ${upcomingAmt>0?`<div class="analysis"><div class="analysis-title">${isFR?"🔔 Encaissements à Venir (30 prochains jours)":"🔔 Upcoming Collections (next 30 days)"}</div>${upcomingInv.slice(0,4).map((i:any)=>{const ps=payStatus(i);return`<div class="analysis-item"><div class="dot"></div><span><b>${i._client}</b> — ${i.invoiceNumber||"—"} · ${fmt(ps.rem)} € due ${fmtD(i.dueDate)}</span></div>`;}).join("")}<div style="font-size:9px;color:#0D9488;margin-top:4px;font-weight:600">${isFR?"Total à encaisser : "+fmt(upcomingAmt)+" €":"Total upcoming: "+fmt(upcomingAmt)+" €"}</div></div>`:""}
 
-  <div class="footer"><span>Performance Overview — ${monthName} ${thisYear}</span><span>1 / 3</span></div>
+  <div class="footer"><span>${isFR?"Performance — ":"Performance Overview — "}${monthName} ${thisYear}</span><span>1 / 3</span></div>
 </div>
 
 <!-- ══ PAGE 3: PO & INVOICES ══ -->
 <div class="page">
   <div class="sh">
-    <div><div class="sh-title">📦 Orders & Invoices — ${monthName} ${thisYear}</div><div class="sh-sub">Purchase orders received and invoices issued this month</div></div>
+    <div><div class="sh-title">${isFR?"📦 Commandes & Factures — ":"📦 Orders & Invoices — "}${monthName} ${thisYear}</div><div class="sh-sub">${isFR?"Commandes reçues et factures émises ce mois":"Purchase orders received and invoices issued this month"}</div></div>
     <span class="sh-badge" style="background:#DBEAFE;color:#1D4ED8">${monthName} ${thisYear}</span>
   </div>
   <div class="two-col">
     <div>
       <div class="col-title">📦 PO Received — ${monthName}</div>
       <table>
-        <thead><tr><th>Customer</th><th>S/O #</th><th>Date</th><th style="text-align:right">Amount</th></tr></thead>
+        <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° S/O":"S/O #"}</th><th>Date</th><th style="text-align:right">${isFR?"Montant":"Amount"}</th></tr></thead>
         <tbody>
-          ${poThisMonth.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No orders received this month</td></tr>':
+          ${poThisMonth.length===0?`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">${isFR?"Aucune commande reçue ce mois":"No orders received this month"}</td></tr>`:
             (()=>{
               const sorted=[...poThisMonth].sort((a:any,b:any)=>(a.date||"").localeCompare(b.date||""));
               const byC:Record<string,any[]>={};
@@ -3232,9 +3235,9 @@ tr:nth-child(even) td{background:#F8FAFC;}
     <div>
       <div class="col-title">🧾 Invoices Issued — ${monthName}</div>
       <table>
-        <thead><tr><th>Customer</th><th>Invoice #</th><th>Due date</th><th style="text-align:right">Amount</th></tr></thead>
+        <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° Facture":"Invoice #"}</th><th>${isFR?"Échéance":"Due date"}</th><th style="text-align:right">${isFR?"Montant":"Amount"}</th></tr></thead>
         <tbody>
-          ${invThisMonth.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No invoices issued this month</td></tr>':
+          ${invThisMonth.length===0?`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">${isFR?"Aucune facture émise ce mois":"No invoices issued this month"}</td></tr>`:
             (()=>{
               const sorted=[...invThisMonth].sort((a:any,b:any)=>(a.date||"").localeCompare(b.date||""));
               const byC2:Record<string,any[]>={};
@@ -3253,22 +3256,22 @@ tr:nth-child(even) td{background:#F8FAFC;}
       </table>
     </div>
   </div>
-  <div class="footer"><span>Orders & Invoices — ${monthName} ${thisYear}</span><span>2 / 3</span></div>
+  <div class="footer"><span>${isFR?"Commandes & Factures — ":"Orders & Invoices — "}${monthName} ${thisYear}</span><span>2 / 3</span></div>
 </div>
 
 <!-- ══ PAGE 4: COLLECTIONS & OUTSTANDING ══ -->
 <div class="page">
   <div class="sh">
-    <div><div class="sh-title">💰 Collections & Outstanding — ${monthName} ${thisYear}</div><div class="sh-sub">Payments received and outstanding balances</div></div>
+    <div><div class="sh-title">${isFR?"💰 Encaissements & Impayés — ":"💰 Collections & Outstanding — "}${monthName} ${thisYear}</div><div class="sh-sub">${isFR?"Paiements reçus et soldes impayés":"Payments received and outstanding balances"}</div></div>
     <span class="sh-badge" style="background:#D1FAE5;color:#065F46">${monthName} ${thisYear}</span>
   </div>
   <div class="two-col">
     <div>
       <div class="col-title">✅ Payments Received — ${monthName}</div>
       <table>
-        <thead><tr><th>Customer</th><th>Invoice #</th><th>Date</th><th style="text-align:right">Amount</th></tr></thead>
+        <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° Facture":"Invoice #"}</th><th>Date</th><th style="text-align:right">${isFR?"Montant":"Amount"}</th></tr></thead>
         <tbody>
-          ${payThisMonth.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No payments received this month</td></tr>':
+          ${payThisMonth.length===0?`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">${isFR?"Aucun paiement reçu ce mois":"No payments received this month"}</td></tr>`:
             (()=>{
               const sorted=[...payThisMonth].sort((a:any,b:any)=>(a.date||"").localeCompare(b.date||""));
               const byC3:Record<string,any[]>={};
@@ -3279,7 +3282,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
                 r3+=`<tr class="section-label"><td colspan="3">📁 ${c}</td><td style="text-align:right">${fmtK(cTot)} €</td></tr>`;
                 byC3[c].forEach((p:any)=>{ r3+=`<tr><td style="padding-left:12px;font-size:9px;color:#4A5568">${p._inv||"—"}</td><td style="font-size:9px;color:#6B7280">${p.reference||p.method||"—"}</td><td style="color:#8FA0B3">${fmtD(p.date)}</td><td style="text-align:right;font-weight:600;color:#059669">${fmtK(+p.amount||0)} €</td></tr>`; });
               });
-              r3+=`<tr class="total-row"><td colspan="3">TOTAL COLLECTED</td><td style="text-align:right">${fmtK(payThisMonthAmt)} €</td></tr>`;
+              r3+=`<tr class="total-row"><td colspan="3">${isFR?"TOTAL ENCAISSÉ":"TOTAL COLLECTED"}</td><td style="text-align:right">${fmtK(payThisMonthAmt)} €</td></tr>`;
               return r3;
             })()
           }
@@ -3287,11 +3290,11 @@ tr:nth-child(even) td{background:#F8FAFC;}
       </table>
     </div>
     <div>
-      <div class="col-title">⚠ Outstanding — Overdue Invoices</div>
+      <div class="col-title">${isFR?"⚠ Factures Échues":"⚠ Outstanding — Overdue Invoices"}</div>
       <table>
-        <thead><tr><th>Customer</th><th>Invoice #</th><th>Overdue</th><th style="text-align:right">Balance</th></tr></thead>
+        <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° Facture":"Invoice #"}</th><th>${isFR?"Retard":"Overdue"}</th><th style="text-align:right">${isFR?"Solde":"Balance"}</th></tr></thead>
         <tbody>
-          ${overdueInv.length===0?'<tr><td colspan="4" style="text-align:center;color:#059669;padding:12px">✓ No overdue invoices</td></tr>':
+          ${overdueInv.length===0?`<tr><td colspan="4" style="text-align:center;color:#059669;padding:12px">${isFR?"✓ Aucune facture échue":"✓ No overdue invoices"}</td></tr>`:
             (()=>{
               const sorted=[...overdueInv].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||""));
               let r4=sorted.map((i:any)=>{
@@ -3300,18 +3303,18 @@ tr:nth-child(even) td{background:#F8FAFC;}
                 const urg=days>90?"#B91C1C":days>30?"#DC2626":"#EF4444";
                 return`<tr class="${days>30?"alert-row":""}"><td style="font-weight:700">${i._client}</td><td style="font-size:9px">${i.invoiceNumber||"—"}</td><td style="text-align:center"><span style="background:${urg};color:#fff;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700">${days}d</span></td><td style="text-align:right;font-weight:700;color:${urg}">${fmtK(ps.rem)} €</td></tr>`;
               }).join("");
-              r4+=`<tr class="total-row"><td colspan="3">TOTAL OVERDUE</td><td style="text-align:right;color:#FCA5A5">${fmtK(overdueAmt)} €</td></tr>`;
+              r4+=`<tr class="total-row"><td colspan="3">${isFR?"TOTAL ÉCHU":"TOTAL OVERDUE"}</td><td style="text-align:right;color:#FCA5A5">${fmtK(overdueAmt)} €</td></tr>`;
               return r4;
             })()
           }
         </tbody>
       </table>
 
-      <div class="col-title" style="margin-top:8px">🔔 Upcoming Due (next 30 days)</div>
+      <div class="col-title" style="margin-top:8px">${isFR?"🔔 Échéances à Venir (30 jours)":"🔔 Upcoming Due (next 30 days)"}</div>
       <table>
-        <thead><tr><th>Customer</th><th>Invoice #</th><th>Due date</th><th style="text-align:right">Balance</th></tr></thead>
+        <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° Facture":"Invoice #"}</th><th>${isFR?"Échéance":"Due date"}</th><th style="text-align:right">${isFR?"Solde":"Balance"}</th></tr></thead>
         <tbody>
-          ${upcomingInv.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No upcoming due dates</td></tr>':
+          ${upcomingInv.length===0?`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">${isFR?"Aucune échéance à venir":"No upcoming due dates"}</td></tr>`:
             (()=>{
               const sorted=[...upcomingInv].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||""));
               let r5=sorted.slice(0,6).map((i:any)=>{
@@ -3319,8 +3322,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
                 const days=diffD(i.dueDate||"");
                 return`<tr><td style="font-weight:600">${i._client}</td><td style="font-size:9px">${i.invoiceNumber||"—"}</td><td style="color:#0369A1;font-weight:600">${fmtD(i.dueDate)} <span style="font-size:9px;color:#8FA0B3">(${days}d)</span></td><td style="text-align:right;font-weight:600;color:#0369A1">${fmtK(ps.rem)} €</td></tr>`;
               }).join("");
-              if(upcomingInv.length>6) r5+=`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;font-size:9px">+ ${upcomingInv.length-6} more — Total: ${fmt(upcomingAmt)} €</td></tr>`;
-              r5+=`<tr class="total-row"><td colspan="3">TOTAL UPCOMING</td><td style="text-align:right">${fmtK(upcomingAmt)} €</td></tr>`;
+              if(upcomingInv.length>6) r5+=`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;font-size:9px">${isFR?"+ "+(upcomingInv.length-6)+" autres · Total : "+fmt(upcomingAmt)+" €":"+ "+(upcomingInv.length-6)+" more — Total: "+fmt(upcomingAmt)+" €"}</td></tr>`;
+              r5+=`<tr class="total-row"><td colspan="3">${isFR?"TOTAL À VENIR":"TOTAL UPCOMING"}</td><td style="text-align:right">${fmtK(upcomingAmt)} €</td></tr>`;
               return r5;
             })()
           }
@@ -3330,9 +3333,9 @@ tr:nth-child(even) td{background:#F8FAFC;}
   </div>
 
   <!-- Summary by client -->
-  <div class="col-title">📊 Monthly Summary by Customer</div>
+  <div class="col-title">${isFR?"📊 Récapitulatif par Client":"📊 Monthly Summary by Customer"}</div>
   <table>
-    <thead><tr><th>Customer</th><th style="text-align:right">PO Received</th><th style="text-align:right">Invoiced</th><th style="text-align:right">Collected</th><th style="text-align:right">Open Orders</th><th style="text-align:right">Inv. Rate</th></tr></thead>
+    <thead><tr><th>${isFR?"Client":"Customer"}</th><th style="text-align:right">${isFR?"PO Reçus":"PO Received"}</th><th style="text-align:right">${isFR?"Facturé":"Invoiced"}</th><th style="text-align:right">${isFR?"Encaissé":"Collected"}</th><th style="text-align:right">Open Orders</th><th style="text-align:right">${isFR?"Tx Fact.":"Inv. Rate"}</th></tr></thead>
     <tbody>
       ${(()=>{
         const clients2=Array.from(new Set([...Object.keys(byClientPO),...Object.keys(byClientInv),...Object.keys(byClientPay)])).sort();
@@ -3348,7 +3351,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
       })()}
     </tbody>
   </table>
-  <div class="footer"><span>Collections & Outstanding — ${monthName} ${thisYear}</span><span>3 / 3</span></div>
+  <div class="footer"><span>${isFR?"Encaissements & Impayés — ":"Collections & Outstanding — "}${monthName} ${thisYear}</span><span>3 / 3</span></div>
 </div>
 
 </body></html>`);
@@ -3477,7 +3480,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
     <div class="kpi" style="border-left:4px solid #2563EB">
       <div class="kpi-label">Orders Received (${periodLabel})</div>
       <div class="kpi-val" style="color:#2563EB">${fmtK(recentOrdersAmt)} €</div>
-      <div class="kpi-sub">${recentOrders.length} order${recentOrders.length>1?"s":""} in the last ${periodLabel}</div>
+      <div class="kpi-sub">${recentOrders.length} ${T2.orders}${recentOrders.length>1?"s":""} in the last ${periodLabel}</div>
     </div>
     <div class="kpi" style="border-left:4px solid #D97706">
       <div class="kpi-label">Expected Orders</div>
@@ -4006,10 +4009,15 @@ tr:nth-child(even) td{background:#F8FAFC;}
           <i className="ti ti-printer" style={{fontSize:18}} aria-hidden="true"/>
           Générer & Imprimer le rapport PDF (5 pages)
         </button>
-        <button onClick={printMonthlyReport}
+        <button onClick={()=>printMonthlyReport("en")}
           style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#0D9488,#0369A1)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(13,148,136,.4)"}}>
           <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
-          Mois en cours — Rapport détaillé
+          Monthly Report (EN)
+        </button>
+        <button onClick={()=>printMonthlyReport("fr")}
+          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#7C3AED,#0D9488)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(124,58,237,.4)"}}>
+          <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
+          Rapport mensuel (FR)
         </button>
       </div>
     </div>
