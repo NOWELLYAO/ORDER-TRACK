@@ -4919,7 +4919,7 @@ function CataloguePage({clients,lang,isMobile}:any){
 
   const openDropdown=(e:any,type:"pn"|"desc",idx:number,items:any[])=>{
     if(!items.length){closeDropdown();return;}
-    const rect=e.target.getBoundingCustomerRect();
+    const rect=e.target.getBoundingClientRect();
     setDropdownPos({top:rect.bottom+4,left:rect.left,width:Math.max(rect.width,280)});
     setDropdownType(type);setDropdownLineIdx(idx);setDropdownItems(items);
   };
