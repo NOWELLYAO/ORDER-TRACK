@@ -2970,6 +2970,391 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const MONTH_NAMES=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
   // ── Print function ─────────────────────────────────────────────────────────
+  const printMonthlyReport=()=>{
+    const w=window.open("","_blank","width=1200,height=900");
+    if(!w)return;
+    const MN=["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const monthName=MN[thisMonth];
+    const prevMonthName=MN[prevMonth];
+
+    // ── Data ────────────────────────────────────────────────────────────────
+    // PO received this month
+    const poThisMonth=allOrders.filter((o:any)=>{ const d=o.date?new Date(o.date+"T00:00:00"):null; return d&&d.getMonth()===thisMonth&&d.getFullYear()===thisYear; });
+    const poThisMonthAmt=poThisMonth.reduce((s:number,o:any)=>s+(+o.amount||0),0);
+
+    // Invoices this month
+    const invThisMonth=allInvoices.filter((i:any)=>{ const d=i.date?new Date(i.date+"T00:00:00"):null; return d&&d.getMonth()===thisMonth&&d.getFullYear()===thisYear; });
+    const invThisMonthAmt=invThisMonth.reduce((s:number,i:any)=>s+(+i.amount||0),0);
+
+    // Payments received this month
+    const allPayments=allOrders.flatMap((o:any)=>(o.invoices||[]).flatMap((i:any)=>(i.payments||[]).map((p:any)=>({...p,_client:o._client,_po:o.poNumber,_inv:i.invoiceNumber}))));
+    const payThisMonth=allPayments.filter((p:any)=>{ const d=p.date?new Date(p.date+"T00:00:00"):null; return d&&d.getMonth()===thisMonth&&d.getFullYear()===thisYear; });
+    const payThisMonthAmt=payThisMonth.reduce((s:number,p:any)=>s+(+p.amount||0),0);
+
+    // Overdue invoices
+    const overdueInv=allInvoices.filter((i:any)=>{ const ps=payStatus(i); return["overdue","ov_part"].includes(ps.key); });
+    const overdueAmt=overdueInv.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+
+    // Upcoming (next 30 days)
+    const upcomingInv=allInvoices.filter((i:any)=>{ const ps=payStatus(i); return["today","soon","soon_part"].includes(ps.key); });
+    const upcomingAmt=upcomingInv.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+
+    // YTD
+    const ytdPO=allOrders.filter((o:any)=>{ const d=o.date?new Date(o.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; }).reduce((s:number,o:any)=>s+(+o.amount||0),0);
+    const ytdInv=allInvoices.filter((i:any)=>{ const d=i.date?new Date(i.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; }).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+    const ytdPay=allPayments.filter((p:any)=>{ const d=p.date?new Date(p.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; }).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+
+    // Invoicing rate
+    const invRate=ytdPO>0?(ytdInv/ytdPO*100):0;
+    const collRate=ytdInv>0?(ytdPay/ytdInv*100):0;
+    const monthInvRate=poThisMonthAmt>0?(invThisMonthAmt/poThisMonthAmt*100):0;
+
+    // By client this month
+    const byClientPO:Record<string,number>={};
+    poThisMonth.forEach((o:any)=>{ byClientPO[o._client]=(byClientPO[o._client]||0)+(+o.amount||0); });
+    const byClientInv:Record<string,number>={};
+    invThisMonth.forEach((i:any)=>{ byClientInv[i._client]=(byClientInv[i._client]||0)+(+i.amount||0); });
+    const byClientPay:Record<string,number>={};
+    payThisMonth.forEach((p:any)=>{ byClientPay[p._client]=(byClientPay[p._client]||0)+(+p.amount||0); });
+
+    // Prev month comparison
+    const poLastMonth=allOrders.filter((o:any)=>{ const d=o.date?new Date(o.date+"T00:00:00"):null; return d&&d.getMonth()===prevMonth&&d.getFullYear()===prevMonthYear; }).reduce((s:number,o:any)=>s+(+o.amount||0),0);
+    const invLastMonth=invoicedPrevMonth;
+    const payLastMonth=allPayments.filter((p:any)=>{ const d=p.date?new Date(p.date+"T00:00:00"):null; return d&&d.getMonth()===prevMonth&&d.getFullYear()===prevMonthYear; }).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+
+    const arrow=(curr:number,prev:number)=>{ if(!prev)return""; const pct=((curr-prev)/prev*100); const up=pct>=0; return `<span style="font-size:10px;font-weight:700;color:${up?"#059669":"#DC2626"};margin-left:6px">${up?"▲":"▼"} ${Math.abs(pct).toFixed(0)}% vs ${prevMonthName}</span>`; };
+
+    const genDate=today.toLocaleDateString("en-GB",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+
+    w.document.write(`<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<title>Monthly Report — ${monthName} ${thisYear}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;background:#fff;}
+@page{size:A4 portrait;margin:10mm 12mm;}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .no-print{display:none!important} .page{page-break-after:always;break-after:page;} .page:last-child{page-break-after:avoid;}}
+.page{padding:10mm 12mm 14mm;position:relative;min-height:277mm;}
+.no-print{position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px;}
+
+/* Cover */
+.cover{background:linear-gradient(135deg,#0D1B2A 0%,#0D9488 60%,#0369A1 100%);color:#fff;display:flex;flex-direction:column;justify-content:space-between;}
+.brand{font-size:11px;opacity:.5;letter-spacing:.1em;text-transform:uppercase;}
+.main-title{font-size:38px;font-weight:900;line-height:1;letter-spacing:-.02em;margin-top:8px;}
+.month-badge{font-size:14px;opacity:.75;margin-top:6px;}
+.watermark{font-size:80px;font-weight:900;color:rgba(255,255,255,.06);position:absolute;right:10mm;top:50%;transform:translateY(-50%);letter-spacing:-.04em;}
+.cover-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:0;}
+.ck{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px 14px;}
+.ck-label{font-size:9px;opacity:.6;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
+.ck-val{font-size:20px;font-weight:900;}
+.ck-sub{font-size:9px;opacity:.55;margin-top:3px;}
+.cover-footer{font-size:9px;opacity:.45;display:flex;justify-content:space-between;}
+
+/* Section header */
+.sh{border-bottom:3px solid #0D1B2A;padding-bottom:8px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-end;}
+.sh-title{font-size:18px;font-weight:900;color:#0D1B2A;}
+.sh-sub{font-size:11px;color:#8FA0B3;margin-top:2px;}
+.sh-badge{font-size:10px;font-weight:600;padding:3px 10px;border-radius:4px;}
+
+/* KPI grid */
+.kpi-grid{display:grid;gap:10px;margin-bottom:16px;}
+.kpi-3{grid-template-columns:repeat(3,1fr);}
+.kpi-4{grid-template-columns:repeat(4,1fr);}
+.kpi{border-radius:10px;padding:12px 14px;border:1px solid #E5EAF0;}
+.kpi-label{font-size:9px;color:#8FA0B3;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
+.kpi-val{font-size:20px;font-weight:900;line-height:1;}
+.kpi-sub{font-size:9px;color:#8FA0B3;margin-top:4px;}
+.kpi-bar{height:4px;border-radius:99px;background:#E5EAF0;margin-top:8px;overflow:hidden;}
+.kpi-bar-fill{height:100%;border-radius:99px;}
+
+/* Progress ring placeholder — use simple bar */
+.gauge-row{display:flex;gap:16px;align-items:center;margin-bottom:14px;}
+.gauge{flex:1;background:#F8FAFC;border-radius:10px;border:1px solid #E5EAF0;padding:12px 14px;}
+.gauge-label{font-size:9px;color:#8FA0B3;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.gauge-val{font-size:22px;font-weight:900;margin-bottom:6px;}
+.bar{height:8px;border-radius:99px;background:#E5EAF0;overflow:hidden;}
+.bar-fill{height:100%;border-radius:99px;transition:width .4s;}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:14px;}
+th{background:#0D1B2A;color:#fff;padding:6px 8px;text-align:left;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}
+td{padding:5px 8px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
+tr:nth-child(even) td{background:#F8FAFC;}
+.total-row td{background:#0D1B2A!important;color:#fff!important;font-weight:700;}
+.section-label td{background:#F0FDFA!important;color:#0D9488!important;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.05em;}
+.alert-row td{background:#FEF2F2!important;border-left:3px solid #DC2626;}
+
+/* Two col */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.col-title{font-size:10px;font-weight:700;color:#0D1B2A;padding:5px 0;border-bottom:2px solid #0D1B2A;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;}
+
+/* Analysis box */
+.analysis{background:#F0FDFA;border-left:4px solid #0D9488;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:12px;}
+.analysis-title{font-size:10px;font-weight:700;color:#0D9488;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;}
+.analysis-item{font-size:10px;color:#0D1B2A;padding:3px 0;display:flex;gap:6px;}
+.dot{width:6px;height:6px;border-radius:99px;background:#0D9488;flex-shrink:0;margin-top:3px;}
+.warn-box{background:#FEF9EC;border-left:4px solid #D97706;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:12px;}
+.warn-title{font-size:10px;font-weight:700;color:#D97706;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;}
+.alert-box{background:#FEF2F2;border-left:4px solid #DC2626;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:12px;}
+.alert-title{font-size:10px;font-weight:700;color:#DC2626;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;}
+
+/* Footer */
+.footer{position:absolute;bottom:8mm;left:12mm;right:12mm;display:flex;justify-content:space-between;font-size:9px;color:#8FA0B3;border-top:1px solid #E5EAF0;padding-top:5px;}
+</style>
+</head><body>
+
+<div class="no-print">
+  <button onclick="window.print()" style="background:#0D9488;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
+  <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial">✕ Close</button>
+</div>
+
+<!-- ══ PAGE 1: COVER ══ -->
+<div class="page cover">
+  <div>
+    <div class="brand">OrderTrack — Monthly Performance Report</div>
+    <div style="margin-top:14px">
+      <div class="main-title">MONTHLY<br>REPORT</div>
+      <div class="month-badge">${monthName} ${thisYear} · West Africa</div>
+    </div>
+  </div>
+  <div class="watermark">${monthName.slice(0,3).toUpperCase()}</div>
+  <div>
+    <div class="cover-kpi">
+      <div class="ck"><div class="ck-label">PO Received (${monthName})</div><div class="ck-val">${fmtK(poThisMonthAmt)} €</div><div class="ck-sub">${poThisMonth.length} order${poThisMonth.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">Invoiced (${monthName})</div><div class="ck-val">${fmtK(invThisMonthAmt)} €</div><div class="ck-sub">${invThisMonth.length} invoice${invThisMonth.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">Collected (${monthName})</div><div class="ck-val">${fmtK(payThisMonthAmt)} €</div><div class="ck-sub">${payThisMonth.length} payment${payThisMonth.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">YTD Orders</div><div class="ck-val">${fmtK(ytdPO)} €</div><div class="ck-sub">Since Jan 1st</div></div>
+      <div class="ck"><div class="ck-label">YTD Invoiced</div><div class="ck-val">${fmtK(ytdInv)} €</div><div class="ck-sub">${invRate.toFixed(1)}% of PO</div></div>
+      <div class="ck"><div class="ck-label">Open Orders</div><div class="ck-val">${fmtK(openOrders)} €</div><div class="ck-sub">Remaining to invoice</div></div>
+    </div>
+  </div>
+  <div class="cover-footer">
+    <span>CONFIDENTIAL — Internal use only</span>
+    <span>Generated on ${genDate}</span>
+  </div>
+  <div class="footer"><span></span></div>
+</div>
+
+<!-- ══ PAGE 2: KPI & ANALYSIS ══ -->
+<div class="page">
+  <div class="sh">
+    <div><div class="sh-title">📊 Performance Overview — ${monthName} ${thisYear}</div><div class="sh-sub">Key indicators and comparative analysis</div></div>
+    <span class="sh-badge" style="background:#CCFBF1;color:#0D9488">${monthName} ${thisYear}</span>
+  </div>
+
+  <!-- Month vs prev month -->
+  <div class="kpi-grid kpi-3" style="margin-bottom:12px">
+    <div class="kpi" style="border-left:4px solid #2563EB;background:#EFF6FF">
+      <div class="kpi-label">PO Received</div>
+      <div class="kpi-val" style="color:#2563EB">${fmtK(poThisMonthAmt)} €</div>
+      ${arrow(poThisMonthAmt,poLastMonth)}
+      <div class="kpi-sub">${poThisMonth.length} order${poThisMonth.length>1?"s":""} · Previous: ${fmtK(poLastMonth)} €</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,poLastMonth>0?poThisMonthAmt/poLastMonth*100:100)}%;background:#2563EB"></div></div>
+    </div>
+    <div class="kpi" style="border-left:4px solid #0D9488;background:#F0FDFA">
+      <div class="kpi-label">Invoiced</div>
+      <div class="kpi-val" style="color:#0D9488">${fmtK(invThisMonthAmt)} €</div>
+      ${arrow(invThisMonthAmt,invLastMonth)}
+      <div class="kpi-sub">${invThisMonth.length} invoice${invThisMonth.length>1?"s":""} · Previous: ${fmtK(invLastMonth)} €</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,invLastMonth>0?invThisMonthAmt/invLastMonth*100:100)}%;background:#0D9488"></div></div>
+    </div>
+    <div class="kpi" style="border-left:4px solid #059669;background:#F0FDF4">
+      <div class="kpi-label">Collected</div>
+      <div class="kpi-val" style="color:#059669">${fmtK(payThisMonthAmt)} €</div>
+      ${arrow(payThisMonthAmt,payLastMonth)}
+      <div class="kpi-sub">${payThisMonth.length} payment${payThisMonth.length>1?"s":""} · Previous: ${fmtK(payLastMonth)} €</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,payLastMonth>0?payThisMonthAmt/payLastMonth*100:100)}%;background:#059669"></div></div>
+    </div>
+  </div>
+
+  <!-- YTD rates -->
+  <div class="gauge-row">
+    <div class="gauge">
+      <div class="gauge-label">📈 YTD Invoicing Rate</div>
+      <div class="gauge-val" style="color:${invRate>=80?"#059669":invRate>=50?"#D97706":"#DC2626"}">${invRate.toFixed(1)}%</div>
+      <div class="bar"><div class="bar-fill" style="width:${Math.min(100,invRate)}%;background:${invRate>=80?"#059669":invRate>=50?"#D97706":"#DC2626"}"></div></div>
+      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">${fmtK(ytdInv)} € invoiced out of ${fmtK(ytdPO)} € ordered</div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-label">💰 YTD Collection Rate</div>
+      <div class="gauge-val" style="color:${collRate>=80?"#059669":collRate>=50?"#D97706":"#DC2626"}">${collRate.toFixed(1)}%</div>
+      <div class="bar"><div class="bar-fill" style="width:${Math.min(100,collRate)}%;background:${collRate>=80?"#059669":collRate>=50?"#D97706":"#DC2626"}"></div></div>
+      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">${fmtK(ytdPay)} € collected out of ${fmtK(ytdInv)} € invoiced</div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-label">📦 Open Orders</div>
+      <div class="gauge-val" style="color:#D97706">${fmtK(openOrders)} €</div>
+      <div class="bar"><div class="bar-fill" style="width:${Math.min(100,ytdPO>0?openOrders/ytdPO*100:0)}%;background:#D97706"></div></div>
+      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">Remaining to invoice on all orders</div>
+    </div>
+  </div>
+
+  <!-- Analysis -->
+  ${overdueAmt>0?`<div class="alert-box"><div class="alert-title">⚠ Alert — Overdue Invoices</div>${overdueInv.slice(0,3).map((i:any)=>{const ps=payStatus(i);const days=i.dueDate?Math.abs(diffD(i.dueDate)):0;return`<div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span><b>${i._client}</b> — ${i.invoiceNumber||i._po||"—"} · ${fmt(ps.rem)} € overdue by ${days} day${days>1?"s":""}</span></div>`;}).join("")}${overdueInv.length>3?`<div style="font-size:9px;color:#DC2626;margin-top:4px">+ ${overdueInv.length-3} more overdue invoice${overdueInv.length-3>1?"s":""} · Total: ${fmt(overdueAmt)} €</div>`:""}</div>`:""}
+
+  ${invRate>=80?`<div class="analysis"><div class="analysis-title">✅ Strong Invoicing Performance</div><div class="analysis-item"><div class="dot"></div><span>YTD invoicing rate of ${invRate.toFixed(1)}% is excellent — above the 80% target.</span></div><div class="analysis-item"><div class="dot"></div><span>Month-on-month invoiced: ${fmtK(invThisMonthAmt)} € (${invLastMonth>0?(((invThisMonthAmt-invLastMonth)/invLastMonth)*100).toFixed(0):"—"}% vs ${prevMonthName}).</span></div></div>`:invRate>=50?`<div class="warn-box"><div class="warn-title">⚡ Invoicing Needs Attention</div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>YTD invoicing rate of ${invRate.toFixed(1)}% is below the 80% target. ${fmtK(ytdPO-ytdInv)} € still to invoice.</span></div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>Open orders: ${fmtK(openOrders)} € — acceleration recommended.</span></div></div>`:`<div class="alert-box"><div class="alert-title">🔴 Low Invoicing Rate</div><div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span>Only ${invRate.toFixed(1)}% of orders invoiced YTD — significant catch-up needed.</span></div></div>`}
+
+  ${upcomingAmt>0?`<div class="analysis"><div class="analysis-title">🔔 Upcoming Collections (next 30 days)</div>${upcomingInv.slice(0,4).map((i:any)=>{const ps=payStatus(i);return`<div class="analysis-item"><div class="dot"></div><span><b>${i._client}</b> — ${i.invoiceNumber||"—"} · ${fmt(ps.rem)} € due ${fmtD(i.dueDate)}</span></div>`;}).join("")}<div style="font-size:9px;color:#0D9488;margin-top:4px;font-weight:600">Total upcoming: ${fmt(upcomingAmt)} €</div></div>`:""}
+
+  <div class="footer"><span>Performance Overview — ${monthName} ${thisYear}</span><span>1 / 3</span></div>
+</div>
+
+<!-- ══ PAGE 3: PO & INVOICES ══ -->
+<div class="page">
+  <div class="sh">
+    <div><div class="sh-title">📦 Orders & Invoices — ${monthName} ${thisYear}</div><div class="sh-sub">Purchase orders received and invoices issued this month</div></div>
+    <span class="sh-badge" style="background:#DBEAFE;color:#1D4ED8">${monthName} ${thisYear}</span>
+  </div>
+  <div class="two-col">
+    <div>
+      <div class="col-title">📦 PO Received — ${monthName}</div>
+      <table>
+        <thead><tr><th>Customer</th><th>S/O #</th><th>Date</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+          ${poThisMonth.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No orders received this month</td></tr>':
+            (()=>{
+              const sorted=[...poThisMonth].sort((a:any,b:any)=>(a.date||"").localeCompare(b.date||""));
+              const byC:Record<string,any[]>={};
+              sorted.forEach((o:any)=>{ if(!byC[o._client])byC[o._client]=[]; byC[o._client].push(o); });
+              let r="";
+              Object.keys(byC).sort().forEach(c=>{
+                const cTot=byC[c].reduce((s:number,o:any)=>s+(+o.amount||0),0);
+                r+=`<tr class="section-label"><td colspan="3">📁 ${c}</td><td style="text-align:right">${fmtK(cTot)} €</td></tr>`;
+                byC[c].forEach((o:any)=>{ r+=`<tr><td style="padding-left:12px;color:#4A5568;font-size:9px">${o.soNumber||"—"}</td><td style="font-size:9px;color:#6B7280">${o.poNumber||"—"}</td><td style="color:#8FA0B3">${fmtD(o.date)}</td><td style="text-align:right;font-weight:600;color:#2563EB">${fmtK(+o.amount||0)} €</td></tr>`; });
+              });
+              r+=`<tr class="total-row"><td colspan="3">TOTAL</td><td style="text-align:right">${fmtK(poThisMonthAmt)} €</td></tr>`;
+              return r;
+            })()
+          }
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <div class="col-title">🧾 Invoices Issued — ${monthName}</div>
+      <table>
+        <thead><tr><th>Customer</th><th>Invoice #</th><th>Due date</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+          ${invThisMonth.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No invoices issued this month</td></tr>':
+            (()=>{
+              const sorted=[...invThisMonth].sort((a:any,b:any)=>(a.date||"").localeCompare(b.date||""));
+              const byC2:Record<string,any[]>={};
+              sorted.forEach((i:any)=>{ if(!byC2[i._client])byC2[i._client]=[]; byC2[i._client].push(i); });
+              let r2="";
+              Object.keys(byC2).sort().forEach(c=>{
+                const cTot=byC2[c].reduce((s:number,i:any)=>s+(+i.amount||0),0);
+                r2+=`<tr class="section-label"><td colspan="3">📁 ${c}</td><td style="text-align:right">${fmtK(cTot)} €</td></tr>`;
+                byC2[c].forEach((i:any)=>{ const ps=payStatus(i); r2+=`<tr><td style="padding-left:12px;color:#4A5568;font-size:9px">${i.invoiceNumber||"—"}</td><td style="font-size:9px">${i._po||"—"}</td><td style="color:${ps.key.includes("over")?"#DC2626":"#8FA0B3"}">${fmtD(i.dueDate)}</td><td style="text-align:right;font-weight:600;color:#0D9488">${fmtK(+i.amount||0)} €</td></tr>`; });
+              });
+              r2+=`<tr class="total-row"><td colspan="3">TOTAL</td><td style="text-align:right">${fmtK(invThisMonthAmt)} €</td></tr>`;
+              return r2;
+            })()
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="footer"><span>Orders & Invoices — ${monthName} ${thisYear}</span><span>2 / 3</span></div>
+</div>
+
+<!-- ══ PAGE 4: COLLECTIONS & OUTSTANDING ══ -->
+<div class="page">
+  <div class="sh">
+    <div><div class="sh-title">💰 Collections & Outstanding — ${monthName} ${thisYear}</div><div class="sh-sub">Payments received and outstanding balances</div></div>
+    <span class="sh-badge" style="background:#D1FAE5;color:#065F46">${monthName} ${thisYear}</span>
+  </div>
+  <div class="two-col">
+    <div>
+      <div class="col-title">✅ Payments Received — ${monthName}</div>
+      <table>
+        <thead><tr><th>Customer</th><th>Invoice #</th><th>Date</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+          ${payThisMonth.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No payments received this month</td></tr>':
+            (()=>{
+              const sorted=[...payThisMonth].sort((a:any,b:any)=>(a.date||"").localeCompare(b.date||""));
+              const byC3:Record<string,any[]>={};
+              sorted.forEach((p:any)=>{ if(!byC3[p._client])byC3[p._client]=[]; byC3[p._client].push(p); });
+              let r3="";
+              Object.keys(byC3).sort().forEach(c=>{
+                const cTot=byC3[c].reduce((s:number,p:any)=>s+(+p.amount||0),0);
+                r3+=`<tr class="section-label"><td colspan="3">📁 ${c}</td><td style="text-align:right">${fmtK(cTot)} €</td></tr>`;
+                byC3[c].forEach((p:any)=>{ r3+=`<tr><td style="padding-left:12px;font-size:9px;color:#4A5568">${p._inv||"—"}</td><td style="font-size:9px;color:#6B7280">${p.reference||p.method||"—"}</td><td style="color:#8FA0B3">${fmtD(p.date)}</td><td style="text-align:right;font-weight:600;color:#059669">${fmtK(+p.amount||0)} €</td></tr>`; });
+              });
+              r3+=`<tr class="total-row"><td colspan="3">TOTAL COLLECTED</td><td style="text-align:right">${fmtK(payThisMonthAmt)} €</td></tr>`;
+              return r3;
+            })()
+          }
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <div class="col-title">⚠ Outstanding — Overdue Invoices</div>
+      <table>
+        <thead><tr><th>Customer</th><th>Invoice #</th><th>Overdue</th><th style="text-align:right">Balance</th></tr></thead>
+        <tbody>
+          ${overdueInv.length===0?'<tr><td colspan="4" style="text-align:center;color:#059669;padding:12px">✓ No overdue invoices</td></tr>':
+            (()=>{
+              const sorted=[...overdueInv].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||""));
+              let r4=sorted.map((i:any)=>{
+                const ps=payStatus(i);
+                const days=i.dueDate?Math.abs(diffD(i.dueDate)):0;
+                const urg=days>90?"#B91C1C":days>30?"#DC2626":"#EF4444";
+                return`<tr class="${days>30?"alert-row":""}"><td style="font-weight:700">${i._client}</td><td style="font-size:9px">${i.invoiceNumber||"—"}</td><td style="text-align:center"><span style="background:${urg};color:#fff;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700">${days}d</span></td><td style="text-align:right;font-weight:700;color:${urg}">${fmtK(ps.rem)} €</td></tr>`;
+              }).join("");
+              r4+=`<tr class="total-row"><td colspan="3">TOTAL OVERDUE</td><td style="text-align:right;color:#FCA5A5">${fmtK(overdueAmt)} €</td></tr>`;
+              return r4;
+            })()
+          }
+        </tbody>
+      </table>
+
+      <div class="col-title" style="margin-top:8px">🔔 Upcoming Due (next 30 days)</div>
+      <table>
+        <thead><tr><th>Customer</th><th>Invoice #</th><th>Due date</th><th style="text-align:right">Balance</th></tr></thead>
+        <tbody>
+          ${upcomingInv.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No upcoming due dates</td></tr>':
+            (()=>{
+              const sorted=[...upcomingInv].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||""));
+              let r5=sorted.slice(0,6).map((i:any)=>{
+                const ps=payStatus(i);
+                const days=diffD(i.dueDate||"");
+                return`<tr><td style="font-weight:600">${i._client}</td><td style="font-size:9px">${i.invoiceNumber||"—"}</td><td style="color:#0369A1;font-weight:600">${fmtD(i.dueDate)} <span style="font-size:9px;color:#8FA0B3">(${days}d)</span></td><td style="text-align:right;font-weight:600;color:#0369A1">${fmtK(ps.rem)} €</td></tr>`;
+              }).join("");
+              if(upcomingInv.length>6) r5+=`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;font-size:9px">+ ${upcomingInv.length-6} more — Total: ${fmt(upcomingAmt)} €</td></tr>`;
+              r5+=`<tr class="total-row"><td colspan="3">TOTAL UPCOMING</td><td style="text-align:right">${fmtK(upcomingAmt)} €</td></tr>`;
+              return r5;
+            })()
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Summary by client -->
+  <div class="col-title">📊 Monthly Summary by Customer</div>
+  <table>
+    <thead><tr><th>Customer</th><th style="text-align:right">PO Received</th><th style="text-align:right">Invoiced</th><th style="text-align:right">Collected</th><th style="text-align:right">Open Orders</th><th style="text-align:right">Inv. Rate</th></tr></thead>
+    <tbody>
+      ${(()=>{
+        const clients2=Array.from(new Set([...Object.keys(byClientPO),...Object.keys(byClientInv),...Object.keys(byClientPay)])).sort();
+        let r6=clients2.map(c=>{
+          const po=byClientPO[c]||0, inv=byClientInv[c]||0, pay=byClientPay[c]||0;
+          const openC=allOrders.filter((o:any)=>o._client===c).reduce((s:number,o:any)=>{ const i=(o.invoices||[]).reduce((ss:number,iv:any)=>ss+(+iv.amount||0),0); return s+Math.max(0,(+o.amount||0)-i); },0);
+          const rate=po>0?(inv/po*100):0;
+          const rc=rate>=80?"#059669":rate>=50?"#D97706":"#DC2626";
+          return`<tr><td style="font-weight:700">${c}</td><td style="text-align:right;color:#2563EB">${po>0?fmtK(po)+" €":"—"}</td><td style="text-align:right;color:#0D9488">${inv>0?fmtK(inv)+" €":"—"}</td><td style="text-align:right;color:#059669">${pay>0?fmtK(pay)+" €":"—"}</td><td style="text-align:right;color:#D97706">${openC>0?fmtK(openC)+" €":"—"}</td><td style="text-align:right;font-weight:700;color:${rc}">${po>0?rate.toFixed(0)+"%":"—"}</td></tr>`;
+        }).join("");
+        r6+=`<tr class="total-row"><td>TOTAL</td><td style="text-align:right">${fmtK(poThisMonthAmt)} €</td><td style="text-align:right">${fmtK(invThisMonthAmt)} €</td><td style="text-align:right">${fmtK(payThisMonthAmt)} €</td><td style="text-align:right">${fmtK(openOrders)} €</td><td style="text-align:right">${monthInvRate.toFixed(0)}%</td></tr>`;
+        return r6;
+      })()}
+    </tbody>
+  </table>
+  <div class="footer"><span>Collections & Outstanding — ${monthName} ${thisYear}</span><span>3 / 3</span></div>
+</div>
+
+</body></html>`);
+    w.document.close();
+  };
+
   const printReport=()=>{
     const prevMonthName=MONTH_NAMES[prevMonth];
     const thisMonthName=MONTH_NAMES[thisMonth];
@@ -3615,11 +4000,16 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
         title="📋 Semaine en cours — Planned Activity" color={C.green} isMobile={isMobile}/>
 
       {/* Print button bottom */}
-      <div style={{display:"flex",justifyContent:"center",paddingBottom:20}}>
+      <div style={{display:"flex",justifyContent:"center",gap:12,paddingBottom:20,flexWrap:"wrap"}}>
         <button onClick={printReport}
           style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(37,99,235,.4)"}}>
           <i className="ti ti-printer" style={{fontSize:18}} aria-hidden="true"/>
           Générer & Imprimer le rapport PDF (5 pages)
+        </button>
+        <button onClick={printMonthlyReport}
+          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#0D9488,#0369A1)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(13,148,136,.4)"}}>
+          <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
+          Mois en cours — Rapport détaillé
         </button>
       </div>
     </div>
