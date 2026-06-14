@@ -3440,9 +3440,39 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 
       {/* Auto data preview */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(4,1fr)",gap:12}}>
+        {/* Orders KPI — expandable to show detail */}
+        {(()=>{
+          const[showOrders,setShowOrders]=React.useState(false);
+          return(
+            <div style={{background:"#fff",borderRadius:C.r,border:`2px solid ${showOrders?C.blue:C.b}`,boxShadow:C.sh,padding:"14px 16px",cursor:"pointer",transition:"border-color .15s"}}
+              onClick={()=>setShowOrders(o=>!o)}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Orders reçus ({periodLabel})</div>
+                <i className={`ti ${showOrders?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:13,color:C.blue}} aria-hidden="true"/>
+              </div>
+              <div style={{fontSize:18,fontWeight:800,color:C.blue}}>{fmtK(recentOrdersAmt)} €</div>
+              <div style={{fontSize:11,color:C.t3,marginTop:3}}>{recentOrders.length} order{recentOrders.length>1?"s":""}</div>
+              {showOrders&&recentOrders.length>0&&(
+                <div style={{marginTop:10,borderTop:`1px solid ${C.b}`,paddingTop:8,display:"flex",flexDirection:"column",gap:4}} onClick={e=>e.stopPropagation()}>
+                  {recentOrders.map((o:any,i:number)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderBottom:`1px solid #F1F5F9`}}>
+                      <div>
+                        <span style={{fontWeight:700,color:C.t1}}>{o._client}</span>
+                        <span style={{color:C.t3,marginLeft:6,fontFamily:"monospace",fontSize:10}}>{o.soNumber||o.poNumber||"—"}</span>
+                      </div>
+                      <span style={{fontWeight:600,color:C.blue,flexShrink:0,marginLeft:8}}>{fmtK(+o.amount||0)} €</span>
+                    </div>
+                  ))}
+                  <div style={{display:"flex",justifyContent:"space-between",fontWeight:700,fontSize:11,paddingTop:4,color:C.blueDk}}>
+                    <span>TOTAL</span><span>{fmtK(recentOrdersAmt)} €</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         {[
-          {label:`Orders reçus (${periodLabel})`,val:`${fmtK(recentOrdersAmt)} €`,sub:`${recentOrders.length} commande${recentOrders.length>1?"s":""}`,c:C.blue,bg:C.blueL},
-          {label:`Invoiced (${invoicePeriodLabel})`,val:`${fmtK(invoicedInPeriod)} €`,sub:`${invoicesInPeriod.length} facture${invoicesInPeriod.length>1?"s":""}`,c:C.teal,bg:C.tealL},
+          {label:`Invoiced (${invoicePeriodLabel})`,val:`${fmtK(invoicedInPeriod)} €`,sub:`${invoicesInPeriod.length} invoice${invoicesInPeriod.length>1?"s":""}`,c:C.teal,bg:C.tealL},
           {label:"Facturé "+MONTH_NAMES[thisMonth],val:`${fmtK(invoicedThisMonth)} €`,sub:`Ce mois · ${invoicesThisMonth.length} fact.`,c:"#0D9488",bg:"#CCFBF1"},
           {label:"Open Orders",val:`${fmtK(openOrders)} €`,sub:"Remaining to invoice",c:C.amberDk,bg:C.amberL},
         ].map((k,i)=>(
@@ -3582,7 +3612,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
         onAdd={()=>setThisWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
         onUpdate={(idx:number,field:string,val:string)=>setThisWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
         onRemove={(idx:number)=>setThisWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
-        title="📋 Semaine en cours — Activités terrain" color={C.green} isMobile={isMobile}/>
+        title="📋 Semaine en cours — Planned Activity" color={C.green} isMobile={isMobile}/>
 
       {/* Print button bottom */}
       <div style={{display:"flex",justifyContent:"center",paddingBottom:20}}>
