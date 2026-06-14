@@ -6058,120 +6058,104 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
     td.setHours(23,59,59);
     const inRange=(d:string)=>{if(!d)return true;const dt=new Date(d+"T00:00:00");return dt>=fd&&dt<=td;};
     const allOrders=selClients.flatMap(c=>(data?.[c]||[]).map((o:any)=>({...o,_client:c})));
-    const multiClient=selClients.length>1;
 
-    // ── Generic subtotal builder ─────────────────────────────────────────────
-    // Inserts a subtotal row between client groups + grand total at the end
-    const withSubtotals=(items:any[],rowFn:(i:any)=>string,subtotalFn:(grp:any[],client:string)=>string,totalFn:(all:any[])=>string)=>{
-      if(!multiClient) return items.map(rowFn).join("")+totalFn(items);
-      const byClient:Record<string,any[]>={};
-      items.forEach(i=>{const c=i._client||"—";if(!byClient[c])byClient[c]=[];byClient[c].push(i);});
+    // ── Month helpers ────────────────────────────────────────────────────────
+    const monthKey=(d:string)=>d?d.slice(0,7):"0000-00";
+    const monthLabel=(d:string)=>{
+      if(!d)return"Sans date";
+      const dt=new Date(d+"T00:00:00");
+      return dt.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}).replace(/^./,c=>c.toUpperCase());
+    };
+
+    // ── Sort by date + group by month with subtotals ──────────────────────────
+    const withMonthly=(items:any[],dateField:string,rowFn:(i:any)=>string,subtotalFn:(grp:any[],label:string)=>string,totalFn:(all:any[])=>string)=>{
+      const sorted=[...items].sort((a:any,b:any)=>(a[dateField]||"").localeCompare(b[dateField]||""));
+      const byMonth:Record<string,any[]>={};
+      sorted.forEach((i:any)=>{const k=monthKey(i[dateField]);if(!byMonth[k])byMonth[k]=[];byMonth[k].push(i);});
       let out="";
-      Object.keys(byClient).forEach(client=>{
-        const grp=byClient[client];
-        // Client header row
-        out+=`<tr style="background:#1E3A5F"><td colspan="99" style="padding:8px 14px;color:#93C5FD;font-weight:700;font-size:12px;letter-spacing:.05em">📦 ${client}</td></tr>`;
+      Object.keys(byMonth).sort().forEach(k=>{
+        const grp=byMonth[k];
+        const label=monthLabel(grp[0][dateField]);
+        out+=`<tr style="background:#1E3A5F"><td colspan="99" style="padding:7px 12px;color:#93C5FD;font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase">📅 ${label}</td></tr>`;
         out+=grp.map(rowFn).join("");
-        out+=subtotalFn(grp,client);
+        out+=subtotalFn(grp,label);
       });
-      out+=totalFn(items);
+      out+=totalFn(sorted);
       return out;
     };
 
-    let rows="";
-    let title="";
+    let rows="",title="";
 
     if(rtype==="open_orders"){
       title="Open Orders — Commandes non entièrement facturées";
-      const items=allOrders.filter(o=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return inv<(+o.amount||0)*0.999&&o.status!=="annule";});
-      const rowOpen=(o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);const open=Math.max(0,(+o.amount||0)-inv);return `<tr><td>${multiClient?"":o._client}</td><td>${o.poNumber||"—"}</td><td>${o.soNumber||"—"}</td><td>${fmtD(o.date)}</td><td>${o.status||"—"}</td><td style="text-align:right">${fmt(+o.amount||0)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;};
-      const subtotalOpen=(grp:any[],c:string)=>{const s=grp.reduce((acc,o)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return acc+Math.max(0,(+o.amount||0)-inv);},0);return `<tr style="background:#FEF9EC;font-weight:700"><td colspan="7" style="text-align:right;color:#B45309;font-style:italic">Sous-total ${c}</td><td style="text-align:right;color:#B45309">${fmt(s)} €</td></tr>`;};
-      const totalOpen=(all:any[])=>{const t=all.reduce((acc,o)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return acc+Math.max(0,(+o.amount||0)-inv);},0);return `<tr style="background:#FEF3C7;font-weight:700"><td colspan="7" style="text-align:right">TOTAL OPEN ORDERS</td><td style="text-align:right">${fmt(t)} €</td></tr>`;};
-      rows=withSubtotals(items,rowOpen,subtotalOpen,totalOpen);
-      const headers="<tr><th>Client</th><th>N° PO</th><th>N° S/O</th><th>Date</th><th>Statut</th><th>PO (€)</th><th>Facturé (€)</th><th>Reste (€)</th></tr>";
-      printReport(title,fromDate,toDate,headers,rows);
+      const items=allOrders.filter((o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return inv<(+o.amount||0)*0.999&&o.status!=="annule";});
+      const rowOpen=(o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);const open=Math.max(0,(+o.amount||0)-inv);return `<tr><td>${o._client}</td><td>${o.poNumber||"—"}</td><td>${o.soNumber||"—"}</td><td>${fmtD(o.date)}</td><td>${o.status||"—"}</td><td style="text-align:right">${fmt(+o.amount||0)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;};
+      const subOpen=(grp:any[],label:string)=>{const s=grp.reduce((acc:number,o:any)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return acc+Math.max(0,(+o.amount||0)-inv);},0);return `<tr style="background:#FEF9EC;font-weight:700"><td colspan="7" style="text-align:right;color:#B45309;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#B45309;padding:6px 10px">${fmt(s)} €</td></tr>`;};
+      const totOpen=(all:any[])=>{const t=all.reduce((acc:number,o:any)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return acc+Math.max(0,(+o.amount||0)-inv);},0);return `<tr style="background:#FEF3C7;font-weight:800;font-size:12px"><td colspan="7" style="text-align:right;padding:8px 10px">TOTAL OPEN ORDERS</td><td style="text-align:right;padding:8px 10px">${fmt(t)} €</td></tr>`;};
+      rows=withMonthly(items,"date",rowOpen,subOpen,totOpen);
+      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° PO</th><th>N° S/O</th><th>Date</th><th>Statut</th><th>PO (€)</th><th>Facturé (€)</th><th>Reste (€)</th></tr>",rows);
+
     } else if(rtype==="overdue"){
       title="Factures échues — Échéances dépassées non soldées";
-      // Only invoices whose dueDate < today AND still have unpaid balance
-      const items=allOrders.flatMap(o=>(o.invoices||[]).map((i:any)=>{
+      const items=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{
         const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
         const rem=Math.max(0,(+i.amount||0)-paid);
         const ps=payStatus(i);
         const isOverdue=["overdue","ov_part"].includes(ps.key);
         return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:ps.label,isOverdue,daysLate:i.dueDate?Math.abs(diffD(i.dueDate)):0};
-      }).filter((i:any)=>i.isOverdue && i.rem>0));
-      // Sort: most overdue first
-      items.sort((a:any,b:any)=>b.daysLate-a.daysLate);
-      const rowColor=(days:number)=>days>90?"#B91C1C":days>30?"#DC2626":"#EF4444";
-      const rowOver=(i:any)=>`<tr style="border-left:3px solid ${rowColor(i.daysLate)}"><td style="font-weight:700">${multiClient?"":i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td style="color:#B91C1C;font-weight:700">${fmtD(i.dueDate)}</td><td style="text-align:center;background:#FEE2E2;color:#B91C1C;font-weight:800">${i.daysLate}j</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#B91C1C">${fmt(i.rem)} €</td></tr>`;
-      const subtotalOver=(grp:any[],c:string)=>`<tr style="background:#FFF0F0;font-weight:700"><td colspan="8" style="text-align:right;color:#B91C1C;font-style:italic">Sous-total ${c}</td><td style="text-align:right;color:#B91C1C">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
-      const totalOver=(all:any[])=>`<tr style="background:#FEE2E2;font-weight:700"><td colspan="8" style="text-align:right;color:#B91C1C">TOTAL ÉCHU</td><td style="text-align:right;color:#B91C1C">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
-      rows=withSubtotals(items,rowOver,subtotalOver,totalOver);
-      const headers="<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date Facture</th><th>Échéance</th><th>Retard</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste Dû (€)</th></tr>";
-      printReport(title,fromDate,toDate,headers,rows);
+      }).filter((i:any)=>i.isOverdue&&i.rem>0));
+      const rowColor=(d:number)=>d>90?"#B91C1C":d>30?"#DC2626":"#EF4444";
+      const rowOver=(i:any)=>`<tr style="border-left:3px solid ${rowColor(i.daysLate)}"><td style="font-weight:700">${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td style="color:#B91C1C;font-weight:700">${fmtD(i.dueDate)}</td><td style="text-align:center;background:#FEE2E2;color:#B91C1C;font-weight:800">${i.daysLate}j</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#B91C1C">${fmt(i.rem)} €</td></tr>`;
+      const subOver=(grp:any[],label:string)=>`<tr style="background:#FFF0F0;font-weight:700"><td colspan="8" style="text-align:right;color:#B91C1C;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#B91C1C;padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      const totOver=(all:any[])=>`<tr style="background:#FEE2E2;font-weight:800;font-size:12px"><td colspan="8" style="text-align:right;padding:8px 10px;color:#B91C1C">TOTAL ÉCHU</td><td style="text-align:right;padding:8px 10px;color:#B91C1C">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      rows=withMonthly(items,"dueDate",rowOver,subOver,totOver);
+      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date Facture</th><th>Échéance</th><th>Retard</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste Dû (€)</th></tr>",rows);
+
     } else if(rtype==="upcoming"){
       title="Échéances à venir — 30 prochains jours";
       const today30=new Date();today30.setDate(today30.getDate()+30);
-      const items=allOrders.flatMap(o=>(o.invoices||[]).map((i:any)=>{
+      const items=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{
         const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
         const rem=Math.max(0,(+i.amount||0)-paid);
-        const ps=payStatus(i);
-        if(rem<=0)return null;
-        if(!i.dueDate)return null;
+        if(rem<=0||!i.dueDate)return null;
         const due=new Date(i.dueDate+"T00:00:00"),now=new Date();now.setHours(0,0,0,0);
-        // Only future or today (not past)
-        if(due<now)return null;
-        if(due>today30)return null;
+        if(due<now||due>today30)return null;
         const daysLeft=Math.ceil((due.getTime()-now.getTime())/86400000);
-        return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:ps.label,daysLeft};
+        return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:payStatus(i).label,daysLeft};
       }).filter(Boolean));
-      items.sort((a:any,b:any)=>a.daysLeft-b.daysLeft);
-      const urgBg=(d:number)=>d===0?"#FEF3C7":d<=7?"#FEF9EC":"#F0F9FF";
-      const urgColor=(d:number)=>d===0?"#B45309":d<=7?"#D97706":"#0369A1";
-      rows=items.map((i:any)=>`<tr style="background:${urgBg(i.daysLeft)}">
-        <td style="font-weight:700">${i._client}</td>
-        <td>${i._po||"—"}</td>
-        <td style="font-weight:600;color:#7C3AED">${i.invoiceNumber||"—"}</td>
-        <td>${fmtD(i.date)}</td>
-        <td style="font-weight:700;color:${urgColor(i.daysLeft)}">${fmtD(i.dueDate)}</td>
-        <td style="text-align:center"><span style="background:${urgColor(i.daysLeft)};color:#fff;padding:2px 10px;border-radius:4px;font-weight:700;font-size:11px">${i.daysLeft===0?"Aujourd'hui":i.daysLeft+"j"}</span></td>
-        <td style="text-align:right">${fmt(+i.amount||0)} €</td>
-        <td style="text-align:right;color:#059669">${i.paid>0?fmt(i.paid)+" €":"—"}</td>
-        <td style="text-align:right;font-weight:700;color:#B45309">${fmt(i.rem)} €</td>
-        <td><span style="background:#E0F2FE;color:#0369A1;padding:2px 8px;border-radius:4px;font-size:10px">${i.psLabel}</span></td>
-      </tr>`).join("");
-      const tot=items.reduce((s:number,i:any)=>s+i.rem,0);
-      const todayItems=items.filter((i:any)=>i.daysLeft===0);
-      const week=items.filter((i:any)=>i.daysLeft>0&&i.daysLeft<=7);
-      const later=items.filter((i:any)=>i.daysLeft>7);
-      rows+=`<tr style="background:#E0F2FE;font-weight:700;color:#0369A1">
-        <td colspan="9" style="text-align:right">TOTAL À ENCAISSER (${items.length} factures · aujourd'hui: ${todayItems.length} · cette semaine: ${week.length} · sous 30j: ${later.length})</td>
-        <td style="text-align:right">${fmt(tot)} €</td>
-      </tr>`;
-      const headers="<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date émission</th><th>Échéance</th><th>Délai</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste dû (€)</th><th>Statut</th></tr>";
-      printReport(title,fromDate,toDate,headers,rows);
+      const urgColor=(d:number)=>d===0?"#B91C1C":d<=3?"#DC2626":d<=7?"#D97706":"#0369A1";
+      const rowUp=(i:any)=>`<tr><td style="font-weight:700">${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td style="font-weight:700;color:#0369A1">${fmtD(i.dueDate)}</td><td style="text-align:center;font-weight:800;color:${urgColor(i.daysLeft)}">${i.daysLeft===0?"Auj.":i.daysLeft+"j"}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#0369A1">${fmt(i.rem)} €</td><td><span style="background:#DBEAFE;color:#1D4ED8;padding:2px 7px;border-radius:4px;font-size:10px">${i.psLabel}</span></td></tr>`;
+      const subUp=(grp:any[],label:string)=>`<tr style="background:#EFF6FF;font-weight:700"><td colspan="8" style="text-align:right;color:#1D4ED8;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#1D4ED8;padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
+      const totUp=(all:any[])=>`<tr style="background:#DBEAFE;font-weight:800;font-size:12px"><td colspan="8" style="text-align:right;padding:8px 10px;color:#1D4ED8">TOTAL À ENCAISSER</td><td style="text-align:right;padding:8px 10px;color:#1D4ED8">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
+      rows=withMonthly(items,"dueDate",rowUp,subUp,totUp);
+      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date émission</th><th>Échéance</th><th>Délai</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste dû (€)</th><th>Statut</th></tr>",rows);
+
     } else if(rtype==="unpaid"){
       title="Factures en cours";
-      const items=allOrders.flatMap(o=>(o.invoices||[]).filter((i:any)=>inRange(i.date)).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);const rem=Math.max(0,(+i.amount||0)-paid);const ps=payStatus(i);return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:ps.label};}).filter((i:any)=>i.rem>0));
-      rows=items.map(i=>`<tr><td>${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td>${fmtD(i.dueDate)}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#DC2626">${fmt(i.rem)} €</td><td><span style="background:${i.rem>0?"#FEE2E2":"#D1FAE5"};color:${i.rem>0?"#B91C1C":"#047857"};padding:2px 8px;border-radius:4px;font-size:11px">${i.psLabel}</span></td></tr>`).join("");
-      const tot=items.reduce((s:number,i:any)=>s+i.rem,0);
-      rows+=`<tr style="background:#FEE2E2;font-weight:700"><td colspan="8" style="text-align:right">TOTAL IMPAYÉ</td><td style="text-align:right">${fmt(tot)} €</td></tr>`;
-      const headers="<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th><th>Statut</th></tr>";
-      printReport(title,fromDate,toDate,headers,rows);
+      const items=allOrders.flatMap((o:any)=>(o.invoices||[]).filter((i:any)=>inRange(i.date)).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);const rem=Math.max(0,(+i.amount||0)-paid);return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:payStatus(i).label};}).filter((i:any)=>i.rem>0));
+      const rowUnp=(i:any)=>`<tr><td>${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td>${fmtD(i.dueDate)}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#DC2626">${fmt(i.rem)} €</td><td><span style="background:#FEE2E2;color:#B91C1C;padding:2px 8px;border-radius:4px;font-size:10px">${i.psLabel}</span></td></tr>`;
+      const subUnp=(grp:any[],label:string)=>`<tr style="background:#FFF5F5;font-weight:700"><td colspan="7" style="text-align:right;color:#DC2626;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#DC2626;padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
+      const totUnp=(all:any[])=>`<tr style="background:#FEE2E2;font-weight:800;font-size:12px"><td colspan="7" style="text-align:right;padding:8px 10px">TOTAL IMPAYÉ</td><td style="text-align:right;padding:8px 10px">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
+      rows=withMonthly(items,"date",rowUnp,subUnp,totUnp);
+      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th><th>Statut</th></tr>",rows);
+
     } else if(rtype==="all_invoices"){
       title="Toutes les factures sur la période";
-      const items=allOrders.flatMap(o=>(o.invoices||[]).filter((i:any)=>inRange(i.date)).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);return{...i,_client:o._client,_po:o.poNumber,paid};}) );
-      const rowAllInv=(i:any)=>`<tr><td>${multiClient?"":i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td>${fmtD(i.dueDate)}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right">${fmt(Math.max(0,(+i.amount||0)-i.paid))} €</td></tr>`;
-      const subtotalAllInv=(grp:any[],c:string)=>{const si=grp.reduce((s:number,i:any)=>s+(+i.amount||0),0);const sp=grp.reduce((s:number,i:any)=>s+i.paid,0);return `<tr style="background:#F0FDFA;font-weight:700"><td colspan="5" style="text-align:right;color:#0D9488;font-style:italic">Sous-total ${c}</td><td style="text-align:right;color:#0D9488">${fmt(si)} €</td><td style="text-align:right;color:#059669">${fmt(sp)} €</td><td style="text-align:right;color:#B45309">${fmt(si-sp)} €</td></tr>`;};
-      const totalAllInv=(all:any[])=>{const ti=all.reduce((s:number,i:any)=>s+(+i.amount||0),0);const tp=all.reduce((s:number,i:any)=>s+i.paid,0);return `<tr style="background:#CCFBF1;font-weight:700"><td colspan="5" style="text-align:right">TOTAUX</td><td style="text-align:right">${fmt(ti)} €</td><td style="text-align:right">${fmt(tp)} €</td><td style="text-align:right">${fmt(ti-tp)} €</td></tr>`;};
-      rows=withSubtotals(items,rowAllInv,subtotalAllInv,totalAllInv);
-      const headers="<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th></tr>";
-      printReport(title,fromDate,toDate,headers,rows);
+      const items=allOrders.flatMap((o:any)=>(o.invoices||[]).filter((i:any)=>inRange(i.date)).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);return{...i,_client:o._client,_po:o.poNumber,paid};}));
+      const rowAll=(i:any)=>`<tr><td>${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td>${fmtD(i.dueDate)}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right">${fmt(Math.max(0,(+i.amount||0)-i.paid))} €</td></tr>`;
+      const subAll=(grp:any[],label:string)=>{const si=grp.reduce((s:number,i:any)=>s+(+i.amount||0),0),sp=grp.reduce((s:number,i:any)=>s+i.paid,0);return `<tr style="background:#F0FDFA;font-weight:700"><td colspan="5" style="text-align:right;color:#0D9488;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#0D9488;padding:6px 10px">${fmt(si)} €</td><td style="text-align:right;color:#059669;padding:6px 10px">${fmt(sp)} €</td><td style="text-align:right;color:#B45309;padding:6px 10px">${fmt(si-sp)} €</td></tr>`;};
+      const totAll=(all:any[])=>{const ti=all.reduce((s:number,i:any)=>s+(+i.amount||0),0),tp=all.reduce((s:number,i:any)=>s+i.paid,0);return `<tr style="background:#CCFBF1;font-weight:800;font-size:12px"><td colspan="5" style="text-align:right;padding:8px 10px">TOTAUX</td><td style="text-align:right;padding:8px 10px">${fmt(ti)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tp)} €</td><td style="text-align:right;padding:8px 10px">${fmt(ti-tp)} €</td></tr>`;};
+      rows=withMonthly(items,"date",rowAll,subAll,totAll);
+      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th></tr>",rows);
+
     } else {
       title="Synthèse par client";
-      rows=selClients.map(c=>{const ords=data?.[c]||[];const po=ords.reduce((s:number,o:any)=>s+(+o.amount||0),0);const inv=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((ss:number,i:any)=>ss+(+i.amount||0),0),0);const paid=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).reduce((sss:number,p:any)=>sss+(+p.amount||0),0),0),0);const open=Math.max(0,po-inv);const term=PAY_TERMS.find(t=>t.id===(configs[c]?.termId||"net60"))?.label||"—";return`<tr><td style="font-weight:700">${c}</td><td>${configs[c]?.accountNumber||"—"}</td><td>${term}</td><td>${ords.length}</td><td style="text-align:right">${fmt(po)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right">${fmt(paid)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;}).join("");
-      const headers="<tr><th>Client</th><th>N° Compte</th><th>Conditions</th><th>Cmds</th><th>PO Total (€)</th><th>Facturé (€)</th><th>Encaissé (€)</th><th>Open Orders (€)</th></tr>";
-      printReport(title,fromDate,toDate,headers,rows);
+      rows=selClients.map((c:string)=>{const ords=data?.[c]||[];const po=ords.reduce((s:number,o:any)=>s+(+o.amount||0),0);const inv=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((ss:number,i:any)=>ss+(+i.amount||0),0),0);const paid=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).reduce((sss:number,p:any)=>sss+(+p.amount||0),0),0),0);const open=Math.max(0,po-inv);const term=PAY_TERMS.find((t:any)=>t.id===(configs[c]?.termId||"net60"))?.label||"—";return`<tr><td style="font-weight:700">${c}</td><td>${configs[c]?.accountNumber||"—"}</td><td>${term}</td><td>${ords.length}</td><td style="text-align:right">${fmt(po)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right">${fmt(paid)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;}).join("");
+      const tPO=selClients.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(+o.amount||0),0),0);
+      const tInv=selClients.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((sss:number,i:any)=>sss+(+i.amount||0),0),0),0);
+      const tPaid=selClients.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(o.invoices||[]).reduce((sss:number,i:any)=>sss+(i.payments||[]).reduce((ssss:number,p:any)=>ssss+(+p.amount||0),0),0),0),0);
+      rows+=`<tr style="background:#DBEAFE;font-weight:800;font-size:12px"><td>TOTAL</td><td></td><td></td><td></td><td style="text-align:right;padding:8px 10px">${fmt(tPO)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tInv)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tPaid)} €</td><td style="text-align:right;padding:8px 10px">${fmt(Math.max(0,tPO-tInv))} €</td></tr>`;
+      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° Compte</th><th>Conditions</th><th>Cmds</th><th>PO Total (€)</th><th>Facturé (€)</th><th>Encaissé (€)</th><th>Open Orders (€)</th></tr>",rows);
     }
     onClose();
   };
