@@ -3149,8 +3149,8 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   <div class="section-header">
     <div>
       <div style="font-size:10px;color:#0D9488;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">2 / 4</div>
-      <div class="section-title">🧾 MONTHLY INVOICING</div>
-      <div class="section-sub">— ${prevMonthName} / ${thisMonthName} ${year}</div>
+      <div class="section-title">🧾 INVOICING — ${invoicePeriodLabel.toUpperCase()}</div>
+      <div class="section-sub">— Factures générées sur les ${invoicePeriodLabel} · Depuis le ${invPeriodStart.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}</div>
     </div>
     <div class="section-meta">
       <div class="section-badge" style="background:#CCFBF1;color:#0D9488">${weekLabel} · ${period}</div>
@@ -3159,14 +3159,14 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 
   <div class="kpi-row">
     <div class="kpi" style="border-left:4px solid #0D9488">
-      <div class="kpi-label">Already Invoiced in ${year}</div>
-      <div class="kpi-val" style="color:#0D9488">${fmtK(ytdInvoiced)} €</div>
-      <div class="kpi-sub">Depuis le 1er janvier</div>
+      <div class="kpi-label">Facturé (${invoicePeriodLabel})</div>
+      <div class="kpi-val" style="color:#0D9488">${fmtK(invoicedInPeriod)} €</div>
+      <div class="kpi-sub">${invoicesInPeriod.length} facture${invoicesInPeriod.length>1?"s":""} sur la période</div>
     </div>
-    <div class="kpi" style="border-left:4px solid #D97706">
-      <div class="kpi-label">Expected Invoicing</div>
-      <div class="kpi-val" style="color:#D97706">${fmtK(expectedInvoicing)} €</div>
-      <div class="kpi-sub">Open orders à facturer</div>
+    <div class="kpi" style="border-left:4px solid #2563EB">
+      <div class="kpi-label">Already Invoiced in ${year}</div>
+      <div class="kpi-val" style="color:#2563EB">${fmtK(ytdInvoiced)} €</div>
+      <div class="kpi-sub">YTD depuis le 1er janvier</div>
     </div>
     <div class="kpi" style="border-left:4px solid #7C3AED">
       <div class="kpi-label">Open Orders</div>
@@ -3177,45 +3177,50 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 
   <div class="two-col">
     <div>
-      <div class="col-header">✅ INVOICED — ${prevMonthName.toUpperCase()} / ${thisMonthName.toUpperCase()}</div>
+      <div class="col-header">✅ FACTURES GÉNÉRÉES — ${invoicePeriodLabel.toUpperCase()}</div>
       <table>
-        <thead><tr><th>Customer</th><th>S/O</th><th style="text-align:right">Amount (K€)</th></tr></thead>
+        <thead><tr><th>Client</th><th>N° Facture</th><th>Date</th><th style="text-align:right">Montant (K€)</th></tr></thead>
         <tbody>
-          ${[...invoicesThisMonth,...invoicesPrevMonth].length===0
-            ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">Aucune facture sur la période</td></tr>'
+          ${invoicesInPeriod.length===0
+            ?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucune facture sur la période</td></tr>'
             :(() => {
-              const byClient2:Record<string,any[]>={};
-              [...invoicesThisMonth,...invoicesPrevMonth].forEach((i:any)=>{
-                if(!byClient2[i._client])byClient2[i._client]=[];
-                byClient2[i._client].push(i);
+              // Sort by date
+              const sorted=[...invoicesInPeriod].sort((a:any,b:any)=>(a.date||"").localeCompare(b.date||""));
+              // Group by client
+              const byC:Record<string,any[]>={};
+              sorted.forEach((i:any)=>{if(!byC[i._client])byC[i._client]=[];byC[i._client].push(i);});
+              let r2="";
+              Object.keys(byC).sort().forEach(c=>{
+                const tot=byC[c].reduce((s:number,i:any)=>s+(+i.amount||0),0);
+                // Client header
+                r2+=`<tr style="background:#F0FDFA"><td colspan="3" style="font-weight:700;color:#0D9488;font-size:10px">📁 ${c}</td><td style="text-align:right;font-weight:700;color:#0D9488">${fmtK(tot)}</td></tr>`;
+                byC[c].forEach((i:any)=>{
+                  r2+=`<tr><td style="padding-left:16px;color:#4A5568">${i.invoiceNumber||"—"}</td><td style="font-family:monospace;font-size:9px">${i._po||"—"}</td><td style="color:#8FA0B3">${fmtD(i.date)}</td><td style="text-align:right;color:#0D9488">${fmtK(+i.amount||0)}</td></tr>`;
+                });
               });
-              let rows2="";
-              Object.keys(byClient2).forEach(c=>{
-                const tot=byClient2[c].reduce((s:number,i:any)=>s+(+i.amount||0),0);
-                rows2+=`<tr><td style="font-weight:700">${c}</td><td style="font-family:monospace;font-size:9px">${byClient2[c].map((i:any)=>i._po||i.invoiceNumber).slice(0,2).join(", ")}</td><td style="text-align:right;font-weight:600;color:#0D9488">${fmtK(tot)}</td></tr>`;
-              });
-              const gt=[...invoicesThisMonth,...invoicesPrevMonth].reduce((s:number,i:any)=>s+(+i.amount||0),0);
-              rows2+=`<tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtK(gt)}</td></tr>`;
-              return rows2;
+              r2+=`<tr class="total-row"><td colspan="3">TOTAL PÉRIODE</td><td style="text-align:right">${fmtK(invoicedInPeriod)}</td></tr>`;
+              return r2;
             })()
           }
         </tbody>
       </table>
     </div>
     <div>
-      <div class="col-header">📅 EXPECTED INVOICING — ${thisMonthName.toUpperCase()}/${MONTH_NAMES[thisMonth===11?0:thisMonth+1].toUpperCase()}</div>
+      <div class="col-header">📅 EXPECTED INVOICING</div>
       <table>
-        <thead><tr><th>Customer</th><th>S/O</th><th style="text-align:right">Amount (K€)</th></tr></thead>
+        <thead><tr><th>Client</th><th>S/O</th><th style="text-align:right">Reste (K€)</th></tr></thead>
         <tbody>
           ${(()=>{
-            const expInvRows=allOrders.filter((o:any)=>o.status!=="annule"&&o.status!=="livree").slice(0,8);
-            if(expInvRows.length===0) return '<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">— à compléter —</td></tr>';
-            let r="";
-            const byC:Record<string,number>={};
-            expInvRows.forEach((o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);const rem=Math.max(0,(+o.amount||0)-inv);if(rem>0)byC[o._client]=(byC[o._client]||0)+rem;});
-            Object.keys(byC).forEach(c=>{r+=`<tr><td style="font-weight:600">${c}</td><td></td><td style="text-align:right;font-weight:600;color:#D97706">${fmtK(byC[c])}</td></tr>`;});
-            r+=`<tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtK(Object.values(byC).reduce((s:number,v:any)=>s+v,0))}</td></tr>`;
-            return r;
+            const byC2:Record<string,number>={};
+            allOrders.filter((o:any)=>o.status!=="annule"&&o.status!=="livree").forEach((o:any)=>{
+              const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+              const rem=Math.max(0,(+o.amount||0)-inv);
+              if(rem>0)byC2[o._client]=(byC2[o._client]||0)+rem;
+            });
+            if(Object.keys(byC2).length===0) return '<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">Aucun open order</td></tr>';
+            let r3=Object.keys(byC2).sort().map(c=>`<tr><td style="font-weight:600">${c}</td><td></td><td style="text-align:right;font-weight:600;color:#D97706">${fmtK(byC2[c])}</td></tr>`).join("");
+            r3+=`<tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtK(Object.values(byC2).reduce((s:number,v:any)=>s+v,0))}</td></tr>`;
+            return r3;
           })()}
         </tbody>
       </table>
@@ -3223,7 +3228,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   </div>
 
   <div class="footer">
-    <span>Monthly Invoicing — ${weekLabel} · ${period}</span>
+    <span>Invoicing — ${invoicePeriodLabel} · ${weekLabel} · ${period}</span>
     <span>2 / 4</span>
   </div>
 </div>
@@ -3433,8 +3438,8 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(4,1fr)",gap:12}}>
         {[
           {label:`Orders reçus (${periodLabel})`,val:`${fmtK(recentOrdersAmt)} €`,sub:`${recentOrders.length} commande${recentOrders.length>1?"s":""}`,c:C.blue,bg:C.blueL},
-          {label:"Facturé "+MONTH_NAMES[thisMonth],val:`${fmtK(invoicedThisMonth)} €`,sub:"Ce mois-ci",c:C.teal,bg:C.tealL},
-          {label:"Facturé "+MONTH_NAMES[prevMonth],val:`${fmtK(invoicedPrevMonth)} €`,sub:"Mois précédent",c:"#0D9488",bg:"#CCFBF1"},
+          {label:`Facturé (${invoicePeriodLabel})`,val:`${fmtK(invoicedInPeriod)} €`,sub:`${invoicesInPeriod.length} facture${invoicesInPeriod.length>1?"s":""}`,c:C.teal,bg:C.tealL},
+          {label:"Facturé "+MONTH_NAMES[thisMonth],val:`${fmtK(invoicedThisMonth)} €`,sub:`Ce mois · ${invoicesThisMonth.length} fact.`,c:"#0D9488",bg:"#CCFBF1"},
           {label:"Open Orders",val:`${fmtK(openOrders)} €`,sub:"Reste à facturer",c:C.amberDk,bg:C.amberL},
         ].map((k,i)=>(
           <div key={i} style={{background:"#fff",borderRadius:C.r,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
