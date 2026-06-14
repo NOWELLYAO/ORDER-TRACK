@@ -2819,6 +2819,9 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const [showHistory,setShowHistory]=useState(false);
   const [showOrders,setShowOrders]=useState(false);
   const [saveMsg,setSaveMsg]=useState("");
+  const [yearlyFrom,setYearlyFrom]=useState(`${thisYear}-01-01`);
+  const [yearlyTo,setYearlyTo]=useState(todayStr());
+  const [yearlyLang,setYearlyLang]=useState<"en"|"fr">("fr");
 
   // Auto-save draft on every change
   useEffect(()=>{
@@ -2971,7 +2974,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const MONTH_NAMES=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
   // ── Print function ─────────────────────────────────────────────────────────
-  const printYearlyReport=(reportLang:"en"|"fr"="en")=>{
+  const printYearlyReport=(reportLang:"en"|"fr"="en",fromDate=`${thisYear}-01-01`,toDate=todayStr())=>{
     const w=window.open("","_blank","width=1200,height=900");
     if(!w)return;
     const isFR=reportLang==="fr";
@@ -2979,12 +2982,17 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     const MN_FR=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
     const MN=isFR?MN_FR:MN_EN;
     const genDate=today.toLocaleDateString(isFR?"fr-FR":"en-GB",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+    const fd=new Date(fromDate+"T00:00:00"),td2=new Date(toDate+"T00:00:00");td2.setHours(23,59,59);
+    const inRange=(d:string)=>{if(!d)return false;const dt=new Date(d+"T00:00:00");return dt>=fd&&dt<=td2;};
+    const periodLabel=isFR
+      ?`${fd.toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"})} – ${td2.toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"})}`
+      :`${fd.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})} – ${td2.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}`;
 
-    // ── YTD Data ─────────────────────────────────────────────────────────────
-    const ytdOrders=allOrders.filter((o:any)=>{ const d=o.date?new Date(o.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; });
-    const ytdInvoicesAll=allInvoices.filter((i:any)=>{ const d=i.date?new Date(i.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; });
+    // ── Period Data ───────────────────────────────────────────────────────────
+    const ytdOrders=allOrders.filter((o:any)=>inRange(o.date));
+    const ytdInvoicesAll=allInvoices.filter((i:any)=>inRange(i.date));
     const allPaymentsYTD=allOrders.flatMap((o:any)=>(o.invoices||[]).flatMap((i:any)=>(i.payments||[]).map((p:any)=>({...p,_client:o._client,_po:o.poNumber,_inv:i.invoiceNumber}))));
-    const ytdPayments=allPaymentsYTD.filter((p:any)=>{ const d=p.date?new Date(p.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; });
+    const ytdPayments=allPaymentsYTD.filter((p:any)=>inRange(p.date));
 
     const ytdPO=ytdOrders.reduce((s:number,o:any)=>s+(+o.amount||0),0);
     const ytdInv=ytdInvoicesAll.reduce((s:number,i:any)=>s+(+i.amount||0),0);
@@ -3001,22 +3009,22 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     const upcomingYTD=allInvoices.filter((i:any)=>{ if(!i.dueDate)return false; const due=new Date(i.dueDate+"T00:00:00"); const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0); return due>=now2&&due<=d30&&Math.max(0,(+i.amount||0)-paid)>0; });
     const upcomingAmtYTD=upcomingYTD.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
 
-    // Monthly breakdown
+    // Monthly breakdown (all months in range)
     const monthly=MN_EN.map((_,mi)=>{
       const po=ytdOrders.filter((o:any)=>{ const d=new Date(o.date+"T00:00:00"); return d.getMonth()===mi; }).reduce((s:number,o:any)=>s+(+o.amount||0),0);
       const inv=ytdInvoicesAll.filter((i:any)=>{ const d=new Date(i.date+"T00:00:00"); return d.getMonth()===mi; }).reduce((s:number,i:any)=>s+(+i.amount||0),0);
       const pay=ytdPayments.filter((p:any)=>{ const d=new Date(p.date+"T00:00:00"); return d.getMonth()===mi; }).reduce((s:number,p:any)=>s+(+p.amount||0),0);
       return{mn:MN[mi],po,inv,pay};
-    });
+    }).filter(m=>m.po>0||m.inv>0||m.pay>0);  // only show months with data
     const maxBar=Math.max(...monthly.map(m=>Math.max(m.po,m.inv,m.pay)),1);
 
-    // By client YTD
+    // By client in period
     const clients2=Array.from(new Set(allOrders.map((o:any)=>o._client))).sort();
     const byClientYTD=clients2.map(c=>{
       const cOrds=allOrders.filter((o:any)=>o._client===c);
-      const po=cOrds.filter((o:any)=>{ const d=o.date?new Date(o.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; }).reduce((s:number,o:any)=>s+(+o.amount||0),0);
-      const inv=cOrds.flatMap((o:any)=>o.invoices||[]).filter((i:any)=>{ const d=i.date?new Date(i.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; }).reduce((s:number,i:any)=>s+(+i.amount||0),0);
-      const pay=cOrds.flatMap((o:any)=>(o.invoices||[]).flatMap((i:any)=>i.payments||[])).filter((p:any)=>{ const d=p.date?new Date(p.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; }).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+      const po=cOrds.filter((o:any)=>inRange(o.date)).reduce((s:number,o:any)=>s+(+o.amount||0),0);
+      const inv=cOrds.flatMap((o:any)=>o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+      const pay=cOrds.flatMap((o:any)=>(o.invoices||[]).flatMap((i:any)=>i.payments||[])).filter((p:any)=>inRange(p.date)).reduce((s:number,p:any)=>s+(+p.amount||0),0);
       const openC=cOrds.reduce((s:number,o:any)=>{ const iv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0); return s+Math.max(0,(+o.amount||0)-iv); },0);
       const overC=cOrds.flatMap((o:any)=>o.invoices||[]).reduce((s:number,i:any)=>{ const ps=payStatus(i); return["overdue","ov_part"].includes(ps.key)?s+ps.rem:s; },0);
       const rate=po>0?(inv/po*100):0;
@@ -3146,7 +3154,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
     <div class="brand">OrderTrack — ${isFR?"Rapport de Performance Annuelle":"Annual Performance Report"}</div>
     <div style="margin-top:14px">
       <div class="main-title">${isFR?"RAPPORT\nANNUEL":"YEARLY\nREPORT"}</div>
-      <div class="year-badge">${thisYear} · ${isFR?"Afrique de l'Ouest":"West Africa"}</div>
+      <div class="year-badge">${periodLabel} · ${isFR?"Afrique de l'Ouest":"West Africa"}</div>
     </div>
   </div>
   <div class="watermark">${thisYear}</div>
@@ -4333,6 +4341,64 @@ tr:nth-child(even) td{background:#F8FAFC;}
         onUpdate={(idx:number,field:string,val:string)=>setThisWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
         onRemove={(idx:number)=>setThisWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
         title="📋 Semaine en cours — Planned Activity" color={C.green} isMobile={isMobile}/>
+
+      {/* Period selector for yearly report */}
+      <div style={{background:"#fff",borderRadius:C.rLg,border:`2px solid #1D4ED8`,boxShadow:C.shMd,overflow:"hidden"}}>
+        <div style={{padding:"12px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",gap:8,background:"#EFF6FF"}}>
+          <i className="ti ti-calendar-stats" style={{fontSize:16,color:"#1D4ED8"}} aria-hidden="true"/>
+          <span style={{fontWeight:700,fontSize:13,color:"#1D4ED8"}}>Rapport sur une période personnalisée</span>
+        </div>
+        <div style={{padding:"14px 18px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Date début</label>
+            <input type="date" value={yearlyFrom} onChange={e=>setYearlyFrom(e.target.value)}
+              style={{padding:"7px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit"}}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Date fin</label>
+            <input type="date" value={yearlyTo} onChange={e=>setYearlyTo(e.target.value)}
+              style={{padding:"7px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit"}}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Langue</label>
+            <div style={{display:"flex",background:C.page,border:`1px solid ${C.b}`,borderRadius:C.rSm,overflow:"hidden"}}>
+              {(["fr","en"] as const).map(l=>(
+                <button key={l} onClick={()=>setYearlyLang(l)}
+                  style={{padding:"7px 18px",border:"none",background:yearlyLang===l?"#1D4ED8":"transparent",color:yearlyLang===l?"#fff":C.t2,fontWeight:yearlyLang===l?700:400,fontSize:13,cursor:"pointer",transition:"all .15s",textTransform:"uppercase"}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:11,color:"transparent",fontWeight:600}}>—</label>
+            <div style={{display:"flex",gap:8}}>
+              {[
+                {label:`YTD ${thisYear}`, from:`${thisYear}-01-01`, to:todayStr()},
+                {label:`${thisYear-1}`, from:`${thisYear-1}-01-01`, to:`${thisYear-1}-12-31`},
+                {label:"6 mois", from:addDays(todayStr(),-180), to:todayStr()},
+                {label:"12 mois", from:addDays(todayStr(),-365), to:todayStr()},
+              ].map(({label,from,to})=>(
+                <button key={label} onClick={()=>{setYearlyFrom(from);setYearlyTo(to);}}
+                  style={{padding:"7px 12px",background:yearlyFrom===from&&yearlyTo===to?"#DBEAFE":"#F1F5F9",color:yearlyFrom===from&&yearlyTo===to?"#1D4ED8":C.t2,border:"none",borderRadius:C.rSm,fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4,marginLeft:"auto"}}>
+            <label style={{fontSize:11,color:"transparent",fontWeight:600}}>—</label>
+            <button onClick={()=>printYearlyReport(yearlyLang,yearlyFrom,yearlyTo)}
+              style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,#1D4ED8,#7C3AED)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"9px 20px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 14px rgba(29,78,216,.4)",whiteSpace:"nowrap"}}>
+              <i className="ti ti-printer" style={{fontSize:15}} aria-hidden="true"/>
+              {yearlyLang==="fr"?"Générer le rapport":"Generate report"}
+            </button>
+          </div>
+        </div>
+        <div style={{padding:"6px 18px 10px",fontSize:11,color:C.t3}}>
+          Période sélectionnée : <strong style={{color:"#1D4ED8"}}>{fmtD(yearlyFrom)}</strong> → <strong style={{color:"#1D4ED8"}}>{fmtD(yearlyTo)}</strong> · Langue : <strong style={{color:"#1D4ED8"}}>{yearlyLang.toUpperCase()}</strong>
+        </div>
+      </div>
 
       {/* Print button bottom */}
       <div style={{display:"flex",justifyContent:"center",gap:12,paddingBottom:20,flexWrap:"wrap"}}>
