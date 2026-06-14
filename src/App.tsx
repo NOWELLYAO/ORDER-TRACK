@@ -2817,6 +2817,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const [lastWeekItems,setLastWeekItems]=useState(draft?.lastWeekItems||[{priority:"HIGH",client:"",action:"",status:"📋"}]);
   const [thisWeekItems,setThisWeekItems]=useState(draft?.thisWeekItems||[{priority:"HIGH",client:"",action:"",status:"📋"}]);
   const [expectedOrders,setExpectedOrders]=useState(draft?.expectedOrders||[{client:"",project:"",est:""}]);
+  const [plannedInvoices,setPlannedInvoices]=useState<any[]>(draft?.plannedInvoices||[]);
   const [showPreview,setShowPreview]=useState(false);
   const [orderPeriod,setOrderPeriod]=useState(7);
   const [invoicePeriod,setInvoicePeriod]=useState(30);
@@ -2826,7 +2827,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 
   // Auto-save draft on every change
   useEffect(()=>{
-    const draft={weekLabel,period,lastWeekItems,thisWeekItems,expectedOrders};
+    const draft={weekLabel,period,lastWeekItems,thisWeekItems,expectedOrders,plannedInvoices};
     try{localStorage.setItem(DRAFT_KEY,JSON.stringify(draft));}catch{}
   },[weekLabel,period,lastWeekItems,thisWeekItems,expectedOrders]);
 
@@ -2834,7 +2835,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     const report={
       id:Date.now().toString(),
       weekLabel,period,orderPeriod,invoicePeriod,
-      lastWeekItems,thisWeekItems,expectedOrders,
+      lastWeekItems,thisWeekItems,expectedOrders,plannedInvoices,
       savedAt:new Date().toISOString(),
       label:`${weekLabel} — ${period}`
     };
@@ -2882,6 +2883,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     setLastWeekItems(r.lastWeekItems||[]);
     setThisWeekItems(r.thisWeekItems||[]);
     setExpectedOrders(r.expectedOrders||[]);
+    if(r.plannedInvoices)setPlannedInvoices(r.plannedInvoices);
     if(r.orderPeriod)setOrderPeriod(r.orderPeriod);
     if(r.invoicePeriod)setInvoicePeriod(r.invoicePeriod);
     setShowHistory(false);
@@ -3208,41 +3210,24 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div>
       <div class="col-header">📅 EXPECTED INVOICING — ${MONTH_NAMES[thisMonth].toUpperCase()} / ${MONTH_NAMES[thisMonth===11?0:thisMonth+1].toUpperCase()}</div>
       <table>
-        <thead><tr><th>Client</th><th>N° Facture</th><th>Échéance</th><th style="text-align:right">Reste (K€)</th></tr></thead>
+        <thead><tr><th>Client</th><th>N° PO</th><th>N° S/O</th><th style="text-align:right">Montant prévu (K€)</th></tr></thead>
         <tbody>
-          ${(()=>{
-            // Invoices with dueDate in current month or next month, with remaining balance
-            const nextMonth=thisMonth===11?0:thisMonth+1;
-            const nextMonthYear=thisMonth===11?thisYear+1:thisYear;
-            const upcoming=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{
-              if(!i.dueDate)return null;
-              const due=new Date(i.dueDate+"T00:00:00");
-              const dueM=due.getMonth(),dueY=due.getFullYear();
-              const isCurr=dueM===thisMonth&&dueY===thisYear;
-              const isNext=dueM===nextMonth&&dueY===nextMonthYear;
-              if(!isCurr&&!isNext)return null;
-              const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
-              const rem=Math.max(0,(+i.amount||0)-paid);
-              if(rem<=0)return null;
-              return{...i,_client:o._client,_po:o.poNumber,rem,monthLabel:isCurr?MONTH_NAMES[thisMonth]:MONTH_NAMES[nextMonth]};
-            }).filter(Boolean));
-            if(upcoming.length===0) return '<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucune échéance ce mois / mois prochain</td></tr>';
-            // Group by month then client
-            const byMonth:Record<string,any[]>={};
-            upcoming.forEach((i:any)=>{const k=i.monthLabel;if(!byMonth[k])byMonth[k]=[];byMonth[k].push(i);});
-            let r4="";
-            [MONTH_NAMES[thisMonth],MONTH_NAMES[nextMonth]].forEach(mLabel=>{
-              if(!byMonth[mLabel])return;
-              const mTot=byMonth[mLabel].reduce((s:number,i:any)=>s+i.rem,0);
-              r4+=`<tr style="background:#EFF6FF"><td colspan="3" style="font-weight:700;color:#1D4ED8;font-size:9px">📅 ${mLabel.toUpperCase()}</td><td style="text-align:right;font-weight:700;color:#1D4ED8">${fmtK(mTot)}</td></tr>`;
-              byMonth[mLabel].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||"")).forEach((i:any)=>{
-                r4+=`<tr><td style="font-weight:600">${i._client}</td><td style="font-size:9px">${i.invoiceNumber||i._po||"—"}</td><td style="color:#8FA0B3">${fmtD(i.dueDate)}</td><td style="text-align:right;color:#D97706">${fmtK(i.rem)}</td></tr>`;
-              });
-            });
-            const grandTot=upcoming.reduce((s:number,i:any)=>s+i.rem,0);
-            r4+=`<tr class="total-row"><td colspan="3">TOTAL</td><td style="text-align:right">${fmtK(grandTot)}</td></tr>`;
-            return r4;
-          })()}
+          ${plannedInvoices.length===0
+            ?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucune facture planifiée — sélectionnez dans le rapport hebdo</td></tr>'
+            :(()=>{
+              // Group by client
+              const byC3:Record<string,any[]>={};
+              plannedInvoices.forEach((p:any)=>{if(!byC3[p.client])byC3[p.client]=[];byC3[p.client].push(p);});
+              let r5=Object.keys(byC3).sort().map(c=>{
+                const cTot=byC3[c].reduce((s:number,p:any)=>s+(+p.amount||0),0);
+                const rows=byC3[c].map((p:any)=>`<tr><td style="padding-left:16px;color:#4A5568">${p.client}</td><td style="font-family:monospace;font-size:9px">${p.poNumber||"—"}</td><td style="font-family:monospace;font-size:9px">${p.soNumber||"—"}</td><td style="text-align:right;color:#D97706;font-weight:600">${fmtK(+p.amount||0)}</td></tr>`).join("");
+                return `<tr style="background:#FFF7ED"><td colspan="3" style="font-weight:700;color:#D97706;font-size:10px">📁 ${c}</td><td style="text-align:right;font-weight:700;color:#D97706">${fmtK(cTot)}</td></tr>${rows}`;
+              }).join("");
+              const grand=plannedInvoices.reduce((s:number,p:any)=>s+(+p.amount||0),0);
+              r5+=`<tr class="total-row"><td colspan="3">TOTAL PRÉVU</td><td style="text-align:right">${fmtK(grand)}</td></tr>`;
+              return r5;
+            })()
+          }
         </tbody>
       </table>
     </div>
@@ -3497,6 +3482,95 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
           ))}
         </div>
       </div>
+
+      {/* Planned invoices — select from open orders */}
+      {(()=>{
+        const openOrdersList=allOrders.filter((o:any)=>{
+          const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+          return inv<(+o.amount||0)*0.999&&o.status!=="annule";
+        });
+        const totalPlanned=plannedInvoices.reduce((s:number,p:any)=>s+(+p.amount||0),0);
+        const toggleOrder=(o:any)=>{
+          const key=o._client+"|"+o.id;
+          const exists=plannedInvoices.find((p:any)=>p.key===key);
+          if(exists){
+            setPlannedInvoices(prev=>prev.filter((p:any)=>p.key!==key));
+          } else {
+            const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+            const rem=Math.max(0,(+o.amount||0)-inv);
+            setPlannedInvoices(prev=>[...prev,{key,client:o._client,poNumber:o.poNumber,soNumber:o.soNumber,amount:rem,fullAmount:rem}]);
+          }
+        };
+        return(
+          <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+            <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div>
+                <span style={{fontWeight:600,fontSize:13,color:C.t1}}>🧾 Factures prévues (Expected Invoicing)</span>
+                <span style={{fontSize:11,color:C.t3,marginLeft:10}}>Sélectionne les open orders à facturer ce mois / mois prochain</span>
+              </div>
+              {totalPlanned>0&&<span style={{background:C.tealL,color:C.teal,fontWeight:700,fontSize:13,padding:"4px 12px",borderRadius:6}}>{fmtK(totalPlanned)} €</span>}
+            </div>
+            {openOrdersList.length===0
+              ?<div style={{padding:"16px 18px",fontSize:12,color:C.t3}}>Aucun open order disponible</div>
+              :<div style={{maxHeight:320,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{background:"#F8FAFC",borderBottom:`1px solid ${C.b}`}}>
+                      <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11,width:40}}/>
+                      <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>Client</th>
+                      <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>N° PO</th>
+                      <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>N° S/O</th>
+                      <th style={{padding:"8px 14px",textAlign:"right",color:C.t3,fontWeight:500,fontSize:11}}>Reste à fact.</th>
+                      <th style={{padding:"8px 14px",textAlign:"right",color:C.teal,fontWeight:600,fontSize:11}}>Montant prévu (€)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {openOrdersList.map((o:any,idx:number)=>{
+                      const key=o._client+"|"+o.id;
+                      const planned=plannedInvoices.find((p:any)=>p.key===key);
+                      const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+                      const rem=Math.max(0,(+o.amount||0)-inv);
+                      const isSelected=!!planned;
+                      return(
+                        <tr key={idx} style={{borderBottom:`1px solid ${C.b}`,background:isSelected?C.tealL+"60":"transparent",cursor:"pointer"}}
+                          onClick={()=>toggleOrder(o)}>
+                          <td style={{padding:"8px 14px",textAlign:"center"}}>
+                            <div style={{width:18,height:18,borderRadius:4,border:`2px solid ${isSelected?C.teal:C.b}`,background:isSelected?C.teal:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                              {isSelected&&<i className="ti ti-check" style={{fontSize:11,color:"#fff"}} aria-hidden="true"/>}
+                            </div>
+                          </td>
+                          <td style={{padding:"8px 14px",fontWeight:600,color:C.t1}}>{o._client}</td>
+                          <td style={{padding:"8px 14px",color:C.t2,fontFamily:"monospace",fontSize:11}}>{o.poNumber||"—"}</td>
+                          <td style={{padding:"8px 14px",color:C.t2,fontFamily:"monospace",fontSize:11}}>{o.soNumber||"—"}</td>
+                          <td style={{padding:"8px 14px",textAlign:"right",color:C.amberDk,fontWeight:600}}>{fmt(rem)} €</td>
+                          <td style={{padding:"6px 14px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
+                            {isSelected
+                              ?<input type="number" value={planned.amount}
+                                  onChange={e=>setPlannedInvoices(prev=>prev.map((p:any)=>p.key===key?{...p,amount:+e.target.value||0}:p))}
+                                  onClick={e=>e.stopPropagation()}
+                                  style={{width:110,padding:"4px 8px",border:`2px solid ${C.teal}`,borderRadius:5,fontSize:12,fontWeight:600,color:C.teal,textAlign:"right",fontFamily:"inherit"}}
+                                />
+                              :<span style={{color:C.t3,fontSize:11}}>—</span>
+                            }
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {plannedInvoices.length>0&&(
+                    <tfoot>
+                      <tr style={{background:C.tealL,borderTop:`2px solid ${C.teal}`}}>
+                        <td colSpan={5} style={{padding:"8px 14px",fontWeight:700,color:C.teal,textAlign:"right"}}>TOTAL FACTURES PRÉVUES</td>
+                        <td style={{padding:"8px 14px",fontWeight:800,color:C.teal,textAlign:"right"}}>{fmt(totalPlanned)} €</td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            }
+          </div>
+        );
+      })()}
 
       {/* Activity tables */}
       <ActivityTable
