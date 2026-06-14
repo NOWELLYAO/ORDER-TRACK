@@ -2766,13 +2766,7 @@ function ActivityTable({items,onAdd,onUpdate,onRemove,title,color,isMobile}:any)
       </div>
       <div style={{padding:"12px 18px",display:"flex",flexDirection:"column",gap:8}}>
         {items.map((item:any,idx:number)=>(
-          <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"120px 1fr 2fr 80px 32px",gap:8,alignItems:"center"}}>
-            <select value={item.priority} onChange={e=>onUpdate(idx,"priority",e.target.value)}
-              style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:11,fontWeight:600,
-                background:item.priority==="HIGH"?C.redL:item.priority==="MEDIUM"?C.amberL:C.greenL,
-                color:item.priority==="HIGH"?C.redDk:item.priority==="MEDIUM"?C.amberDk:C.greenDk}}>
-              {PRIORITIES_LIST.map(p=><option key={p} value={p}>{p}</option>)}
-            </select>
+          <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr 80px 32px",gap:8,alignItems:"center"}}>
             <input value={item.client} onChange={e=>onUpdate(idx,"client",e.target.value)}
               placeholder="Client / Prospect"
               style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"}}/>
@@ -3256,7 +3250,6 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
       ?'<div style="text-align:center;padding:40px;color:#8FA0B3">Aucune activité saisie pour la semaine passée</div>'
       :lastWeekItems.filter((item:any)=>item.client||item.action).map((item:any)=>`
         <div class="activity-row">
-          <span class="priority-badge" style="background:${priorityBg(item.priority)};color:${priorityColor(item.priority)}">${item.priority}</span>
           <span class="status-icon">${item.status}</span>
           <div class="activity-content">
             ${item.client?`<div class="activity-client">${item.client}</div>`:""}
@@ -3276,7 +3269,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   <div class="section-header">
     <div>
       <div style="font-size:10px;color:#059669;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">4 / 4</div>
-      <div class="section-title">🚀 THIS WEEK — Field Activity</div>
+      <div class="section-title">📋 THIS WEEK — Field Activity</div>
       <div class="section-sub">Activités de la semaine en cours</div>
     </div>
     <div class="section-meta">
@@ -3288,7 +3281,6 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
       ?'<div style="text-align:center;padding:40px;color:#8FA0B3">Aucune activité saisie pour la semaine en cours</div>'
       :thisWeekItems.filter((item:any)=>item.client||item.action).map((item:any)=>`
         <div class="activity-row">
-          <span class="priority-badge" style="background:${priorityBg(item.priority)};color:${priorityColor(item.priority)}">${item.priority}</span>
           <span class="status-icon">${item.status}</span>
           <div class="activity-content">
             ${item.client?`<div class="activity-client">${item.client}</div>`:""}
@@ -3584,7 +3576,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
         onAdd={()=>setThisWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
         onUpdate={(idx:number,field:string,val:string)=>setThisWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
         onRemove={(idx:number)=>setThisWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
-        title="🚀 Semaine en cours — Activités terrain" color={C.green} isMobile={isMobile}/>
+        title="📋 Semaine en cours — Activités terrain" color={C.green} isMobile={isMobile}/>
 
       {/* Print button bottom */}
       <div style={{display:"flex",justifyContent:"center",paddingBottom:20}}>
