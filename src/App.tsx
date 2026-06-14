@@ -3126,10 +3126,16 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
         <thead><tr><th>Customer</th><th>Project</th><th style="text-align:right">Est. (K€)</th></tr></thead>
         <tbody>
           ${expectedOrders.filter((e:any)=>e.client||e.project).length===0
-            ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">— à compléter —</td></tr>'
+            ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">— to be filled —</td></tr>'
             :expectedOrders.filter((e:any)=>e.client||e.project).map((e:any)=>`<tr><td style="font-weight:600">${e.client||"—"}</td><td>${e.project||"—"}</td><td style="text-align:right;font-weight:600;color:#D97706">${e.est?fmtK(+e.est*1000):"—"}</td></tr>`).join("")
           }
         </tbody>
+        ${expectedOrders.filter((e:any)=>e.est).length>0?`<tfoot>
+          <tr class="total-row">
+            <td colspan="2">TOTAL EXPECTED</td>
+            <td style="text-align:right">${fmtK(expectedOrders.filter((e:any)=>e.est).reduce((s:number,e:any)=>s+(+e.est||0)*1000,0))}</td>
+          </tr>
+        </tfoot>`:""}
       </table>
     </div>
   </div>
