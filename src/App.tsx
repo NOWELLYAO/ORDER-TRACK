@@ -3276,7 +3276,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div>
       <div style="font-size:10px;color:#059669;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">4 / 4</div>
       <div class="section-title">📋 THIS WEEK — Field Activity</div>
-      <div class="section-sub">Current week field activities</div>
+      <div class="section-sub">Planned activity</div>
     </div>
     <div class="section-meta">
       <div class="section-badge" style="background:#D1FAE5;color:#059669">${weekLabel} · ${period}</div>
