@@ -105,7 +105,7 @@ type Lang="fr"|"en";
 const T:Record<Lang,Record<string,string>>={
   fr:{
     // Nav
-    nav_dashboard:"Tableau de bord", nav_compilation:"Compilation", nav_clients:"Clients",
+    nav_dashboard:"Tableau de bord", nav_compilation:"Compilation", nav_clients:"Customers",
     nav_add_client:"Ajouter", nav_search:"Recherche globale",
     // General
     loading:"Chargement…", save:"Enregistrer", cancel:"Annuler", delete:"Supprimer",
@@ -115,7 +115,7 @@ const T:Record<Lang,Record<string,string>>={
     confirm_del_payment:"Supprimer ce paiement ?",
     // Dashboard
     page_dashboard:"Tableau de bord", page_compilation:"Compilation",
-    kpi_clients:"Clients", kpi_orders:"Commandes", kpi_po:"Total PO",
+    kpi_clients:"Customers", kpi_orders:"Commandes", kpi_po:"Total PO",
     kpi_invoiced:"Facturé", kpi_collected:"Encaissé", kpi_outstanding:"Factures en cours",
     kpi_active:"actifs", kpi_no_invoice:"sans facture",
     kpi_invoiced_pct:"% du PO", kpi_collected_pct:"% des factures",
@@ -133,9 +133,9 @@ const T:Record<Lang,Record<string,string>>={
     // Compilation
     consol_view:"Vue consolidée · tous les clients · {n} comptes actifs",
     total_po_year:"Total PO {y}", invoiced_total:"Facturé", open_orders:"Open Orders",
-    open_label:"OPEN ORDERS", remain_to_invoice:"Reste à facturer",
+    open_label:"OPEN ORDERS", remain_to_invoice:"Remaining to invoice",
     ranking_po:"Classement PO par client", monthly_activity:"Activité mensuelle {y}",
-    // Client page
+    // Customer page
     order_management:"Gestion des commandes {y}",
     edit_client:"Modifier", no_orders_msg:"Aucune commande — utilisez le bouton + pour commencer.",
     add_first_order:"Aucune commande — cliquez sur « Nouvelle commande » pour commencer.",
@@ -144,24 +144,24 @@ const T:Record<Lang,Record<string,string>>={
     kpi_total_po:"PO total", kpi_invoiced:"Facturé", kpi_collected:"Encaissé",
     kpi_overdue_client:"Factures échues", kpi_outstanding_client:"En cours (non échu)",
     kpi_open:"Open orders", commanded:"Commandé", late_label:"Facturé non réglé",
-    outstanding_wait:"Factures en attente", remain_invoice:"Reste à facturer",
+    outstanding_wait:"Factures en attente", remain_invoice:"Remaining to invoice",
     // Tabs
     tab_orders:"Commandes", tab_invoices:"Factures", tab_payments:"Paiements",
-    search_orders:"Chercher N° PO, S/O, statut…",
+    search_orders:"Chercher PO #, S/O, statut…",
     search_invoices:"Chercher N° facture, PO…",
     search_payments:"Chercher réf. paiement, mode…",
     results:"{n} résultat{s}", no_results:"Aucune {type} trouvé{e}",
     show_more:"Afficher les {n} {type} suivant{s}", collapse:"Réduire",
     // Orders
     btn_new_order:"Nouvelle commande", btn_add_invoice:"Ajouter facture",
-    col_po:"N° PO", col_so:"S/O", col_order_num:"N° Commande", col_date:"Date",
+    col_po:"PO #", col_so:"S/O", col_order_num:"N° Commande", col_date:"Date",
     col_amount:"Montant PO", col_invoiced_remain:"Facturé / Reste", col_collected:"Encaissé",
     col_delivery_mode:"Mode livraison", col_expected:"Date prévue",
     col_nb_invoices:"Nb factures", col_notes:"Notes",
     delay_days:"{n}j de retard", in_days:"Dans {n}j",
     invoice_section:"Expéditions & Factures", no_invoice_yet:"Aucune facture pour cette commande",
     // Invoices
-    col_invoice:"N° Facture", col_due:"Échéance", col_paid:"Payé",
+    col_invoice:"Invoice #", col_due:"Échéance", col_paid:"Payé",
     col_remain:"Reste", col_status:"Statut", col_actions:"Actions",
     payments_received:"Paiements reçus", total_paid:"Total payé",
     remaining_due:"Reste", fully_settled:"✓ Entièrement réglé",
@@ -179,14 +179,14 @@ const T:Record<Lang,Record<string,string>>={
     due_days:"Calculé automatiquement ({n} jours après la facture).",
     create_client:"Créer le client", save_changes:"Enregistrer les modifications",
     new_order:"Nouvelle commande", edit_order:"Modifier la commande",
-    order_date:"Date commande *", po_number:"N° PO Client *",
-    so_number:"N° S/O *", order_number_cimelec:"N° Commande (CIMELEC)",
+    order_date:"Date commande *", po_number:"PO # Customer *",
+    so_number:"S/O # *", order_number_cimelec:"N° Commande (CIMELEC)",
     amount:"Montant (€) *", delivery_mode:"Mode de livraison",
     expected_date:"Date livraison prévue", order_notes:"Notes",
     order_status_title:"Statut de la commande *",
     create_order:"Créer la commande", save_order:"Enregistrer",
     new_invoice:"Nouvelle expédition / Facture", edit_invoice:"Modifier la facture",
-    invoice_number:"N° Facture *", invoice_date:"Date facture *",
+    invoice_number:"Invoice # *", invoice_date:"Date facture *",
     invoice_amount:"Montant (€) *", shipping_mode:"Mode expédition",
     due_date_field:"Date d'échéance paiement", force_manual:"Forcer manuellement",
     calculated:"Calculé", already_invoiced:"Déjà facturé", po_remain:"Reste",
@@ -206,7 +206,7 @@ const T:Record<Lang,Record<string,string>>={
     r_all:"Toutes les factures", r_all_desc:"Listing complet sur la période",
     r_summary:"Synthèse clients", r_summary_desc:"Récapitulatif par client",
     date_from:"Date de début", date_to:"Date de fin",
-    clients_included:"Clients inclus", all_clients:"Tous", no_clients:"Aucun",
+    clients_included:"Customers inclus", all_clients:"Tous", no_clients:"Aucun",
     // Alerts ticker
     alert_label:"ALERTE",
     a_overdue:"{n} facture{s} échue{s}", a_overdue_detail:"{amt} € à recouvrer",
@@ -221,7 +221,7 @@ const T:Record<Lang,Record<string,string>>={
     s_fact_non_exp:"Facturée non expédiée", s_livree:"Livrée",
     s_livree_part:"Livrée (partielle)", s_annule:"Annulée",
     // Search
-    search_placeholder:"Rechercher un N° PO, S/O, facture, référence…",
+    search_placeholder:"Rechercher un PO #, S/O, facture, référence…",
     search_hint:"Tapez au moins 2 caractères pour rechercher",
     search_empty:"Aucun résultat pour « {q} »",
     type_order:"Commande", type_invoice:"Facture", type_payment:"Paiement",
@@ -237,7 +237,7 @@ const T:Record<Lang,Record<string,string>>={
   },
   en:{
     // Nav
-    nav_dashboard:"Dashboard", nav_compilation:"Compilation", nav_clients:"Clients",
+    nav_dashboard:"Dashboard", nav_compilation:"Compilation", nav_clients:"Customers",
     nav_add_client:"Add", nav_search:"Global search",
     // General
     loading:"Loading…", save:"Save", cancel:"Cancel", delete:"Delete",
@@ -247,7 +247,7 @@ const T:Record<Lang,Record<string,string>>={
     confirm_del_payment:"Delete this payment?",
     // Dashboard
     page_dashboard:"Dashboard", page_compilation:"Compilation",
-    kpi_clients:"Clients", kpi_orders:"Orders", kpi_po:"Total PO",
+    kpi_clients:"Customers", kpi_orders:"Orders", kpi_po:"Total PO",
     kpi_invoiced:"Invoiced", kpi_collected:"Collected", kpi_outstanding:"Outstanding",
     kpi_active:"active", kpi_no_invoice:"without invoice",
     kpi_invoiced_pct:"% of PO", kpi_collected_pct:"% of invoices",
@@ -260,14 +260,14 @@ const T:Record<Lang,Record<string,string>>={
     total_upcoming:"Total to collect soon",
     monthly_chart:"Monthly evolution", status_chart:"Order statuses",
     no_orders_kpi:"No orders",
-    ranking:"Client ranking", rank_account:"Account #", rank_conditions:"Payment terms",
+    ranking:"Customer ranking", rank_account:"Account #", rank_conditions:"Payment terms",
     rank_cmds:"Orders", rank_factor:"Inv. rate",
     // Compilation
     consol_view:"Consolidated view · all clients · {n} active accounts",
     total_po_year:"Total PO {y}", invoiced_total:"Invoiced", open_orders:"Open Orders",
     open_label:"OPEN ORDERS", remain_to_invoice:"Remaining to invoice",
     ranking_po:"PO ranking by client", monthly_activity:"Monthly activity {y}",
-    // Client page
+    // Customer page
     order_management:"Order management {y}",
     edit_client:"Edit", no_orders_msg:"No orders — use the + button to get started.",
     add_first_order:"No orders yet — click « New order » to begin.",
@@ -303,7 +303,7 @@ const T:Record<Lang,Record<string,string>>={
     global_total:"Global total",
     // Modals
     new_client:"New client", edit_client_title:"Edit client",
-    client_name:"Client name *", account_num:"Account #",
+    client_name:"Customer name *", account_num:"Account #",
     pay_terms:"Payment terms", custom_days:"Days",
     uppercase_note:"Name will be automatically uppercased.",
     auto_due:"Automatic due dates:", due_advance:"Payment tied to delivery.",
@@ -311,7 +311,7 @@ const T:Record<Lang,Record<string,string>>={
     due_days:"Auto-calculated ({n} days after invoice date).",
     create_client:"Create client", save_changes:"Save changes",
     new_order:"New order", edit_order:"Edit order",
-    order_date:"Order date *", po_number:"Client PO # *",
+    order_date:"Order date *", po_number:"Customer PO # *",
     so_number:"SO # *", order_number_cimelec:"Order # (CIMELEC)",
     amount:"Amount (€) *", delivery_mode:"Delivery mode",
     expected_date:"Expected delivery date", order_notes:"Notes",
@@ -336,9 +336,9 @@ const T:Record<Lang,Record<string,string>>={
     r_upcoming:"Upcoming due dates", r_upcoming_desc:"Invoices due in the next 30 days",
     r_unpaid:"Outstanding invoices", r_unpaid_desc:"All invoices with remaining balance",
     r_all:"All invoices", r_all_desc:"Complete listing for the period",
-    r_summary:"Client summary", r_summary_desc:"Summary by client",
+    r_summary:"Customer summary", r_summary_desc:"Summary by client",
     date_from:"Start date", date_to:"End date",
-    clients_included:"Clients included", all_clients:"All", no_clients:"None",
+    clients_included:"Customers included", all_clients:"All", no_clients:"None",
     // Alerts ticker
     alert_label:"ALERT",
     a_overdue:"{n} overdue invoice{s}", a_overdue_detail:"{amt} € to recover",
@@ -557,7 +557,7 @@ function LoginScreen({onLogin}:any){
   );
 }
 
-const DEFAULT_PERMS={canEdit:true,canDelete:true,canAddClient:true,canViewReports:true,canExport:true};
+const DEFAULT_PERMS={canEdit:true,canDelete:true,canAddCustomer:true,canViewReports:true,canExport:true};
 
 function UserManager({session,onClose}:any){
   const[users,setUsers]=useState<any[]>([]);
@@ -622,7 +622,7 @@ function UserManager({session,onClose}:any){
   const PERMS_LIST=[
     {key:"canEdit",label:"Modifier les commandes / factures",icon:"ti-edit"},
     {key:"canDelete",label:"Supprimer des données",icon:"ti-trash"},
-    {key:"canAddClient",label:"Ajouter / supprimer des clients",icon:"ti-user-plus"},
+    {key:"canAddCustomer",label:"Ajouter / supprimer des clients",icon:"ti-user-plus"},
     {key:"canViewReports",label:"Accès aux rapports hebdo",icon:"ti-file-report"},
     {key:"canExport",label:"Exporter en PDF",icon:"ti-file-export"},
   ];
@@ -741,7 +741,7 @@ export default function App(){
     return()=>window.removeEventListener("resize",fn);
   },[]);
   const[data,setData]=useState<any>(null);
-  const[clients,setClients]=useState<string[]|null>(null);
+  const[clients,setCustomers]=useState<string[]|null>(null);
   const[session,setSession]=useState<any>(()=>{
     try{const s=localStorage.getItem(AUTH_KEY);return s?JSON.parse(s):null;}catch{return null;}
   });
@@ -807,7 +807,7 @@ export default function App(){
           const cloudHasData=cloud.orders&&Object.values(cloud.orders).some((arr:any)=>arr?.length>0);
           if(localIsNewer && localHasData){
             // Local is newer — load local and push to cloud
-            setClients(localParsed.clients||DEFAULT_CLIENTS);
+            setCustomers(localParsed.clients||DEFAULT_CLIENTS);
             setData(migrateRDT(localParsed.orders||{}));
             setConfigs(localParsed.configs||{});
             setSyncStatus("syncing");
@@ -819,7 +819,7 @@ export default function App(){
           }
           if(cloudHasData||!localHasData){
             // Cloud is newer or local is empty — use cloud
-            setClients(cloud.clients||DEFAULT_CLIENTS);
+            setCustomers(cloud.clients||DEFAULT_CLIENTS);
             setData(migrateRDT(cloud.orders||{}));
             setConfigs(cloud.configs||migrateAccounts(cloud.accounts));
             try{
@@ -838,7 +838,7 @@ export default function App(){
         const s=localStorage.getItem(KEY);
         if(s){
           const p=JSON.parse(s);
-          setClients(p.clients||DEFAULT_CLIENTS);
+          setCustomers(p.clients||DEFAULT_CLIENTS);
           setData(migrateRDT(p.orders||{}));
           setConfigs(p.configs||migrateAccounts(p.accounts));
           setSyncStatus("offline");
@@ -847,7 +847,7 @@ export default function App(){
       }catch{}
       // 3. Fresh start
       const init:any={};DEFAULT_CLIENTS.forEach(c=>(init[c]=[]));
-      setClients(DEFAULT_CLIENTS);setData(init);
+      setCustomers(DEFAULT_CLIENTS);setData(init);
       setSyncStatus("idle");
     })();
   },[]);
@@ -888,7 +888,7 @@ export default function App(){
         lastCloudUpdate.current=new Date(result.updatedAt).toISOString();
         const cloud=result.payload;
         if(!cloud.orders)return;
-        setClients(c=>JSON.stringify(c)===JSON.stringify(cloud.clients)?c:(cloud.clients||DEFAULT_CLIENTS));
+        setCustomers(c=>JSON.stringify(c)===JSON.stringify(cloud.clients)?c:(cloud.clients||DEFAULT_CLIENTS));
         setData(migrateRDT(cloud.orders||{}));
         setConfigs(cloud.configs||{});
         localStorage.setItem(KEY,JSON.stringify(cloud));
@@ -907,7 +907,7 @@ export default function App(){
 
   const persist=(nc:any,nd:any,nf:any)=>{
     const c=nc??clients,d=nd??data,f=nf??configs;
-    setClients(c);setData(d);setConfigs(f);
+    setCustomers(c);setData(d);setConfigs(f);
     const ts=new Date().toISOString();
     const payload={clients:c,orders:d,configs:f};
     // Local save — instant with timestamp
@@ -962,9 +962,9 @@ export default function App(){
   };
 
   // CLIENT CRUD
-  const addClient=(name:string,cfg:any)=>{const t=name.trim().toUpperCase();if(!t||clients!.includes(t))return false;persist([...clients!,t],{...data,[t]:[]},{...configs,[t]:cfg});return true;};
-  const editClient=(old:string,name:string,cfg:any)=>{const t=name.trim().toUpperCase();if(!t)return false;if(t!==old&&clients!.includes(t))return false;const nc=clients!.map(c=>c===old?t:c);const nd={...data};nd[t]=nd[old]||[];if(t!==old)delete nd[old];const nf={...configs,[t]:cfg};if(t!==old)delete nf[old];if(page===old)setPage(t);persist(nc,nd,nf);return true;};
-  const delClient=(name:string)=>{const nc=clients!.filter(c=>c!==name);const nd={...data};delete nd[name];const nf={...configs};delete nf[name];if(page===name)setPage("kpi");persist(nc,nd,nf);};
+  const addCustomer=(name:string,cfg:any)=>{const t=name.trim().toUpperCase();if(!t||clients!.includes(t))return false;persist([...clients!,t],{...data,[t]:[]},{...configs,[t]:cfg});return true;};
+  const editCustomer=(old:string,name:string,cfg:any)=>{const t=name.trim().toUpperCase();if(!t)return false;if(t!==old&&clients!.includes(t))return false;const nc=clients!.map(c=>c===old?t:c);const nd={...data};nd[t]=nd[old]||[];if(t!==old)delete nd[old];const nf={...configs,[t]:cfg};if(t!==old)delete nf[old];if(page===old)setPage(t);persist(nc,nd,nf);return true;};
+  const delCustomer=(name:string)=>{const nc=clients!.filter(c=>c!==name);const nd={...data};delete nd[name];const nf={...configs};delete nf[name];if(page===name)setPage("kpi");persist(nc,nd,nf);};
 
   // ORDER CRUD
   const saveOrder=(client:string,f:any)=>{const orders=[...getOrders(client)];if(f.id){const i=orders.findIndex((o:any)=>o.id===f.id);if(i>=0)orders[i]={...orders[i],...f};}else orders.push({...f,id:Date.now().toString(),invoices:[]});persist(null,{...data,[client]:orders},null);setModal(null);};
@@ -1078,7 +1078,7 @@ export default function App(){
 
           {sideOpen&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 6px 4px",marginTop:4}}>
-              <p style={{fontSize:10,color:"#374151",fontWeight:600,letterSpacing:".07em",textTransform:"uppercase",margin:0}}>Clients</p>
+              <p style={{fontSize:10,color:"#374151",fontWeight:600,letterSpacing:".07em",textTransform:"uppercase",margin:0}}>Customers</p>
               <button onClick={()=>setModal({type:"client"})} style={{display:"flex",alignItems:"center",gap:4,background:"rgba(99,102,241,.2)",border:"none",color:"#A5B4FC",cursor:"pointer",borderRadius:5,padding:"3px 7px",fontSize:11,fontWeight:500}}>
                 <i className="ti ti-plus" style={{fontSize:12}} aria-hidden="true"/> Ajouter
               </button>
@@ -1087,10 +1087,10 @@ export default function App(){
           {!sideOpen&&<div style={{height:12}}/>}
 
           {clients.map(c=>(
-            <SClientBtn key={c} label={c} active={page===c} open={sideOpen}
+            <SCustomerBtn key={c} label={c} active={page===c} open={sideOpen}
               onClick={()=>{setPage(c);if(isMobile)setMobileMenuOpen(false);}}
               onEdit={()=>setModal({type:"client",name:c,cfg:getConfig(c)})}
-              onDelete={()=>{if(window.confirm(c+(lang==="en"?" — delete all data?":" — supprimer toutes les données ?")))delClient(c);}}
+              onDelete={()=>{if(window.confirm(c+(lang==="en"?" — delete all data?":" — supprimer toutes les données ?")))delCustomer(c);}}
             />
           ))}
         </nav>
@@ -1124,7 +1124,7 @@ export default function App(){
                 const result=await cloudLoad();
                 const cloud=result?.payload||null;
                 if(cloud){
-                  setClients(cloud.clients||DEFAULT_CLIENTS);
+                  setCustomers(cloud.clients||DEFAULT_CLIENTS);
                   setData(migrateRDT(cloud.orders||{}));
                   setConfigs(cloud.configs||{});
                   try{localStorage.setItem(KEY,JSON.stringify(cloud));}catch{}
@@ -1183,7 +1183,7 @@ export default function App(){
         {page==="documents"&&<DocumentsPage isMobile={isMobile}/>}
         {page==="logs"&&<ActivityLogsPage session={session}/>}
         {!special.includes(page)&&(
-          <ClientPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
+          <CustomerPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
             onSaveOrder={(f:any)=>saveOrder(page,f)}
             onAdd={()=>setModal({type:"order",client:page})}
@@ -1195,8 +1195,8 @@ export default function App(){
             onAddPay={(o:any,i:any)=>setModal({type:"payment",client:page,order:o,invoice:i})}
             onEditPay={(o:any,i:any,p:any)=>setModal({type:"payment",client:page,order:o,invoice:i,payment:p})}
             onDelPay={(oid:string,iid:string,pid:string)=>delPayment(page,oid,iid,pid)}
-            onEditClient={()=>setModal({type:"client",name:page,cfg:getConfig(page)})}
-            onDelClient={()=>{if(window.confirm(`${t(lang,"confirm_del_client",{name:page})}`))delClient(page);}}
+            onEditCustomer={()=>setModal({type:"client",name:page,cfg:getConfig(page)})}
+            onDelCustomer={()=>{if(window.confirm(`${t(lang,"confirm_del_client",{name:page})}`))delCustomer(page);}}
           />
         )}
         </main>
@@ -1205,7 +1205,7 @@ export default function App(){
       {/* ── MODALS ──────────────────────────────────────────── */}
       {modal&&(
         <div style={{position:"absolute",inset:0,background:"rgba(15,23,42,.55)",display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center",zIndex:100,backdropFilter:"blur(2px)"}} onClick={(e:any)=>{if(e.target===e.currentTarget)setModal(null);}}>
-          {modal.type==="client"&&<ClientModal name={modal.name} cfg={modal.cfg} lang={lang} onSave={(n:string,c:any)=>{const ok=modal.name?editClient(modal.name,n,c):addClient(n,c);if(ok)setModal(null);else alert(lang==="en"?"Invalid or duplicate name.":"Nom invalide ou déjà utilisé.");}} onClose={()=>setModal(null)}/>}
+          {modal.type==="client"&&<CustomerModal name={modal.name} cfg={modal.cfg} lang={lang} onSave={(n:string,c:any)=>{const ok=modal.name?editCustomer(modal.name,n,c):addCustomer(n,c);if(ok)setModal(null);else alert(lang==="en"?"Invalid or duplicate name.":"Nom invalide ou déjà utilisé.");}} onClose={()=>setModal(null)}/>}
           {modal.type==="order"&&<OrderModal client={modal.client} order={modal.order} lang={lang} onSave={(f:any)=>saveOrder(modal.client,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="invoice"&&<InvoiceModal client={modal.client} order={modal.order} invoice={modal.invoice} cfg={modal.cfg} lang={lang} onSave={(f:any)=>saveInvoice(modal.client,modal.order.id,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="payment"&&<PaymentModal invoice={modal.invoice} payment={modal.payment} lang={lang} onSave={(f:any)=>savePayment(modal.client,modal.order.id,modal.invoice.id,f)} onClose={()=>setModal(null)}/>}
@@ -1584,7 +1584,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{background:"#FEF2F2",borderBottom:`2px solid ${C.red}30`}}>
-                {["Client","N° PO","N° Facture","Date émission","Échéance","Retard","Montant","Payé","Reste dû"].map((h,i)=>(
+                {["Customer","PO #","Invoice #","Date émission","Échéance","Retard","Montant","Payé","Reste dû"].map((h,i)=>(
                   <th key={h} style={{padding:"10px 14px",textAlign:i>=5?"right":"left",color:C.redDk,fontWeight:600,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
@@ -1613,7 +1613,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
                 );
               })}
               <tr style={{background:"#FEE2E2",borderTop:`2px solid ${C.red}30`}}>
-                <td colSpan={8} style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:C.redDk,fontSize:13}}>TOTAL ÉCHU À RECOUVRER</td>
+                <td colSpan={8} style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:C.redDk,fontSize:13}}>TOTAL OVERDUE À RECOUVRER</td>
                 <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,color:C.redDk,fontSize:14}}>{fmt(echuesAmt)} €</td>
               </tr>
             </tbody>
@@ -1626,7 +1626,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead>
             <tr style={{background:"#F8FAFC",borderBottom:`1px solid ${C.b}`}}>
-              {["#","Client","N° Compte","Conditions paiement","Cmds","PO","Facturé","Encaissé","Factures en cours","Open Orders","Tx Fact."].map((h,i)=>(
+              {["#","Customer","N° Compte","Conditions paiement","Cmds","PO","Facturé","Encaissé","Factures en cours","Open Orders","Tx Fact."].map((h,i)=>(
                 <th key={h} style={{padding:"10px 14px",textAlign:i>=4?"right":"left",color:C.t3,fontWeight:500,fontSize:11,whiteSpace:"nowrap"}}>{h}</th>
               ))}
             </tr>
@@ -1720,7 +1720,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Open Orders</div>
           <div style={{fontSize:22,fontWeight:800,color:C.amberDk,letterSpacing:"-.02em"}}>{fmtK(totOpen)} €</div>
-          <div style={{fontSize:11,color:C.t3,marginTop:4}}>Reste à facturer</div>
+          <div style={{fontSize:11,color:C.t3,marginTop:4}}>Remaining to invoice</div>
         </div>
         <div style={{background:`linear-gradient(135deg,${C.blue},${C.purple})`,borderRadius:C.rLg,boxShadow:C.shMd,padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
           <div style={{fontSize:10,color:"rgba(255,255,255,.7)",fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Taux global</div>
@@ -1732,7 +1732,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
       {/* ── CLIENT BARS + MONTHLY TABLE split layout ── */}
       <div style={{display:"grid",gridTemplateColumns:"380px 1fr",gap:16,alignItems:"start"}}>
 
-        {/* Left — Client ranking bars */}
+        {/* Left — Customer ranking bars */}
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
           <div style={{padding:"16px 20px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",gap:8}}>
             <i className="ti ti-chart-bar" style={{fontSize:16,color:C.t2}} aria-hidden="true"/>
@@ -1806,7 +1806,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
               <thead>
                 <tr style={{background:"#F8FAFC"}}>
-                  <th style={{padding:"10px 16px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em",whiteSpace:"nowrap",borderBottom:`1px solid ${C.b}`}}>Client</th>
+                  <th style={{padding:"10px 16px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em",whiteSpace:"nowrap",borderBottom:`1px solid ${C.b}`}}>Customer</th>
                   {MONTHS.map(m=><th key={m} style={{padding:"10px 6px",textAlign:"center",color:C.t3,fontWeight:600,fontSize:10,minWidth:58,borderBottom:`1px solid ${C.b}`}}>{m}</th>)}
                   <th style={{padding:"10px 14px",textAlign:"right",color:C.blue,fontWeight:700,fontSize:10,background:C.blueL,whiteSpace:"nowrap",borderBottom:`1px solid ${C.b}`}}>PO TOTAL</th>
                   <th style={{padding:"10px 14px",textAlign:"right",color:C.teal,fontWeight:700,fontSize:10,background:C.tealL,whiteSpace:"nowrap",borderBottom:`1px solid ${C.b}`}}>FACTURÉ</th>
@@ -1904,7 +1904,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
 }
 
 // ─── CLIENT PAGE ─────────────────────────────────────────────────────────────
-function ClientPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditClient,onDelClient,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder}:any){
+function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
   const tgl=(id:string)=>setExp(p=>({...p,[id]:!p[id]}));
@@ -1941,8 +1941,8 @@ function ClientPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddI
           </div>}
         </div>
         <div style={{display:"flex",gap:8}}>
-          <Btn icon="ti-edit" label="Modifier" onClick={onEditClient} variant="ghost"/>
-          <Btn icon="ti-trash" label="Supprimer" onClick={onDelClient} variant="danger"/>
+          <Btn icon="ti-edit" label="Modifier" onClick={onEditCustomer} variant="ghost"/>
+          <Btn icon="ti-trash" label="Supprimer" onClick={onDelCustomer} variant="danger"/>
           <Btn icon="ti-plus" label={tr("btn_new_order")} onClick={onAdd} variant="primary"/>
         </div>
       </div>
@@ -1962,7 +1962,7 @@ function ClientPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddI
             <Kpi icon="ti-coin"            label="Encaissé"           val={`${fmtK(stats.totalPaid)} €`}  sub={`${txPay.toFixed(1)}% des factures`}         c={C.green}  bg={C.greenL}/>
             <Kpi icon="ti-clock-exclamation" label="Factures échues"  val={echuesAmt>0?`${fmtK(echuesAmt)} €`:"—"}  sub={`${clientEchues.length} facture${clientEchues.length>1?"s":""} en retard`}  c={echuesAmt>0?C.redDk:C.t3}   bg={echuesAmt>0?C.redL:"#F8FAFC"}/>
             <Kpi icon="ti-hourglass"       label="En cours (non échu)" val={enCoursAmt>0?`${fmtK(enCoursAmt)} €`:"—"} sub={`${clientEnCours.length} facture${clientEnCours.length>1?"s":""} en attente`} c={enCoursAmt>0?C.amberDk:C.t3} bg={enCoursAmt>0?C.amberL:"#F8FAFC"}/>
-            <Kpi icon="ti-clock"           label="Open orders"        val={`${fmtK(stats.openOrders)} €`} sub="Reste à facturer"                            c={C.purple} bg={C.purpleL}/>
+            <Kpi icon="ti-clock"           label="Open orders"        val={`${fmtK(stats.openOrders)} €`} sub="Remaining to invoice"                            c={C.purple} bg={C.purpleL}/>
           </div>
         );
       })()}
@@ -2014,7 +2014,7 @@ function SBtn({icon,label,active,open,onClick}:any){
     </button>
   );
 }
-function SClientBtn({label,active,open,onClick,onEdit,onDelete}:any){
+function SCustomerBtn({label,active,open,onClick,onEdit,onDelete}:any){
   const[hov,setHov]=useState(false);
   return(
     <div style={{display:"flex",alignItems:"center",borderRadius:7,background:active?"rgba(99,102,241,.18)":hov?"rgba(255,255,255,.04)":"transparent",transition:"background .15s"}}
@@ -2141,7 +2141,7 @@ function Sel({label,value,onChange,options,span}:any){
   );
 }
 
-function ClientModal({name,cfg,onSave,onClose,lang="fr"}:any){
+function CustomerModal({name,cfg,onSave,onClose,lang="fr"}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[nm,setNm]=useState(name||"");
   const[acc,setAcc]=useState(cfg?.accountNumber||"");
@@ -2175,12 +2175,12 @@ function OrderModal({client,order,onSave,onClose,lang="fr"}:any){
   const s=(k:string,v:any)=>setF(p=>({...p,[k]:v}));
   return(
     <Modal title={order?tr("edit_order"):tr("new_order")} sub={client} width={560} onClose={onClose}
-      footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon="ti-check" label={order?tr("save_order"):tr("create_order")} onClick={()=>{if(!f.poNumber||!f.amount){alert("N° PO et montant requis");return;}onSave(f);}} variant="primary"/></>}>
+      footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon="ti-check" label={order?tr("save_order"):tr("create_order")} onClick={()=>{if(!f.poNumber||!f.amount){alert("PO # et montant requis");return;}onSave(f);}} variant="primary"/></>}>
       {/* Infos de base */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <Fld label="Date commande *" type="date" value={f.date} onChange={(v:any)=>s("date",v)}/>
-        <Fld label="N° PO Client *" value={f.poNumber} onChange={(v:any)=>s("poNumber",v)} placeholder="ex: T526.2026"/>
-        <Fld label="N° S/O *" value={f.soNumber} onChange={(v:any)=>s("soNumber",v)} placeholder="ex: 14560128"/>
+        <Fld label="PO # Customer *" value={f.poNumber} onChange={(v:any)=>s("poNumber",v)} placeholder="ex: T526.2026"/>
+        <Fld label="S/O # *" value={f.soNumber} onChange={(v:any)=>s("soNumber",v)} placeholder="ex: 14560128"/>
         {isCimelec
           ?<Fld label="N° Commande (CIMELEC)" value={f.orderNumber} onChange={(v:any)=>s("orderNumber",v)} placeholder="ex: CMD-2026-001"/>
           :<Fld label="Montant (€) *" type="number" value={f.amount} onChange={(v:any)=>s("amount",v)} placeholder="0.00"/>
@@ -2233,14 +2233,14 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
   const remaining=Math.max(0,(+order.amount||0)-already);
   return(
     <Modal title={invoice?tr("edit_invoice"):tr("new_invoice")} sub={`Commande : ${order.poNumber}`} width={520} onClose={onClose}
-      footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon="ti-check" label={invoice?tr("save_invoice"):tr("create_invoice")} onClick={()=>{if(!f.invoiceNumber||!f.amount){alert("N° Facture et montant requis");return;}const dd=f.overrideDueDate?f.dueDate:autoDate(f.date);onSave({...f,dueDate:dd});}} variant="primary"/></>}>
+      footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon="ti-check" label={invoice?tr("save_invoice"):tr("create_invoice")} onClick={()=>{if(!f.invoiceNumber||!f.amount){alert("Invoice # et montant requis");return;}const dd=f.overrideDueDate?f.dueDate:autoDate(f.date);onSave({...f,dueDate:dd});}} variant="primary"/></>}>
       <div style={{display:"flex",gap:14,background:C.blueL,borderRadius:C.rSm,padding:"10px 14px",marginBottom:16,fontSize:12}}>
         <span style={{color:C.blueDk}}>PO : <strong>{fmt(order.amount)} €</strong></span>
         <span style={{color:C.teal}}>Déjà facturé : <strong>{fmt(already)} €</strong></span>
         <span style={{color:C.amberDk}}>Reste : <strong>{fmt(remaining)} €</strong></span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        <Fld label="N° Facture *" value={f.invoiceNumber} onChange={(v:any)=>s("invoiceNumber",v)} placeholder="ex: INV-2026-001"/>
+        <Fld label="Invoice # *" value={f.invoiceNumber} onChange={(v:any)=>s("invoiceNumber",v)} placeholder="ex: INV-2026-001"/>
         <Fld label="Date facture *" type="date" value={f.date} onChange={(v:any)=>{s("date",v);if(!f.overrideDueDate)s("dueDate",autoDate(v));}}/>
         <Fld label="Montant (€) *" type="number" value={f.amount} onChange={(v:any)=>s("amount",v)} placeholder="0.00"/>
         <Sel label="Mode expédition" value={f.shippingMode} onChange={(v:any)=>s("shippingMode",v)} options={DELIVERY_MODES}/>
@@ -2404,7 +2404,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
             <table style={{width:"100%",minWidth:750,borderCollapse:"collapse",fontSize:12}}>
               <thead>
                 <tr style={{background:"#F8FAFC",borderBottom:`1px solid ${C.b}`}}>
-                  {["N° Facture","PO","Date","Montant","Payé","Reste","Échéance","Statut","Actions"].map((h,i)=>(
+                  {["Invoice #","PO","Date","Montant","Payé","Reste","Échéance","Statut","Actions"].map((h,i)=>(
                     <th key={h} style={{padding:"8px 10px",textAlign:["Montant","Payé","Reste"].includes(h)?"right":i>=7?"center":"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
@@ -2462,7 +2462,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
             <table style={{width:"100%",minWidth:700,borderCollapse:"collapse",fontSize:12}}>
               <thead>
                 <tr style={{background:"#F8FAFC",borderBottom:`1px solid ${C.b}`}}>
-                  {["Date","N° PO","N° Facture","Montant","Mode","Référence","Notes","Actions"].map((h,i)=>(
+                  {["Date","PO #","Invoice #","Montant","Mode","Référence","Notes","Actions"].map((h,i)=>(
                     <th key={h} style={{padding:"8px 10px",textAlign:h==="Montant"?"right":h==="Actions"?"center":"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em",whiteSpace:"nowrap"}}>{h}</th>
                   ))}
                 </tr>
@@ -2516,7 +2516,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
   );
 }
 
-// ─── ORDER CARD (extracted from ClientPage) ───────────────────────────────────
+// ─── ORDER CARD (extracted from CustomerPage) ───────────────────────────────────
 function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
@@ -2545,7 +2545,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
       <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer"}} onClick={()=>{tgl(order.id);if(focusOrderId===order.id&&onClearFocus)onClearFocus();}}>
         <i className={`ti ${isExp?"ti-chevron-down":"ti-chevron-right"}`} style={{fontSize:15,color:C.t3,flexShrink:0}} aria-hidden="true"/>
         <div style={{flex:1,display:"grid",gridTemplateColumns:client==="CIMELEC"?"1.2fr 0.9fr 0.9fr 0.9fr 1.1fr 1fr 1fr":"1.4fr 1fr 1fr 1.2fr 1.1fr 1.1fr",gap:10,alignItems:"center",minWidth:0}}>
-          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>N° PO</div><div style={{fontWeight:700,fontSize:13,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{order.poNumber||"—"}</div></div>
+          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>PO #</div><div style={{fontWeight:700,fontSize:13,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{order.poNumber||"—"}</div></div>
           <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>S/O</div><div style={{fontSize:12,color:C.t2}}>{order.soNumber||"—"}</div></div>
           {client==="CIMELEC"&&<div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>N° Commande</div><div style={{fontSize:12,color:C.purple,fontWeight:600}}>{order.orderNumber||"—"}</div></div>}
           <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Date</div><div style={{fontSize:12,color:C.t2}}>{fmtD(order.date)}</div></div>
@@ -2616,7 +2616,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
                 return(
                   <div key={inv.id} style={{background:"#fff",borderRadius:C.r,border:`1px solid ${ps.key.startsWith("over")||ps.key==="today"?C.red+"50":C.b}`,overflow:"hidden"}}>
                     <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr 1.2fr 1fr 1.5fr auto",gap:10,alignItems:"center",padding:"12px 14px"}}>
-                      <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>N° Facture</div><div style={{fontWeight:700,fontSize:13,color:C.purple}}>{inv.invoiceNumber||"—"}</div></div>
+                      <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Invoice #</div><div style={{fontWeight:700,fontSize:13,color:C.purple}}>{inv.invoiceNumber||"—"}</div></div>
                       <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Date</div><div style={{fontSize:12,color:C.t2}}>{fmtD(inv.date)}</div></div>
                       <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Montant</div><div style={{fontWeight:700,fontSize:13,color:C.teal}}>{fmt(inv.amount)} €</div></div>
                       <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Échéance</div><div style={{fontSize:12,color:inv.dueDate?C.t2:C.t3}}>{fmtD(inv.dueDate)}</div></div>
@@ -2768,7 +2768,7 @@ function ActivityTable({items,onAdd,onUpdate,onRemove,title,color,isMobile}:any)
         {items.map((item:any,idx:number)=>(
           <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr 80px 32px",gap:8,alignItems:"center"}}>
             <input value={item.client} onChange={e=>onUpdate(idx,"client",e.target.value)}
-              placeholder="Client / Prospect"
+              placeholder="Customer / Prospect"
               style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"}}/>
             <input value={item.action} onChange={e=>onUpdate(idx,"action",e.target.value)}
               placeholder="Description de l'activité…"
@@ -2960,9 +2960,9 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   },0);
 
   // Group invoices by client
-  const invByClient:Record<string,number>={};
+  const invByCustomer:Record<string,number>={};
   [...invoicesThisMonth,...invoicesPrevMonth].forEach((i:any)=>{
-    invByClient[i._client]=(invByClient[i._client]||0)+(+i.amount||0);
+    invByCustomer[i._client]=(invByCustomer[i._client]||0)+(+i.amount||0);
   });
 
 
@@ -3059,18 +3059,18 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div class="cover-meta" style="margin-bottom:10px">
       <div class="cover-badge">📅 ${period}</div>
       <div class="cover-badge">📍 West Africa — Côte d'Ivoire</div>
-      <div class="cover-badge">Semaine ${weekLabel}</div>
+      <div class="cover-badge">Week ${weekLabel}</div>
     </div>
     <div class="cover-toc">
-      <div class="toc-item"><span class="toc-num">1</span><span class="toc-label">Order Intake<br><small style="opacity:.6">Commandes reçues</small></span></div>
-      <div class="toc-item"><span class="toc-num">2</span><span class="toc-label">Invoicing<br><small style="opacity:.6">Facturation mensuelle</small></span></div>
-      <div class="toc-item"><span class="toc-num">3</span><span class="toc-label">Last Week<br><small style="opacity:.6">Activités semaine passée</small></span></div>
-      <div class="toc-item"><span class="toc-num">4</span><span class="toc-label">This Week<br><small style="opacity:.6">Activités semaine en cours</small></span></div>
+      <div class="toc-item"><span class="toc-num">1</span><span class="toc-label">Order Intake<br><small style="opacity:.6">Orders received</small></span></div>
+      <div class="toc-item"><span class="toc-num">2</span><span class="toc-label">Invoicing<br><small style="opacity:.6">Monthly invoicing</small></span></div>
+      <div class="toc-item"><span class="toc-num">3</span><span class="toc-label">Last Week<br><small style="opacity:.6">Last week activities</small></span></div>
+      <div class="toc-item"><span class="toc-num">4</span><span class="toc-label">This Week<br><small style="opacity:.6">Current week activities</small></span></div>
     </div>
   </div>
   <div class="footer">
-    <span>CONFIDENTIEL — Usage interne</span>
-    <span>Généré le ${today.toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</span>
+    <span>CONFIDENTIAL — Internal use only</span>
+    <span>Generated on ${today.toLocaleDateString("en-GB",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</span>
   </div>
 </div>
 
@@ -3080,7 +3080,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div>
       <div style="font-size:10px;color:#2563EB;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">1 / 4</div>
       <div class="section-title">📦 ORDER INTAKE</div>
-      <div class="section-sub">— ${period} · Commandes reçues sur ${periodLabel}</div>
+      <div class="section-sub">— ${period} · Orders received sur ${periodLabel}</div>
     </div>
     <div class="section-meta">
       <div class="section-badge">${weekLabel} · ${period}</div>
@@ -3092,17 +3092,17 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div class="kpi" style="border-left:4px solid #2563EB">
       <div class="kpi-label">Orders Received (${periodLabel})</div>
       <div class="kpi-val" style="color:#2563EB">${fmtK(recentOrdersAmt)} €</div>
-      <div class="kpi-sub">${recentOrders.length} commande${recentOrders.length>1?"s":""} sur ${periodLabel}</div>
+      <div class="kpi-sub">${recentOrders.length} order${recentOrders.length>1?"s":""} in the last ${periodLabel}</div>
     </div>
     <div class="kpi" style="border-left:4px solid #D97706">
       <div class="kpi-label">Expected Orders</div>
       <div class="kpi-val" style="color:#D97706">${fmtK(expectedOrders.filter((e:any)=>e.est).reduce((s:number,e:any)=>s+(+e.est||0)*1000,0))} €</div>
-      <div class="kpi-sub">${expectedOrders.filter((e:any)=>e.client||e.project).length} commande${expectedOrders.filter((e:any)=>e.client||e.project).length>1?"s":""} attendue${expectedOrders.filter((e:any)=>e.client||e.project).length>1?"s":""}</div>
+      <div class="kpi-sub">${expectedOrders.filter((e:any)=>e.client||e.project).length} order${expectedOrders.filter((e:any)=>e.client||e.project).length>1?"s":""} expected</div>
     </div>
     <div class="kpi" style="border-left:4px solid #059669">
       <div class="kpi-label">Total ${year} (YTD)</div>
       <div class="kpi-val" style="color:#059669">${fmtK(allOrders.reduce((s:number,o:any)=>{const d=o.date?new Date(o.date+"T00:00:00"):null;return d&&d.getFullYear()===thisYear?s+(+o.amount||0):s;},0))} €</div>
-      <div class="kpi-sub">Depuis le 1er janvier ${year}</div>
+      <div class="kpi-sub">Since January 1st, ${year}</div>
     </div>
   </div>
 
@@ -3113,7 +3113,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
         <thead><tr><th>Customer</th><th>S/O Number</th><th style="text-align:right">Amount (K€)</th></tr></thead>
         <tbody>
           ${recentOrders.length===0
-            ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande cette semaine</td></tr>'
+            ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">No orders this week</td></tr>'
             :recentOrders.map((o:any)=>`<tr><td style="font-weight:600">${o._client}</td><td style="font-family:monospace;font-size:9px">${o.soNumber||"—"}</td><td style="text-align:right;font-weight:600;color:#2563EB">${fmtK(+o.amount||0)}</td></tr>`).join("")
           }
           <tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtK(recentOrdersAmt)}</td></tr>
@@ -3123,7 +3123,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div>
       <div class="col-header">🎯 EXPECTED ORDERS</div>
       <table>
-        <thead><tr><th>Client</th><th>Project</th><th style="text-align:right">Est. (K€)</th></tr></thead>
+        <thead><tr><th>Customer</th><th>Project</th><th style="text-align:right">Est. (K€)</th></tr></thead>
         <tbody>
           ${expectedOrders.filter((e:any)=>e.client||e.project).length===0
             ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">— à compléter —</td></tr>'
@@ -3146,7 +3146,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div>
       <div style="font-size:10px;color:#0D9488;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">2 / 4</div>
       <div class="section-title">🧾 INVOICING — ${invoicePeriodLabel.toUpperCase()}</div>
-      <div class="section-sub">— Factures générées sur les ${invoicePeriodLabel} · Depuis le ${invPeriodStart.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}</div>
+      <div class="section-sub">— Invoices issued over the last ${invoicePeriodLabel} · Since ${invPeriodStart.toLocaleDateString("en-GB",{day:"numeric",month:"long"})}</div>
     </div>
     <div class="section-meta">
       <div class="section-badge" style="background:#CCFBF1;color:#0D9488">${weekLabel} · ${period}</div>
@@ -3155,30 +3155,30 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 
   <div class="kpi-row">
     <div class="kpi" style="border-left:4px solid #0D9488">
-      <div class="kpi-label">Facturé (${invoicePeriodLabel})</div>
+      <div class="kpi-label">Invoiced (${invoicePeriodLabel})</div>
       <div class="kpi-val" style="color:#0D9488">${fmtK(invoicedInPeriod)} €</div>
-      <div class="kpi-sub">${invoicesInPeriod.length} facture${invoicesInPeriod.length>1?"s":""} sur la période</div>
+      <div class="kpi-sub">${invoicesInPeriod.length} invoice${invoicesInPeriod.length>1?"s":""} over the period</div>
     </div>
     <div class="kpi" style="border-left:4px solid #2563EB">
-      <div class="kpi-label">Already Invoiced in ${year}</div>
+      <div class="kpi-label">Already Invoiced ${year}</div>
       <div class="kpi-val" style="color:#2563EB">${fmtK(ytdInvoiced)} €</div>
-      <div class="kpi-sub">YTD depuis le 1er janvier</div>
+      <div class="kpi-sub">YTD since January 1st</div>
     </div>
     <div class="kpi" style="border-left:4px solid #7C3AED">
       <div class="kpi-label">Open Orders</div>
       <div class="kpi-val" style="color:#7C3AED">${fmtK(openOrders)} €</div>
-      <div class="kpi-sub">Reste à facturer</div>
+      <div class="kpi-sub">Remaining to invoice</div>
     </div>
   </div>
 
   <div class="two-col">
     <div>
-      <div class="col-header">✅ FACTURES GÉNÉRÉES — ${invoicePeriodLabel.toUpperCase()}</div>
+      <div class="col-header">✅ INVOICES ISSUED — ${invoicePeriodLabel.toUpperCase()}</div>
       <table>
-        <thead><tr><th>Client</th><th>N° Facture</th><th>Date</th><th style="text-align:right">Montant (K€)</th></tr></thead>
+        <thead><tr><th>Customer</th><th>Invoice #</th><th>Date</th><th style="text-align:right">Amount (K€)</th></tr></thead>
         <tbody>
           ${invoicesInPeriod.length===0
-            ?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucune facture sur la période</td></tr>'
+            ?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">No invoices for this period</td></tr>'
             :(() => {
               // Sort by date
               const sorted=[...invoicesInPeriod].sort((a:any,b:any)=>(a.date||"").localeCompare(b.date||""));
@@ -3188,13 +3188,13 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
               let r2="";
               Object.keys(byC).sort().forEach(c=>{
                 const tot=byC[c].reduce((s:number,i:any)=>s+(+i.amount||0),0);
-                // Client header
+                // Customer header
                 r2+=`<tr style="background:#F0FDFA"><td colspan="3" style="font-weight:700;color:#0D9488;font-size:10px">📁 ${c}</td><td style="text-align:right;font-weight:700;color:#0D9488">${fmtK(tot)}</td></tr>`;
                 byC[c].forEach((i:any)=>{
                   r2+=`<tr><td style="padding-left:16px;color:#4A5568">${i.invoiceNumber||"—"}</td><td style="font-family:monospace;font-size:9px">${i._po||"—"}</td><td style="color:#8FA0B3">${fmtD(i.date)}</td><td style="text-align:right;color:#0D9488">${fmtK(+i.amount||0)}</td></tr>`;
                 });
               });
-              r2+=`<tr class="total-row"><td colspan="3">TOTAL PÉRIODE</td><td style="text-align:right">${fmtK(invoicedInPeriod)}</td></tr>`;
+              r2+=`<tr class="total-row"><td colspan="3">PERIOD TOTAL</td><td style="text-align:right">${fmtK(invoicedInPeriod)}</td></tr>`;
               return r2;
             })()
           }
@@ -3204,10 +3204,10 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div>
       <div class="col-header">📅 EXPECTED INVOICING — ${MONTH_NAMES[thisMonth].toUpperCase()} / ${MONTH_NAMES[thisMonth===11?0:thisMonth+1].toUpperCase()}</div>
       <table>
-        <thead><tr><th>Client</th><th>N° PO</th><th>N° S/O</th><th style="text-align:right">Montant prévu (K€)</th></tr></thead>
+        <thead><tr><th>Customer</th><th>PO #</th><th>S/O #</th><th style="text-align:right">Planned amount (K€)</th></tr></thead>
         <tbody>
           ${plannedInvoices.length===0
-            ?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucune facture planifiée — sélectionnez dans le rapport hebdo</td></tr>'
+            ?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">No planned invoices — select from the weekly report</td></tr>'
             :(()=>{
               // Group by client
               const byC3:Record<string,any[]>={};
@@ -3218,7 +3218,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
                 return `<tr style="background:#FFF7ED"><td colspan="3" style="font-weight:700;color:#D97706;font-size:10px">📁 ${c}</td><td style="text-align:right;font-weight:700;color:#D97706">${fmtK(cTot)}</td></tr>${rows}`;
               }).join("");
               const grand=plannedInvoices.reduce((s:number,p:any)=>s+(+p.amount||0),0);
-              r5+=`<tr class="total-row"><td colspan="3">TOTAL PRÉVU</td><td style="text-align:right">${fmtK(grand)}</td></tr>`;
+              r5+=`<tr class="total-row"><td colspan="3">PLANNED TOTAL</td><td style="text-align:right">${fmtK(grand)}</td></tr>`;
               return r5;
             })()
           }
@@ -3239,7 +3239,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div>
       <div style="font-size:10px;color:#7C3AED;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">3 / 4</div>
       <div class="section-title">📋 LAST WEEK — Field Activity</div>
-      <div class="section-sub">Activités de la semaine passée</div>
+      <div class="section-sub">Last week field activities</div>
     </div>
     <div class="section-meta">
       <div class="section-badge" style="background:#EDE9FE;color:#7C3AED">${weekLabel} · ${period}</div>
@@ -3247,7 +3247,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   </div>
   <div>
     ${lastWeekItems.filter((item:any)=>item.client||item.action).length===0
-      ?'<div style="text-align:center;padding:40px;color:#8FA0B3">Aucune activité saisie pour la semaine passée</div>'
+      ?'<div style="text-align:center;padding:40px;color:#8FA0B3">No activities entered for last week</div>'
       :lastWeekItems.filter((item:any)=>item.client||item.action).map((item:any)=>`
         <div class="activity-row">
           <span class="status-icon">${item.status}</span>
@@ -3270,7 +3270,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     <div>
       <div style="font-size:10px;color:#059669;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">4 / 4</div>
       <div class="section-title">📋 THIS WEEK — Field Activity</div>
-      <div class="section-sub">Activités de la semaine en cours</div>
+      <div class="section-sub">Current week field activities</div>
     </div>
     <div class="section-meta">
       <div class="section-badge" style="background:#D1FAE5;color:#059669">${weekLabel} · ${period}</div>
@@ -3278,7 +3278,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   </div>
   <div>
     ${thisWeekItems.filter((item:any)=>item.client||item.action).length===0
-      ?'<div style="text-align:center;padding:40px;color:#8FA0B3">Aucune activité saisie pour la semaine en cours</div>'
+      ?'<div style="text-align:center;padding:40px;color:#8FA0B3">No activities entered for this week</div>'
       :thisWeekItems.filter((item:any)=>item.client||item.action).map((item:any)=>`
         <div class="activity-row">
           <span class="status-icon">${item.status}</span>
@@ -3296,8 +3296,8 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 </div>
 
 <div style='position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px'>
-<button onclick='window.print()' style='background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)'>🖨️ Imprimer / PDF</button>
-<button onclick='window.close()' style='background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif'>✕ Fermer</button>
+<button onclick='window.print()' style='background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)'>🖨️ Print / PDF</button>
+<button onclick='window.close()' style='background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif'>✕ Close</button>
 </div>
 <style>@media print{.no-print{display:none!important}}</style>
 </body></html>`);
@@ -3436,9 +3436,9 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(4,1fr)",gap:12}}>
         {[
           {label:`Orders reçus (${periodLabel})`,val:`${fmtK(recentOrdersAmt)} €`,sub:`${recentOrders.length} commande${recentOrders.length>1?"s":""}`,c:C.blue,bg:C.blueL},
-          {label:`Facturé (${invoicePeriodLabel})`,val:`${fmtK(invoicedInPeriod)} €`,sub:`${invoicesInPeriod.length} facture${invoicesInPeriod.length>1?"s":""}`,c:C.teal,bg:C.tealL},
+          {label:`Invoiced (${invoicePeriodLabel})`,val:`${fmtK(invoicedInPeriod)} €`,sub:`${invoicesInPeriod.length} facture${invoicesInPeriod.length>1?"s":""}`,c:C.teal,bg:C.tealL},
           {label:"Facturé "+MONTH_NAMES[thisMonth],val:`${fmtK(invoicedThisMonth)} €`,sub:`Ce mois · ${invoicesThisMonth.length} fact.`,c:"#0D9488",bg:"#CCFBF1"},
-          {label:"Open Orders",val:`${fmtK(openOrders)} €`,sub:"Reste à facturer",c:C.amberDk,bg:C.amberL},
+          {label:"Open Orders",val:`${fmtK(openOrders)} €`,sub:"Remaining to invoice",c:C.amberDk,bg:C.amberL},
         ].map((k,i)=>(
           <div key={i} style={{background:"#fff",borderRadius:C.r,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
             <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>{k.label}</div>
@@ -3461,7 +3461,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
           {expectedOrders.map((item:any,idx:number)=>(
             <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr 120px 32px",gap:8,alignItems:"center"}}>
               <input value={item.client} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,client:e.target.value}:x))}
-                placeholder="Client" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
+                placeholder="Customer" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
               <input value={item.project} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,project:e.target.value}:x))}
                 placeholder="Projet / Description" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
               <input type="number" value={item.est} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,est:e.target.value}:x))}
@@ -3503,15 +3503,15 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
               {totalPlanned>0&&<span style={{background:C.tealL,color:C.teal,fontWeight:700,fontSize:13,padding:"4px 12px",borderRadius:6}}>{fmtK(totalPlanned)} €</span>}
             </div>
             {openOrdersList.length===0
-              ?<div style={{padding:"16px 18px",fontSize:12,color:C.t3}}>Aucun open order disponible</div>
+              ?<div style={{padding:"16px 18px",fontSize:12,color:C.t3}}>No open orders disponible</div>
               :<div style={{maxHeight:320,overflowY:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{background:"#F8FAFC",borderBottom:`1px solid ${C.b}`}}>
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11,width:40}}/>
-                      <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>Client</th>
-                      <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>N° PO</th>
-                      <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>N° S/O</th>
+                      <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>Customer</th>
+                      <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>PO #</th>
+                      <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>S/O #</th>
                       <th style={{padding:"8px 14px",textAlign:"right",color:C.t3,fontWeight:500,fontSize:11}}>Reste à fact.</th>
                       <th style={{padding:"8px 14px",textAlign:"right",color:C.teal,fontWeight:600,fontSize:11}}>Montant prévu (€)</th>
                     </tr>
@@ -4031,7 +4031,7 @@ function CatEditModal({product,onSave,onClose}:any){
                   style={{width:"100%",padding:"7px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
               </div>
               <div>
-                <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>Client</label>
+                <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>Customer</label>
                 <input value={newCustomer} onChange={e=>setNewCustomer(e.target.value)} placeholder="optionnel"
                   style={{width:"100%",padding:"7px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
               </div>
@@ -4076,7 +4076,7 @@ function CataloguePage({clients,lang,isMobile}:any){
   const fileRef=useRef<HTMLInputElement>(null);
 
   // Quote form state
-  const[qClient,setQClient]=useState("");
+  const[qCustomer,setQCustomer]=useState("");
   const[qLines,setQLines]=useState<any[]>([{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1}]);
   const[dropdownPos,setDropdownPos]=useState<{top:number,left:number,width:number}|null>(null);
   const[dropdownType,setDropdownType]=useState<"pn"|"desc"|null>(null);
@@ -4086,7 +4086,7 @@ function CataloguePage({clients,lang,isMobile}:any){
 
   const openDropdown=(e:any,type:"pn"|"desc",idx:number,items:any[])=>{
     if(!items.length){closeDropdown();return;}
-    const rect=e.target.getBoundingClientRect();
+    const rect=e.target.getBoundingCustomerRect();
     setDropdownPos({top:rect.bottom+4,left:rect.left,width:Math.max(rect.width,280)});
     setDropdownType(type);setDropdownLineIdx(idx);setDropdownItems(items);
   };
@@ -4094,9 +4094,9 @@ function CataloguePage({clients,lang,isMobile}:any){
   const[qDate,setQDate]=useState(new Date().toISOString().slice(0,10));
   const[qValidity,setQValidity]=useState("30");
   const[qNotes,setQNotes]=useState("");
-  const[qClientManual,setQClientManual]=useState("");
-  const[qClientAddr,setQClientAddr]=useState("");
-  const[useManualClient,setUseManualClient]=useState(false);
+  const[qCustomerManual,setQCustomerManual]=useState("");
+  const[qCustomerAddr,setQCustomerAddr]=useState("");
+  const[useManualCustomer,setUseManualCustomer]=useState(false);
 
   useEffect(()=>{
     // 1. Load from localStorage instantly
@@ -4314,7 +4314,7 @@ function CataloguePage({clients,lang,isMobile}:any){
         setAllRows([rows[headerIdx],...dataRows]); // header + all data rows
         setPreviewRows([rows[headerIdx],...dataRows.slice(0,5)]); // header + 5 rows preview
         setPendingFile(file.name);
-        const clientHint=customer?` · Client détecté : ${customer}`:"";
+        const clientHint=customer?` · Customer détecté : ${customer}`:"";
         setUploadMsg(`${dataRows.length} lignes détectées (en-tête ligne ${headerIdx+1})${clientHint} — vérifiez le mapping`);
         setUploading(false);
         return;
@@ -4328,7 +4328,7 @@ function CataloguePage({clients,lang,isMobile}:any){
   const confirmImport=async()=>{
     if(!allRows.length||colMap.pn<0){setUploadMsg("Colonne PN non mappée — assignez la colonne PN dans le tableau ci-dessous");return;}
     setUploading(true);setUploadMsg("Import en cours…");
-    const fileCustomer=uploadMsg.includes("Client détecté")?uploadMsg.split("Client détecté : ")[1]?.split(" —")[0]?.trim()||""  :"";
+    const fileCustomer=uploadMsg.includes("Customer détecté")?uploadMsg.split("Customer détecté : ")[1]?.split(" —")[0]?.trim()||""  :"";
 
     // Detect if file has multiple periods (like BERNABE EXTRA DISCOUNT)
     const allDataRows=allRows.slice(1);
@@ -4523,16 +4523,16 @@ function CataloguePage({clients,lang,isMobile}:any){
 
   // ── Generate DRAFT quote (no header) ────────────────────────────────────────
   const generateDraftQuote=async()=>{
-    const effectiveClient=useManualClient?qClientManual:qClient;
-    if(!effectiveClient){alert('Sélectionnez ou saisissez un client');return;}
+    const effectiveCustomer=useManualCustomer?qCustomerManual:qCustomer;
+    if(!effectiveCustomer){alert('Sélectionnez ou saisissez un client');return;}
     if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert('Ajoutez au moins une ligne avec PN et prix');return;}
     // FIX: pas de validation avail pour le draft — affiche TBC si vide
     const validLines=qLines.filter((l:any)=>l.pn);
     const dateStr=new Date(qDate).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
     const totStr=totalHT.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const docTitle='Draft Quote - '+effectiveClient+' - '+qRef;
-    const addrHtml=(useManualClient&&qClientAddr)
-      ?'<div style="font-size:11px;color:#333;margin-top:3px">'+qClientAddr.split('\n').join('<br/>')+'</div>'
+    const docTitle='Draft Quote - '+effectiveCustomer+' - '+qRef;
+    const addrHtml=(useManualCustomer&&qCustomerAddr)
+      ?'<div style="font-size:11px;color:#333;margin-top:3px">'+qCustomerAddr.split('\n').join('<br/>')+'</div>'
       :'';
     const linesHtml=validLines.map((l:any)=>[
       '<tr>',
@@ -4578,7 +4578,7 @@ function CataloguePage({clients,lang,isMobile}:any){
 <table style="width:100%;margin-bottom:20px">
   <tr>
     <td style="width:55%;vertical-align:top">
-      <div style="font-weight:bold;font-size:14px;font-family:Arial,Helvetica,sans-serif">${effectiveClient}</div>
+      <div style="font-weight:bold;font-size:14px;font-family:Arial,Helvetica,sans-serif">${effectiveCustomer}</div>
       ${addrHtml}
     </td>
     <td style="width:45%;text-align:right;vertical-align:middle;font-size:10px;color:#888;font-family:Arial,Helvetica,sans-serif">
@@ -4634,12 +4634,12 @@ function CataloguePage({clients,lang,isMobile}:any){
 
   // ── Generate draft Excel (.xlsx via SheetJS) ──────────────────────────────
   const generateDraftExcel=async()=>{
-    const effectiveClient=useManualClient?qClientManual:qClient;
-    if(!effectiveClient){alert('Sélectionnez ou saisissez un client');return;}
+    const effectiveCustomer=useManualCustomer?qCustomerManual:qCustomer;
+    if(!effectiveCustomer){alert('Sélectionnez ou saisissez un client');return;}
     if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert('Ajoutez au moins une ligne avec PN et prix');return;}
     const validLines=qLines.filter((l:any)=>l.pn);
     const dateStr=new Date(qDate).toLocaleDateString('fr-FR');
-    const fileName=`Draft_${effectiveClient}_${qRef}_${qDate}.xlsx`;
+    const fileName=`Draft_${effectiveCustomer}_${qRef}_${qDate}.xlsx`;
     const totalHT_val=validLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
 
     // Load ExcelJS from CDN (always available, no CSP issue)
@@ -4675,7 +4675,7 @@ function CataloguePage({clients,lang,isMobile}:any){
     // Left: DRAFT QUOTE — CLIENT (cols A-D)
     ws.mergeCells('A1:D1');
     const titleCell=ws.getCell('A1');
-    titleCell.value=`DRAFT QUOTE — ${effectiveClient}`;
+    titleCell.value=`DRAFT QUOTE — ${effectiveCustomer}`;
     titleCell.font={bold:true,size:14,color:{argb:'FF1D4ED8'},name:'Arial'};
     titleCell.alignment={vertical:'middle'};
     // Right: GRUNDFOS in blue (cols E-F)
@@ -4788,14 +4788,14 @@ function CataloguePage({clients,lang,isMobile}:any){
 
   // ── Generate quote PDF ─────────────────────────────────────────────────────
   const generateQuote=async()=>{
-    const effectiveClient=useManualClient?qClientManual:qClient;
-    if(!effectiveClient){alert("Sélectionnez ou saisissez un client");return;}
+    const effectiveCustomer=useManualCustomer?qCustomerManual:qCustomer;
+    if(!effectiveCustomer){alert("Sélectionnez ou saisissez un client");return;}
     if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert("Ajoutez au moins une ligne avec PN et prix");return;}
     const missingAvail=qLines.filter((l:any)=>l.pn&&!l.avail);
     if(missingAvail.length>0){alert("Délai de livraison manquant sur "+missingAvail.length+" ligne(s).");return;}
     // Save quote
     const quote={
-      id:Date.now().toString(),number:qRef,client:effectiveClient,date:qDate,
+      id:Date.now().toString(),number:qRef,client:effectiveCustomer,date:qDate,
       validity:qValidity,notes:qNotes,
       lines:qLines.filter((l:any)=>l.pn),
       totalHT,
@@ -4834,11 +4834,11 @@ function CataloguePage({clients,lang,isMobile}:any){
       <div style="font-size:11px;color:#6B7280">Validité : ${qValidity} jours</div>
     </div>
   </div>
-  <!-- Client -->
+  <!-- Customer -->
   <div style="margin-bottom:24px">
     <div style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Destinataire</div>
-    <div style="font-size:14px;font-weight:700;color:#0D1B2A">${effectiveClient}</div>
-    ${(useManualClient&&qClientAddr)?`<div style="font-size:11px;color:#6B7280;margin-top:3px;line-height:1.6">${qClientAddr.replace(/\n/g,"<br/>")}</div>`:""}
+    <div style="font-size:14px;font-weight:700;color:#0D1B2A">${effectiveCustomer}</div>
+    ${(useManualCustomer&&qCustomerAddr)?`<div style="font-size:11px;color:#6B7280;margin-top:3px;line-height:1.6">${qCustomerAddr.replace(/\n/g,"<br/>")}</div>`:""}
   </div>
   <!-- Table -->
   <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
@@ -4867,8 +4867,8 @@ function CataloguePage({clients,lang,isMobile}:any){
     <span>GRUNDFOS — kyao@grundfos.com</span>
   </div>
 <div style='position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px'>
-<button onclick='window.print()' style='background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)'>🖨️ Imprimer / PDF</button>
-<button onclick='window.close()' style='background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif'>✕ Fermer</button>
+<button onclick='window.print()' style='background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)'>🖨️ Print / PDF</button>
+<button onclick='window.close()' style='background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif'>✕ Close</button>
 </div>
 <style>@media print{.no-print{display:none!important}}</style>
 </body></html>`);
@@ -4934,26 +4934,26 @@ function CataloguePage({clients,lang,isMobile}:any){
                   style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
               </div>
               <div style={{gridColumn:"span 1"}}>
-                <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Client</label>
+                <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Customer</label>
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   <div style={{display:"flex",gap:6}}>
-                    <select value={useManualClient?"__manual__":qClient}
+                    <select value={useManualCustomer?"__manual__":qCustomer}
                       onChange={e=>{
-                        if(e.target.value==="__manual__"){setUseManualClient(true);}
-                        else{setUseManualClient(false);setQClient(e.target.value);}
+                        if(e.target.value==="__manual__"){setUseManualCustomer(true);}
+                        else{setUseManualCustomer(false);setQCustomer(e.target.value);}
                       }}
-                      style={{flex:1,padding:"8px 10px",border:`1px solid ${useManualClient?C.purple:C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>
+                      style={{flex:1,padding:"8px 10px",border:`1px solid ${useManualCustomer?C.purple:C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>
                       <option value="">— Sélectionner —</option>
                       {(clients||[]).map((c:string)=><option key={c} value={c}>{c}</option>)}
                       <option value="__manual__">✏️ Saisir manuellement…</option>
                     </select>
                   </div>
-                  {useManualClient&&(
+                  {useManualCustomer&&(
                     <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                      <input value={qClientManual} onChange={e=>setQClientManual(e.target.value)}
+                      <input value={qCustomerManual} onChange={e=>setQCustomerManual(e.target.value)}
                         placeholder="Nom du client *"
                         style={{padding:"7px 10px",border:`2px solid ${C.purple}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-                      <textarea value={qClientAddr} onChange={e=>setQClientAddr(e.target.value)}
+                      <textarea value={qCustomerAddr} onChange={e=>setQCustomerAddr(e.target.value)}
                         placeholder={"Adresse (optionnel)\nBP 123, Abidjan\nCôte d'Ivoire"} rows={3}
                         style={{padding:"7px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:11,fontFamily:"inherit",resize:"none",boxSizing:"border-box"}}/>
                     </div>
@@ -5157,7 +5157,7 @@ function CataloguePage({clients,lang,isMobile}:any){
                 <i className="ti ti-file-spreadsheet" style={{fontSize:14}} aria-hidden="true"/>
                 Exporter en Excel (.xls)
               </button>
-              <button onClick={()=>{setQLines([{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1}]);setQClient("");setQNotes("");setQRef(`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);}}
+              <button onClick={()=>{setQLines([{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1}]);setQCustomer("");setQNotes("");setQRef(`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);}}
                 style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:"#F1F5F9",color:C.t3,border:"none",borderRadius:C.r,padding:"8px",fontSize:12,cursor:"pointer"}}>
                 <i className="ti ti-refresh" style={{fontSize:13}} aria-hidden="true"/> Nouveau devis
               </button>
@@ -5171,7 +5171,7 @@ function CataloguePage({clients,lang,isMobile}:any){
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                   <thead><tr style={{background:"#F8FAFC"}}>
-                    {["Référence","Client","Date","Lignes","Total HT"].map(h=><th key={h} style={{padding:"7px 12px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>)}
+                    {["Référence","Customer","Date","Lignes","Total HT"].map(h=><th key={h} style={{padding:"7px 12px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
                     {quotes.slice(0,8).map((q:any,i:number)=>(
@@ -5345,7 +5345,7 @@ function CataloguePage({clients,lang,isMobile}:any){
                         const roleColors:any={pn:{c:C.blue,bg:C.blueL},desc:{c:"#7C3AED",bg:"#EDE9FE"},price:{c:C.greenDk,bg:C.greenL},qty:{c:C.amberDk,bg:C.amberL},customer:{c:"#0D9488",bg:"#CCFBF1"},avail:{c:"#BE185D",bg:"#FCE7F3"}};
                         const role=Object.keys(colMap).find((k:string)=>colMap[k]===i);
                         const rc=role?roleColors[role]:null;
-                        const ROLES=[{key:"pn",label:"PN *"},{key:"desc",label:"Desc"},{key:"price",label:"Prix"},{key:"qty",label:"Qté"},{key:"customer",label:"Client"},{key:"avail",label:"Dispo"}];
+                        const ROLES=[{key:"pn",label:"PN *"},{key:"desc",label:"Desc"},{key:"price",label:"Prix"},{key:"qty",label:"Qté"},{key:"customer",label:"Customer"},{key:"avail",label:"Dispo"}];
                         return(
                           <th key={i} style={{padding:0,border:`1px solid ${C.b}`,background:rc?rc.bg:"#F8FAFC",minWidth:80,position:"relative"}}>
                             <div style={{padding:"6px 8px",display:"flex",flexDirection:"column",gap:3}}>
@@ -6142,14 +6142,14 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
   const[rtype,setRtype]=useState("open_orders");
   const[fromDate,setFromDate]=useState(new Date().getFullYear()+"-01-01");
   const[toDate,setToDate]=useState(new Date().toISOString().split("T")[0]);
-  const[selClients,setSelClients]=useState<string[]>(clients||[]);
-  const toggleClient=(c:string)=>setSelClients(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
+  const[selCustomers,setSelCustomers]=useState<string[]>(clients||[]);
+  const toggleCustomer=(c:string)=>setSelCustomers(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
 
   const generate=()=>{
     const fd=new Date(fromDate+"T00:00:00"),td=new Date(toDate+"T00:00:00");
     td.setHours(23,59,59);
     const inRange=(d:string)=>{if(!d)return true;const dt=new Date(d+"T00:00:00");return dt>=fd&&dt<=td;};
-    const allOrders=selClients.flatMap(c=>(data?.[c]||[]).map((o:any)=>({...o,_client:c})));
+    const allOrders=selCustomers.flatMap(c=>(data?.[c]||[]).map((o:any)=>({...o,_client:c})));
 
     // ── Month helpers ────────────────────────────────────────────────────────
     const monthKey=(d:string)=>d?d.slice(0,7):"0000-00";
@@ -6182,10 +6182,10 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
       title="Open Orders — Commandes non entièrement facturées";
       const items=allOrders.filter((o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return inv<(+o.amount||0)*0.999&&o.status!=="annule";});
       const rowOpen=(o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);const open=Math.max(0,(+o.amount||0)-inv);return `<tr><td>${o._client}</td><td>${o.poNumber||"—"}</td><td>${o.soNumber||"—"}</td><td>${fmtD(o.date)}</td><td>${o.status||"—"}</td><td style="text-align:right">${fmt(+o.amount||0)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;};
-      const subOpen=(grp:any[],label:string)=>{const s=grp.reduce((acc:number,o:any)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return acc+Math.max(0,(+o.amount||0)-inv);},0);return `<tr style="background:#FEF9EC;font-weight:700"><td colspan="7" style="text-align:right;color:#B45309;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#B45309;padding:6px 10px">${fmt(s)} €</td></tr>`;};
+      const subOpen=(grp:any[],label:string)=>{const s=grp.reduce((acc:number,o:any)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return acc+Math.max(0,(+o.amount||0)-inv);},0);return `<tr style="background:#FEF9EC;font-weight:700"><td colspan="7" style="text-align:right;color:#B45309;font-style:italic;padding:6px 10px">Subtotal ${label}</td><td style="text-align:right;color:#B45309;padding:6px 10px">${fmt(s)} €</td></tr>`;};
       const totOpen=(all:any[])=>{const t=all.reduce((acc:number,o:any)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return acc+Math.max(0,(+o.amount||0)-inv);},0);return `<tr style="background:#FEF3C7;font-weight:800;font-size:12px"><td colspan="7" style="text-align:right;padding:8px 10px">TOTAL OPEN ORDERS</td><td style="text-align:right;padding:8px 10px">${fmt(t)} €</td></tr>`;};
       rows=withMonthly(items,"date",rowOpen,subOpen,totOpen);
-      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° PO</th><th>N° S/O</th><th>Date</th><th>Statut</th><th>PO (€)</th><th>Facturé (€)</th><th>Reste (€)</th></tr>",rows);
+      printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Date</th><th>Statut</th><th>PO (€)</th><th>Facturé (€)</th><th>Reste (€)</th></tr>",rows);
 
     } else if(rtype==="overdue"){
       title="Factures échues — Échéances dépassées non soldées";
@@ -6198,10 +6198,10 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
       }).filter((i:any)=>i.isOverdue&&i.rem>0));
       const rowColor=(d:number)=>d>90?"#B91C1C":d>30?"#DC2626":"#EF4444";
       const rowOver=(i:any)=>`<tr style="border-left:3px solid ${rowColor(i.daysLate)}"><td style="font-weight:700">${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td style="color:#B91C1C;font-weight:700">${fmtD(i.dueDate)}</td><td style="text-align:center;background:#FEE2E2;color:#B91C1C;font-weight:800">${i.daysLate}j</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#B91C1C">${fmt(i.rem)} €</td></tr>`;
-      const subOver=(grp:any[],label:string)=>`<tr style="background:#FFF0F0;font-weight:700"><td colspan="8" style="text-align:right;color:#B91C1C;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#B91C1C;padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
-      const totOver=(all:any[])=>`<tr style="background:#FEE2E2;font-weight:800;font-size:12px"><td colspan="8" style="text-align:right;padding:8px 10px;color:#B91C1C">TOTAL ÉCHU</td><td style="text-align:right;padding:8px 10px;color:#B91C1C">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      const subOver=(grp:any[],label:string)=>`<tr style="background:#FFF0F0;font-weight:700"><td colspan="8" style="text-align:right;color:#B91C1C;font-style:italic;padding:6px 10px">Subtotal ${label}</td><td style="text-align:right;color:#B91C1C;padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      const totOver=(all:any[])=>`<tr style="background:#FEE2E2;font-weight:800;font-size:12px"><td colspan="8" style="text-align:right;padding:8px 10px;color:#B91C1C">TOTAL OVERDUE</td><td style="text-align:right;padding:8px 10px;color:#B91C1C">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
       rows=withMonthly(items,"dueDate",rowOver,subOver,totOver);
-      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date Facture</th><th>Échéance</th><th>Retard</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste Dû (€)</th></tr>",rows);
+      printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>Invoice #</th><th>Date Facture</th><th>Échéance</th><th>Retard</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste Dû (€)</th></tr>",rows);
 
     } else if(rtype==="upcoming"){
       title="Échéances à venir — 30 prochains jours";
@@ -6217,37 +6217,37 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
       }).filter(Boolean));
       const urgColor=(d:number)=>d===0?"#B91C1C":d<=3?"#DC2626":d<=7?"#D97706":"#0369A1";
       const rowUp=(i:any)=>`<tr><td style="font-weight:700">${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td style="font-weight:700;color:#0369A1">${fmtD(i.dueDate)}</td><td style="text-align:center;font-weight:800;color:${urgColor(i.daysLeft)}">${i.daysLeft===0?"Auj.":i.daysLeft+"j"}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#0369A1">${fmt(i.rem)} €</td><td><span style="background:#DBEAFE;color:#1D4ED8;padding:2px 7px;border-radius:4px;font-size:10px">${i.psLabel}</span></td></tr>`;
-      const subUp=(grp:any[],label:string)=>`<tr style="background:#EFF6FF;font-weight:700"><td colspan="8" style="text-align:right;color:#1D4ED8;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#1D4ED8;padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
-      const totUp=(all:any[])=>`<tr style="background:#DBEAFE;font-weight:800;font-size:12px"><td colspan="8" style="text-align:right;padding:8px 10px;color:#1D4ED8">TOTAL À ENCAISSER</td><td style="text-align:right;padding:8px 10px;color:#1D4ED8">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
+      const subUp=(grp:any[],label:string)=>`<tr style="background:#EFF6FF;font-weight:700"><td colspan="8" style="text-align:right;color:#1D4ED8;font-style:italic;padding:6px 10px">Subtotal ${label}</td><td style="text-align:right;color:#1D4ED8;padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
+      const totUp=(all:any[])=>`<tr style="background:#DBEAFE;font-weight:800;font-size:12px"><td colspan="8" style="text-align:right;padding:8px 10px;color:#1D4ED8">TOTAL TO COLLECT</td><td style="text-align:right;padding:8px 10px;color:#1D4ED8">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
       rows=withMonthly(items,"dueDate",rowUp,subUp,totUp);
-      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date émission</th><th>Échéance</th><th>Délai</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste dû (€)</th><th>Statut</th></tr>",rows);
+      printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>Invoice #</th><th>Date émission</th><th>Échéance</th><th>Délai</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste dû (€)</th><th>Statut</th></tr>",rows);
 
     } else if(rtype==="unpaid"){
       title="Factures en cours";
       const items=allOrders.flatMap((o:any)=>(o.invoices||[]).filter((i:any)=>inRange(i.date)).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);const rem=Math.max(0,(+i.amount||0)-paid);return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:payStatus(i).label};}).filter((i:any)=>i.rem>0));
       const rowUnp=(i:any)=>`<tr><td>${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td>${fmtD(i.dueDate)}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#DC2626">${fmt(i.rem)} €</td><td><span style="background:#FEE2E2;color:#B91C1C;padding:2px 8px;border-radius:4px;font-size:10px">${i.psLabel}</span></td></tr>`;
-      const subUnp=(grp:any[],label:string)=>`<tr style="background:#FFF5F5;font-weight:700"><td colspan="7" style="text-align:right;color:#DC2626;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#DC2626;padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
-      const totUnp=(all:any[])=>`<tr style="background:#FEE2E2;font-weight:800;font-size:12px"><td colspan="7" style="text-align:right;padding:8px 10px">TOTAL IMPAYÉ</td><td style="text-align:right;padding:8px 10px">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
+      const subUnp=(grp:any[],label:string)=>`<tr style="background:#FFF5F5;font-weight:700"><td colspan="7" style="text-align:right;color:#DC2626;font-style:italic;padding:6px 10px">Subtotal ${label}</td><td style="text-align:right;color:#DC2626;padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
+      const totUnp=(all:any[])=>`<tr style="background:#FEE2E2;font-weight:800;font-size:12px"><td colspan="7" style="text-align:right;padding:8px 10px">TOTAL UNPAID</td><td style="text-align:right;padding:8px 10px">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
       rows=withMonthly(items,"date",rowUnp,subUnp,totUnp);
-      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th><th>Statut</th></tr>",rows);
+      printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>Invoice #</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th><th>Statut</th></tr>",rows);
 
     } else if(rtype==="all_invoices"){
       title="Toutes les factures sur la période";
       const items=allOrders.flatMap((o:any)=>(o.invoices||[]).filter((i:any)=>inRange(i.date)).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);return{...i,_client:o._client,_po:o.poNumber,paid};}));
       const rowAll=(i:any)=>`<tr><td>${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td>${fmtD(i.dueDate)}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right">${fmt(Math.max(0,(+i.amount||0)-i.paid))} €</td></tr>`;
-      const subAll=(grp:any[],label:string)=>{const si=grp.reduce((s:number,i:any)=>s+(+i.amount||0),0),sp=grp.reduce((s:number,i:any)=>s+i.paid,0);return `<tr style="background:#F0FDFA;font-weight:700"><td colspan="5" style="text-align:right;color:#0D9488;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#0D9488;padding:6px 10px">${fmt(si)} €</td><td style="text-align:right;color:#059669;padding:6px 10px">${fmt(sp)} €</td><td style="text-align:right;color:#B45309;padding:6px 10px">${fmt(si-sp)} €</td></tr>`;};
+      const subAll=(grp:any[],label:string)=>{const si=grp.reduce((s:number,i:any)=>s+(+i.amount||0),0),sp=grp.reduce((s:number,i:any)=>s+i.paid,0);return `<tr style="background:#F0FDFA;font-weight:700"><td colspan="5" style="text-align:right;color:#0D9488;font-style:italic;padding:6px 10px">Subtotal ${label}</td><td style="text-align:right;color:#0D9488;padding:6px 10px">${fmt(si)} €</td><td style="text-align:right;color:#059669;padding:6px 10px">${fmt(sp)} €</td><td style="text-align:right;color:#B45309;padding:6px 10px">${fmt(si-sp)} €</td></tr>`;};
       const totAll=(all:any[])=>{const ti=all.reduce((s:number,i:any)=>s+(+i.amount||0),0),tp=all.reduce((s:number,i:any)=>s+i.paid,0);return `<tr style="background:#CCFBF1;font-weight:800;font-size:12px"><td colspan="5" style="text-align:right;padding:8px 10px">TOTAUX</td><td style="text-align:right;padding:8px 10px">${fmt(ti)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tp)} €</td><td style="text-align:right;padding:8px 10px">${fmt(ti-tp)} €</td></tr>`;};
       rows=withMonthly(items,"date",rowAll,subAll,totAll);
-      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° PO</th><th>N° Facture</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th></tr>",rows);
+      printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>Invoice #</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th></tr>",rows);
 
     } else {
       title="Synthèse par client";
-      rows=selClients.map((c:string)=>{const ords=data?.[c]||[];const po=ords.reduce((s:number,o:any)=>s+(+o.amount||0),0);const inv=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((ss:number,i:any)=>ss+(+i.amount||0),0),0);const paid=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).reduce((sss:number,p:any)=>sss+(+p.amount||0),0),0),0);const open=Math.max(0,po-inv);const term=PAY_TERMS.find((t:any)=>t.id===(configs[c]?.termId||"net60"))?.label||"—";return`<tr><td style="font-weight:700">${c}</td><td>${configs[c]?.accountNumber||"—"}</td><td>${term}</td><td>${ords.length}</td><td style="text-align:right">${fmt(po)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right">${fmt(paid)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;}).join("");
-      const tPO=selClients.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(+o.amount||0),0),0);
-      const tInv=selClients.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((sss:number,i:any)=>sss+(+i.amount||0),0),0),0);
-      const tPaid=selClients.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(o.invoices||[]).reduce((sss:number,i:any)=>sss+(i.payments||[]).reduce((ssss:number,p:any)=>ssss+(+p.amount||0),0),0),0),0);
+      rows=selCustomers.map((c:string)=>{const ords=data?.[c]||[];const po=ords.reduce((s:number,o:any)=>s+(+o.amount||0),0);const inv=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((ss:number,i:any)=>ss+(+i.amount||0),0),0);const paid=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).reduce((sss:number,p:any)=>sss+(+p.amount||0),0),0),0);const open=Math.max(0,po-inv);const term=PAY_TERMS.find((t:any)=>t.id===(configs[c]?.termId||"net60"))?.label||"—";return`<tr><td style="font-weight:700">${c}</td><td>${configs[c]?.accountNumber||"—"}</td><td>${term}</td><td>${ords.length}</td><td style="text-align:right">${fmt(po)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right">${fmt(paid)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;}).join("");
+      const tPO=selCustomers.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(+o.amount||0),0),0);
+      const tInv=selCustomers.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((sss:number,i:any)=>sss+(+i.amount||0),0),0),0);
+      const tPaid=selCustomers.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(o.invoices||[]).reduce((sss:number,i:any)=>sss+(i.payments||[]).reduce((ssss:number,p:any)=>ssss+(+p.amount||0),0),0),0),0);
       rows+=`<tr style="background:#DBEAFE;font-weight:800;font-size:12px"><td>TOTAL</td><td></td><td></td><td></td><td style="text-align:right;padding:8px 10px">${fmt(tPO)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tInv)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tPaid)} €</td><td style="text-align:right;padding:8px 10px">${fmt(Math.max(0,tPO-tInv))} €</td></tr>`;
-      printReport(title,fromDate,toDate,"<tr><th>Client</th><th>N° Compte</th><th>Conditions</th><th>Cmds</th><th>PO Total (€)</th><th>Facturé (€)</th><th>Encaissé (€)</th><th>Open Orders (€)</th></tr>",rows);
+      printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>N° Compte</th><th>Conditions</th><th>Cmds</th><th>PO Total (€)</th><th>Facturé (€)</th><th>Encaissé (€)</th><th>Open Orders (€)</th></tr>",rows);
     }
     onClose();
   };
@@ -6271,8 +6271,8 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
       @media print{body{padding:16px;}}
     </style></head><body>
     <div style="position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px">
-    <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Imprimer / PDF</button>
-    <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">✕ Fermer</button>
+    <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
+    <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">✕ Close</button>
     </div>
     <style>@media print{.no-print{display:none!important}}</style>
     <div class="header">
@@ -6313,12 +6313,12 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
         <Fld label="Date de fin" type="date" value={toDate} onChange={setToDate}/>
       </div>
       <div>
-        <Label t="Clients inclus"/>
+        <Label t="Customers inclus"/>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
-          <button onClick={()=>setSelClients(clients)} style={{fontSize:11,padding:"3px 9px",borderRadius:4,border:`1px solid ${C.b}`,background:"#F8FAFC",cursor:"pointer",color:C.t2}}>Tous</button>
-          <button onClick={()=>setSelClients([])} style={{fontSize:11,padding:"3px 9px",borderRadius:4,border:`1px solid ${C.b}`,background:"#F8FAFC",cursor:"pointer",color:C.t2}}>Aucun</button>
+          <button onClick={()=>setSelCustomers(clients)} style={{fontSize:11,padding:"3px 9px",borderRadius:4,border:`1px solid ${C.b}`,background:"#F8FAFC",cursor:"pointer",color:C.t2}}>Tous</button>
+          <button onClick={()=>setSelCustomers([])} style={{fontSize:11,padding:"3px 9px",borderRadius:4,border:`1px solid ${C.b}`,background:"#F8FAFC",cursor:"pointer",color:C.t2}}>Aucun</button>
           {(clients||[]).map((c:string)=>(
-            <button key={c} onClick={()=>toggleClient(c)} style={{fontSize:11,padding:"3px 9px",borderRadius:4,border:`2px solid ${selClients.includes(c)?C.blue:C.b}`,background:selClients.includes(c)?C.blueL:"#fff",color:selClients.includes(c)?C.blueDk:C.t2,fontWeight:selClients.includes(c)?600:400,cursor:"pointer"}}>{c}</button>
+            <button key={c} onClick={()=>toggleCustomer(c)} style={{fontSize:11,padding:"3px 9px",borderRadius:4,border:`2px solid ${selCustomers.includes(c)?C.blue:C.b}`,background:selCustomers.includes(c)?C.blueL:"#fff",color:selCustomers.includes(c)?C.blueDk:C.t2,fontWeight:selCustomers.includes(c)?600:400,cursor:"pointer"}}>{c}</button>
           ))}
         </div>
       </div>
