@@ -3009,16 +3009,16 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     const upcomingYTD=allInvoices.filter((i:any)=>{ if(!i.dueDate)return false; const due=new Date(i.dueDate+"T00:00:00"); const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0); return due>=now2&&due<=d30&&Math.max(0,(+i.amount||0)-paid)>0; });
     const upcomingAmtYTD=upcomingYTD.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
 
-    // Monthly breakdown (all months in range)
+    // Monthly breakdown (only months with data in range)
     const monthly=MN_EN.map((_,mi)=>{
       const po=ytdOrders.filter((o:any)=>{ const d=new Date(o.date+"T00:00:00"); return d.getMonth()===mi; }).reduce((s:number,o:any)=>s+(+o.amount||0),0);
       const inv=ytdInvoicesAll.filter((i:any)=>{ const d=new Date(i.date+"T00:00:00"); return d.getMonth()===mi; }).reduce((s:number,i:any)=>s+(+i.amount||0),0);
       const pay=ytdPayments.filter((p:any)=>{ const d=new Date(p.date+"T00:00:00"); return d.getMonth()===mi; }).reduce((s:number,p:any)=>s+(+p.amount||0),0);
       return{mn:MN[mi],po,inv,pay};
-    }).filter(m=>m.po>0||m.inv>0||m.pay>0);  // only show months with data
+    }).filter(m=>m.po>0||m.inv>0||m.pay>0);
     const maxBar=Math.max(...monthly.map(m=>Math.max(m.po,m.inv,m.pay)),1);
 
-    // By client in period
+    // By client YTD
     const clients2=Array.from(new Set(allOrders.map((o:any)=>o._client))).sort();
     const byClientYTD=clients2.map(c=>{
       const cOrds=allOrders.filter((o:any)=>o._client===c);
@@ -4342,7 +4342,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
         onRemove={(idx:number)=>setThisWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
         title="📋 Semaine en cours — Planned Activity" color={C.green} isMobile={isMobile}/>
 
-      {/* Period selector for yearly report */}
+      {/* Period selector for yearly/custom report */}
       <div style={{background:"#fff",borderRadius:C.rLg,border:`2px solid #1D4ED8`,boxShadow:C.shMd,overflow:"hidden"}}>
         <div style={{padding:"12px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",gap:8,background:"#EFF6FF"}}>
           <i className="ti ti-calendar-stats" style={{fontSize:16,color:"#1D4ED8"}} aria-hidden="true"/>
@@ -4362,7 +4362,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
             <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Langue</label>
             <div style={{display:"flex",background:C.page,border:`1px solid ${C.b}`,borderRadius:C.rSm,overflow:"hidden"}}>
-              {(["fr","en"] as const).map(l=>(
+              {(["fr","en"] as ("fr"|"en")[]).map(l=>(
                 <button key={l} onClick={()=>setYearlyLang(l)}
                   style={{padding:"7px 18px",border:"none",background:yearlyLang===l?"#1D4ED8":"transparent",color:yearlyLang===l?"#fff":C.t2,fontWeight:yearlyLang===l?700:400,fontSize:13,cursor:"pointer",transition:"all .15s",textTransform:"uppercase"}}>
                   {l}
@@ -4371,23 +4371,23 @@ tr:nth-child(even) td{background:#F8FAFC;}
             </div>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            <label style={{fontSize:11,color:"transparent",fontWeight:600}}>—</label>
-            <div style={{display:"flex",gap:8}}>
+            <label style={{fontSize:11,color:"transparent",fontWeight:600}}>_</label>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               {[
-                {label:`YTD ${thisYear}`, from:`${thisYear}-01-01`, to:todayStr()},
-                {label:`${thisYear-1}`, from:`${thisYear-1}-01-01`, to:`${thisYear-1}-12-31`},
-                {label:"6 mois", from:addDays(todayStr(),-180), to:todayStr()},
-                {label:"12 mois", from:addDays(todayStr(),-365), to:todayStr()},
-              ].map(({label,from,to})=>(
-                <button key={label} onClick={()=>{setYearlyFrom(from);setYearlyTo(to);}}
-                  style={{padding:"7px 12px",background:yearlyFrom===from&&yearlyTo===to?"#DBEAFE":"#F1F5F9",color:yearlyFrom===from&&yearlyTo===to?"#1D4ED8":C.t2,border:"none",borderRadius:C.rSm,fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                {label:`YTD ${thisYear}`, f:`${thisYear}-01-01`, t:todayStr()},
+                {label:`${thisYear-1}`,   f:`${thisYear-1}-01-01`, t:`${thisYear-1}-12-31`},
+                {label:"6 mois",          f:addDays(todayStr(),-180), t:todayStr()},
+                {label:"12 mois",         f:addDays(todayStr(),-365), t:todayStr()},
+              ].map(({label,f,t})=>(
+                <button key={label} onClick={()=>{setYearlyFrom(f);setYearlyTo(t);}}
+                  style={{padding:"7px 12px",background:yearlyFrom===f&&yearlyTo===t?"#DBEAFE":"#F1F5F9",color:yearlyFrom===f&&yearlyTo===t?"#1D4ED8":C.t2,border:"none",borderRadius:C.rSm,fontSize:11,fontWeight:600,cursor:"pointer"}}>
                   {label}
                 </button>
               ))}
             </div>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4,marginLeft:"auto"}}>
-            <label style={{fontSize:11,color:"transparent",fontWeight:600}}>—</label>
+            <label style={{fontSize:11,color:"transparent",fontWeight:600}}>_</label>
             <button onClick={()=>printYearlyReport(yearlyLang,yearlyFrom,yearlyTo)}
               style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,#1D4ED8,#7C3AED)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"9px 20px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 14px rgba(29,78,216,.4)",whiteSpace:"nowrap"}}>
               <i className="ti ti-printer" style={{fontSize:15}} aria-hidden="true"/>
@@ -4396,7 +4396,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
           </div>
         </div>
         <div style={{padding:"6px 18px 10px",fontSize:11,color:C.t3}}>
-          Période sélectionnée : <strong style={{color:"#1D4ED8"}}>{fmtD(yearlyFrom)}</strong> → <strong style={{color:"#1D4ED8"}}>{fmtD(yearlyTo)}</strong> · Langue : <strong style={{color:"#1D4ED8"}}>{yearlyLang.toUpperCase()}</strong>
+          Période : <strong style={{color:"#1D4ED8"}}>{fmtD(yearlyFrom)}</strong> → <strong style={{color:"#1D4ED8"}}>{fmtD(yearlyTo)}</strong> · Langue : <strong style={{color:"#1D4ED8"}}>{yearlyLang.toUpperCase()}</strong>
         </div>
       </div>
 
@@ -4417,6 +4417,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
           <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
           Rapport mensuel (FR)
         </button>
+
       </div>
     </div>
   );
