@@ -4417,16 +4417,6 @@ tr:nth-child(even) td{background:#F8FAFC;}
           <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
           Rapport mensuel (FR)
         </button>
-        <button onClick={()=>printYearlyReport("en")}
-          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#1D4ED8,#7C3AED)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(29,78,216,.4)"}}>
-          <i className="ti ti-calendar-stats" style={{fontSize:18}} aria-hidden="true"/>
-          Yearly Report {thisYear} (EN)
-        </button>
-        <button onClick={()=>printYearlyReport("fr")}
-          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#0369A1,#7C3AED)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(3,105,161,.4)"}}>
-          <i className="ti ti-calendar-stats" style={{fontSize:18}} aria-hidden="true"/>
-          Rapport annuel {thisYear} (FR)
-        </button>
       </div>
     </div>
   );
