@@ -3000,7 +3000,17 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     const overdueAmt=overdueInv.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
 
     // Upcoming (next 30 days)
-    const upcomingInv=allInvoices.filter((i:any)=>{ const ps=payStatus(i); return["today","soon","soon_part"].includes(ps.key); });
+    const upcomingInv=(()=>{
+      const now=new Date(); now.setHours(0,0,0,0);
+      const d30=new Date(now); d30.setDate(d30.getDate()+30);
+      return allInvoices.filter((i:any)=>{
+        if(!i.dueDate) return false;
+        const due=new Date(i.dueDate+"T00:00:00");
+        const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+        const rem=Math.max(0,(+i.amount||0)-paid);
+        return due>=now && due<=d30 && rem>0;
+      });
+    })();
     const upcomingAmt=upcomingInv.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
 
     // YTD
@@ -3038,7 +3048,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;background:#fff;}
 @page{size:A4 portrait;margin:10mm 12mm;}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .no-print{display:none!important} .page{page-break-after:always;break-after:page;} .page:last-child{page-break-after:avoid;}}
-.page{padding:10mm 12mm 14mm;position:relative;min-height:277mm;}
+.page{padding:8mm 12mm 10mm;position:relative;min-height:0;}
 .no-print{position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px;}
 
 /* Cover */
@@ -3055,13 +3065,13 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;backgr
 .cover-footer{font-size:9px;opacity:.45;display:flex;justify-content:space-between;}
 
 /* Section header */
-.sh{border-bottom:3px solid #0D1B2A;padding-bottom:8px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-end;}
+.sh{border-bottom:3px solid #0D1B2A;padding-bottom:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end;}
 .sh-title{font-size:18px;font-weight:900;color:#0D1B2A;}
 .sh-sub{font-size:11px;color:#8FA0B3;margin-top:2px;}
 .sh-badge{font-size:10px;font-weight:600;padding:3px 10px;border-radius:4px;}
 
 /* KPI grid */
-.kpi-grid{display:grid;gap:10px;margin-bottom:16px;}
+.kpi-grid{display:grid;gap:8px;margin-bottom:10px;}
 .kpi-3{grid-template-columns:repeat(3,1fr);}
 .kpi-4{grid-template-columns:repeat(4,1fr);}
 .kpi{border-radius:10px;padding:12px 14px;border:1px solid #E5EAF0;}
@@ -3072,15 +3082,15 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;backgr
 .kpi-bar-fill{height:100%;border-radius:99px;}
 
 /* Progress ring placeholder — use simple bar */
-.gauge-row{display:flex;gap:16px;align-items:center;margin-bottom:14px;}
-.gauge{flex:1;background:#F8FAFC;border-radius:10px;border:1px solid #E5EAF0;padding:12px 14px;}
+.gauge-row{display:flex;gap:12px;align-items:center;margin-bottom:10px;}
+.gauge{flex:1;background:#F8FAFC;border-radius:10px;border:1px solid #E5EAF0;padding:8px 12px;}
 .gauge-label{font-size:9px;color:#8FA0B3;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
 .gauge-val{font-size:22px;font-weight:900;margin-bottom:6px;}
 .bar{height:8px;border-radius:99px;background:#E5EAF0;overflow:hidden;}
 .bar-fill{height:100%;border-radius:99px;transition:width .4s;}
 
 /* Tables */
-table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:14px;}
+table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:8px;}
 th{background:#0D1B2A;color:#fff;padding:6px 8px;text-align:left;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}
 td{padding:5px 8px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
 tr:nth-child(even) td{background:#F8FAFC;}
@@ -3089,17 +3099,17 @@ tr:nth-child(even) td{background:#F8FAFC;}
 .alert-row td{background:#FEF2F2!important;border-left:3px solid #DC2626;}
 
 /* Two col */
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-.col-title{font-size:10px;font-weight:700;color:#0D1B2A;padding:5px 0;border-bottom:2px solid #0D1B2A;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.col-title{font-size:10px;font-weight:700;color:#0D1B2A;padding:3px 0;border-bottom:2px solid #0D1B2A;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;}
 
 /* Analysis box */
-.analysis{background:#F0FDFA;border-left:4px solid #0D9488;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:12px;}
+.analysis{background:#F0FDFA;border-left:4px solid #0D9488;border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:8px;}
 .analysis-title{font-size:10px;font-weight:700;color:#0D9488;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;}
 .analysis-item{font-size:10px;color:#0D1B2A;padding:3px 0;display:flex;gap:6px;}
 .dot{width:6px;height:6px;border-radius:99px;background:#0D9488;flex-shrink:0;margin-top:3px;}
-.warn-box{background:#FEF9EC;border-left:4px solid #D97706;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:12px;}
+.warn-box{background:#FEF9EC;border-left:4px solid #D97706;border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:8px;}
 .warn-title{font-size:10px;font-weight:700;color:#D97706;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;}
-.alert-box{background:#FEF2F2;border-left:4px solid #DC2626;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:12px;}
+.alert-box{background:#FEF2F2;border-left:4px solid #DC2626;border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:8px;}
 .alert-title{font-size:10px;font-weight:700;color:#DC2626;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;}
 
 /* Footer */
@@ -3315,7 +3325,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
       <table>
         <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° Facture":"Invoice #"}</th><th>${isFR?"Échéance":"Due date"}</th><th style="text-align:right">${isFR?"Solde":"Balance"}</th></tr></thead>
         <tbody>
-          ${upcomingInv.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No upcoming due dates</td></tr>':
+          ${upcomingInv.length===0?`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">${isFR?"Aucune échéance à venir":"No upcoming due dates"}</td></tr>`:
             (()=>{
               const sorted=[...upcomingInv].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||""));
               let r5=sorted.slice(0,6).map((i:any)=>{
