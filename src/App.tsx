@@ -2971,6 +2971,319 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const MONTH_NAMES=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
   // ── Print function ─────────────────────────────────────────────────────────
+  const printYearlyReport=(reportLang:"en"|"fr"="en")=>{
+    const w=window.open("","_blank","width=1200,height=900");
+    if(!w)return;
+    const isFR=reportLang==="fr";
+    const MN_EN=["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const MN_FR=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+    const MN=isFR?MN_FR:MN_EN;
+    const genDate=today.toLocaleDateString(isFR?"fr-FR":"en-GB",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+
+    // ── YTD Data ─────────────────────────────────────────────────────────────
+    const ytdOrders=allOrders.filter((o:any)=>{ const d=o.date?new Date(o.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; });
+    const ytdInvoicesAll=allInvoices.filter((i:any)=>{ const d=i.date?new Date(i.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; });
+    const allPaymentsYTD=allOrders.flatMap((o:any)=>(o.invoices||[]).flatMap((i:any)=>(i.payments||[]).map((p:any)=>({...p,_client:o._client,_po:o.poNumber,_inv:i.invoiceNumber}))));
+    const ytdPayments=allPaymentsYTD.filter((p:any)=>{ const d=p.date?new Date(p.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; });
+
+    const ytdPO=ytdOrders.reduce((s:number,o:any)=>s+(+o.amount||0),0);
+    const ytdInv=ytdInvoicesAll.reduce((s:number,i:any)=>s+(+i.amount||0),0);
+    const ytdPay=ytdPayments.reduce((s:number,p:any)=>s+(+p.amount||0),0);
+    const ytdOpen=allOrders.reduce((s:number,o:any)=>{ const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0); return s+Math.max(0,(+o.amount||0)-inv); },0);
+    const invRate=ytdPO>0?(ytdInv/ytdPO*100):0;
+    const collRate=ytdInv>0?(ytdPay/ytdInv*100):0;
+
+    // Outstanding
+    const overdueYTD=allInvoices.filter((i:any)=>{ const ps=payStatus(i); return["overdue","ov_part"].includes(ps.key); });
+    const overdueAmtYTD=overdueYTD.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+    const now2=new Date(); now2.setHours(0,0,0,0);
+    const d30=new Date(now2); d30.setDate(d30.getDate()+30);
+    const upcomingYTD=allInvoices.filter((i:any)=>{ if(!i.dueDate)return false; const due=new Date(i.dueDate+"T00:00:00"); const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0); return due>=now2&&due<=d30&&Math.max(0,(+i.amount||0)-paid)>0; });
+    const upcomingAmtYTD=upcomingYTD.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+
+    // Monthly breakdown
+    const monthly=MN_EN.map((_,mi)=>{
+      const po=ytdOrders.filter((o:any)=>{ const d=new Date(o.date+"T00:00:00"); return d.getMonth()===mi; }).reduce((s:number,o:any)=>s+(+o.amount||0),0);
+      const inv=ytdInvoicesAll.filter((i:any)=>{ const d=new Date(i.date+"T00:00:00"); return d.getMonth()===mi; }).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+      const pay=ytdPayments.filter((p:any)=>{ const d=new Date(p.date+"T00:00:00"); return d.getMonth()===mi; }).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+      return{mn:MN[mi],po,inv,pay};
+    });
+    const maxBar=Math.max(...monthly.map(m=>Math.max(m.po,m.inv,m.pay)),1);
+
+    // By client YTD
+    const clients2=Array.from(new Set(allOrders.map((o:any)=>o._client))).sort();
+    const byClientYTD=clients2.map(c=>{
+      const cOrds=allOrders.filter((o:any)=>o._client===c);
+      const po=cOrds.filter((o:any)=>{ const d=o.date?new Date(o.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; }).reduce((s:number,o:any)=>s+(+o.amount||0),0);
+      const inv=cOrds.flatMap((o:any)=>o.invoices||[]).filter((i:any)=>{ const d=i.date?new Date(i.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; }).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+      const pay=cOrds.flatMap((o:any)=>(o.invoices||[]).flatMap((i:any)=>i.payments||[])).filter((p:any)=>{ const d=p.date?new Date(p.date+"T00:00:00"):null; return d&&d.getFullYear()===thisYear; }).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+      const openC=cOrds.reduce((s:number,o:any)=>{ const iv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0); return s+Math.max(0,(+o.amount||0)-iv); },0);
+      const overC=cOrds.flatMap((o:any)=>o.invoices||[]).reduce((s:number,i:any)=>{ const ps=payStatus(i); return["overdue","ov_part"].includes(ps.key)?s+ps.rem:s; },0);
+      const rate=po>0?(inv/po*100):0;
+      return{c,po,inv,pay,openC,overC,rate};
+    }).filter(x=>x.po>0||x.inv>0||x.pay>0).sort((a,b)=>b.po-a.po);
+
+    // Bar chart rows
+    const barRows=monthly.map(m=>{
+      const pw=m.po>0?(m.po/maxBar*180):0;
+      const iw=m.inv>0?(m.inv/maxBar*180):0;
+      const payw=m.pay>0?(m.pay/maxBar*180):0;
+      if(!m.po&&!m.inv&&!m.pay) return`<tr><td style="width:40px;font-size:9px;color:#8FA0B3;padding:3px 6px">${m.mn.slice(0,3)}</td><td style="color:#E5EAF0;font-size:9px">—</td></tr>`;
+      return`<tr>
+        <td style="width:40px;font-size:9px;color:#4A5568;padding:3px 6px;font-weight:600">${m.mn.slice(0,3)}</td>
+        <td style="padding:2px 0">
+          <div style="display:flex;flex-direction:column;gap:1px">
+            ${m.po>0?`<div style="display:flex;align-items:center;gap:4px"><div style="width:${pw}px;height:5px;background:#2563EB;border-radius:0 3px 3px 0;min-width:2px"></div><span style="font-size:8px;color:#2563EB">${fmtK(m.po)}</span></div>`:''}
+            ${m.inv>0?`<div style="display:flex;align-items:center;gap:4px"><div style="width:${iw}px;height:5px;background:#0D9488;border-radius:0 3px 3px 0;min-width:2px"></div><span style="font-size:8px;color:#0D9488">${fmtK(m.inv)}</span></div>`:''}
+            ${m.pay>0?`<div style="display:flex;align-items:center;gap:4px"><div style="width:${payw}px;height:5px;background:#059669;border-radius:0 3px 3px 0;min-width:2px"></div><span style="font-size:8px;color:#059669">${fmtK(m.pay)}</span></div>`:''}
+          </div>
+        </td>
+      </tr>`;
+    }).join("");
+
+    // Client ranking rows
+    const clientRows=byClientYTD.map((x,idx)=>{
+      const rc=x.rate>=80?"#059669":x.rate>=50?"#D97706":"#DC2626";
+      const medals=["🥇","🥈","🥉"];
+      return`<tr>
+        <td style="font-size:11px">${medals[idx]||`<span style="color:#8FA0B3;font-size:10px">${idx+1}</span>`}</td>
+        <td style="font-weight:700">${x.c}</td>
+        <td style="text-align:right;color:#2563EB;font-weight:600">${fmtK(x.po)} €</td>
+        <td style="text-align:right;color:#0D9488;font-weight:600">${fmtK(x.inv)} €</td>
+        <td style="text-align:right;color:#059669">${fmtK(x.pay)} €</td>
+        <td style="text-align:right;color:#D97706">${x.openC>0?fmtK(x.openC)+" €":"—"}</td>
+        <td style="text-align:right;color:#DC2626">${x.overC>0?fmtK(x.overC)+" €":"—"}</td>
+        <td style="text-align:right;font-weight:700;color:${rc}">${x.po>0?x.rate.toFixed(0)+"%":"—"}</td>
+      </tr>`;
+    }).join("");
+
+    // Overdue by client
+    const byClientOv:Record<string,any[]>={};
+    [...overdueYTD].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||"")).forEach((i:any)=>{ if(!byClientOv[i._client])byClientOv[i._client]=[]; byClientOv[i._client].push(i); });
+    const overdueRows=Object.keys(byClientOv).sort().map(cl=>{
+      const grp=byClientOv[cl];
+      const cTot=grp.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+      const rows=grp.map((i:any)=>{ const ps=payStatus(i); const days=i.dueDate?Math.abs(diffD(i.dueDate)):0; const urg=days>90?"#B91C1C":days>30?"#DC2626":"#EF4444"; return`<tr><td style="padding-left:12px;font-size:9px;color:#4A5568">${i.invoiceNumber||"—"}</td><td style="font-size:9px;color:#6B7280">${i._po||"—"}</td><td style="text-align:center"><span style="background:${urg};color:#fff;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700">${days}d</span></td><td style="text-align:right;font-weight:600;color:${urg}">${fmtK(ps.rem)} €</td></tr>`; }).join("");
+      return`<tr style="background:#FEF2F2"><td colspan="3" style="font-weight:700;color:#DC2626;font-size:9px;padding:4px 8px">📁 ${cl}</td><td style="text-align:right;font-weight:700;color:#DC2626;padding:4px 8px">${fmtK(cTot)} €</td></tr>${rows}`;
+    }).join("")+`<tr class="total-row"><td colspan="3">${isFR?"TOTAL ÉCHU":"TOTAL OVERDUE"}</td><td style="text-align:right;color:#FCA5A5">${fmtK(overdueAmtYTD)} €</td></tr>`;
+
+    // Upcoming by client
+    const byClientUp:Record<string,any[]>={};
+    [...upcomingYTD].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||"")).forEach((i:any)=>{ if(!byClientUp[i._client])byClientUp[i._client]=[]; byClientUp[i._client].push(i); });
+    const upcomingRows=upcomingYTD.length===0
+      ?`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">${isFR?"Aucune échéance à venir":"No upcoming due dates"}</td></tr>`
+      :Object.keys(byClientUp).sort().map(cl=>{
+        const grp=byClientUp[cl];
+        const cTot=grp.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+        const rows=grp.map((i:any)=>{ const ps=payStatus(i); const days=diffD(i.dueDate||""); return`<tr><td style="padding-left:12px;font-size:9px;color:#4A5568">${i.invoiceNumber||"—"}</td><td style="font-size:9px;color:#6B7280">${i._po||"—"}</td><td style="color:#0369A1;font-size:9px">${fmtD(i.dueDate)} (${days}d)</td><td style="text-align:right;font-weight:600;color:#0369A1">${fmtK(ps.rem)} €</td></tr>`; }).join("");
+        return`<tr style="background:#EFF6FF"><td colspan="3" style="font-weight:700;color:#1D4ED8;font-size:9px;padding:4px 8px">📁 ${cl}</td><td style="text-align:right;font-weight:700;color:#1D4ED8;padding:4px 8px">${fmtK(cTot)} €</td></tr>${rows}`;
+      }).join("")+`<tr class="total-row"><td colspan="3">${isFR?"TOTAL À VENIR":"TOTAL UPCOMING"}</td><td style="text-align:right">${fmtK(upcomingAmtYTD)} €</td></tr>`;
+
+    w.document.write(`<!DOCTYPE html><html lang="${isFR?"fr":"en"}"><head>
+<meta charset="utf-8">
+<title>${isFR?"Rapport Annuel":"Yearly Report"} ${thisYear}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;background:#fff;}
+@page{size:A4 portrait;margin:10mm 12mm;}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}.no-print{display:none!important}.page{page-break-after:always;break-after:page;}.page:last-child{page-break-after:avoid;}}
+.page{padding:8mm 12mm 10mm;position:relative;min-height:0;}
+.no-print{position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px;}
+.cover{background:linear-gradient(135deg,#0D1B2A 0%,#1D4ED8 60%,#7C3AED 100%);color:#fff;display:flex;flex-direction:column;justify-content:space-between;min-height:277mm;}
+.brand{font-size:11px;opacity:.5;letter-spacing:.1em;text-transform:uppercase;}
+.main-title{font-size:44px;font-weight:900;line-height:1;letter-spacing:-.02em;margin-top:8px;}
+.year-badge{font-size:18px;opacity:.8;margin-top:6px;font-weight:700;}
+.watermark{font-size:120px;font-weight:900;color:rgba(255,255,255,.05);position:absolute;right:8mm;top:40%;transform:translateY(-50%);letter-spacing:-.04em;}
+.cover-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:0;}
+.ck{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:10px 14px;}
+.ck-label{font-size:9px;opacity:.6;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;}
+.ck-val{font-size:22px;font-weight:900;}
+.ck-sub{font-size:9px;opacity:.55;margin-top:3px;}
+.cover-footer{font-size:9px;opacity:.45;display:flex;justify-content:space-between;}
+.sh{border-bottom:3px solid #0D1B2A;padding-bottom:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end;}
+.sh-title{font-size:16px;font-weight:900;color:#0D1B2A;}
+.sh-sub{font-size:10px;color:#8FA0B3;margin-top:2px;}
+.sh-badge{font-size:10px;font-weight:600;padding:3px 10px;border-radius:4px;}
+.kpi-grid{display:grid;gap:8px;margin-bottom:10px;}
+.kpi-3{grid-template-columns:repeat(3,1fr);}
+.kpi-4{grid-template-columns:repeat(4,1fr);}
+.kpi{border-radius:8px;padding:10px 12px;border:1px solid #E5EAF0;}
+.kpi-label{font-size:9px;color:#8FA0B3;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+.kpi-val{font-size:18px;font-weight:900;line-height:1;}
+.kpi-sub{font-size:9px;color:#8FA0B3;margin-top:3px;}
+.bar{height:6px;border-radius:99px;background:#E5EAF0;overflow:hidden;margin-top:6px;}
+.bar-fill{height:100%;border-radius:99px;}
+.gauge-row{display:flex;gap:10px;margin-bottom:10px;}
+.gauge{flex:1;background:#F8FAFC;border-radius:8px;border:1px solid #E5EAF0;padding:8px 12px;}
+.gauge-label{font-size:9px;color:#8FA0B3;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+.gauge-val{font-size:20px;font-weight:900;margin-bottom:4px;}
+table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:8px;}
+th{background:#0D1B2A;color:#fff;padding:5px 8px;text-align:left;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}
+td{padding:4px 8px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
+tr:nth-child(even) td{background:#F8FAFC;}
+.total-row td{background:#0D1B2A!important;color:#fff!important;font-weight:700;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.col-title{font-size:10px;font-weight:700;color:#0D1B2A;padding:3px 0;border-bottom:2px solid #0D1B2A;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;}
+.analysis{background:#F0FDFA;border-left:4px solid #0D9488;border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:8px;}
+.analysis-title{font-size:10px;font-weight:700;color:#0D9488;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;}
+.analysis-item{font-size:10px;color:#0D1B2A;padding:2px 0;display:flex;gap:6px;}
+.dot{width:6px;height:6px;border-radius:99px;background:#0D9488;flex-shrink:0;margin-top:3px;}
+.alert-box{background:#FEF2F2;border-left:4px solid #DC2626;border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:8px;}
+.alert-title{font-size:10px;font-weight:700;color:#DC2626;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;}
+.footer{position:absolute;bottom:6mm;left:12mm;right:12mm;display:flex;justify-content:space-between;font-size:9px;color:#8FA0B3;border-top:1px solid #E5EAF0;padding-top:4px;}
+.legend{display:flex;gap:12px;margin-bottom:6px;}
+.leg-item{display:flex;align-items:center;gap:4px;font-size:9px;color:#6B7280;}
+.leg-dot{width:10px;height:5px;border-radius:3px;}
+</style></head><body>
+<div class="no-print">
+  <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,.3)">${isFR?"🖨️ Imprimer / PDF":"🖨️ Print / PDF"}</button>
+  <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial">${isFR?"✕ Fermer":"✕ Close"}</button>
+</div>
+
+<!-- ══ PAGE 1: COVER ══ -->
+<div class="page cover">
+  <div>
+    <div class="brand">OrderTrack — ${isFR?"Rapport de Performance Annuelle":"Annual Performance Report"}</div>
+    <div style="margin-top:14px">
+      <div class="main-title">${isFR?"RAPPORT\nANNUEL":"YEARLY\nREPORT"}</div>
+      <div class="year-badge">${thisYear} · ${isFR?"Afrique de l'Ouest":"West Africa"}</div>
+    </div>
+  </div>
+  <div class="watermark">${thisYear}</div>
+  <div>
+    <div class="cover-kpi">
+      <div class="ck"><div class="ck-label">${isFR?"PO Reçus (YTD)":"PO Received (YTD)"}</div><div class="ck-val">${fmtK(ytdPO)} €</div><div class="ck-sub">${ytdOrders.length} ${isFR?"commande":"order"}${ytdOrders.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Facturé (YTD)":"Invoiced (YTD)"}</div><div class="ck-val">${fmtK(ytdInv)} €</div><div class="ck-sub">${invRate.toFixed(1)}% ${isFR?"du PO":"of PO"}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Encaissé (YTD)":"Collected (YTD)"}</div><div class="ck-val">${fmtK(ytdPay)} €</div><div class="ck-sub">${collRate.toFixed(1)}% ${isFR?"des factures":"of invoiced"}</div></div>
+      <div class="ck"><div class="ck-label">Open Orders</div><div class="ck-val">${fmtK(ytdOpen)} €</div><div class="ck-sub">${isFR?"Reste à facturer":"Remaining to invoice"}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Factures Échues":"Overdue Invoices"}</div><div class="ck-val">${fmtK(overdueAmtYTD)} €</div><div class="ck-sub">${overdueYTD.length} ${isFR?"facture":"invoice"}${overdueYTD.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Échéances à Venir":"Upcoming (30d)"}</div><div class="ck-val">${fmtK(upcomingAmtYTD)} €</div><div class="ck-sub">${upcomingYTD.length} ${isFR?"facture":"invoice"}${upcomingYTD.length>1?"s":""}</div></div>
+    </div>
+  </div>
+  <div class="cover-footer">
+    <span>${isFR?"CONFIDENTIEL — Usage interne":"CONFIDENTIAL — Internal use only"}</span>
+    <span>${isFR?"Généré le":"Generated on"} ${genDate}</span>
+  </div>
+</div>
+
+<!-- ══ PAGE 2: PERFORMANCE & MONTHLY BREAKDOWN ══ -->
+<div class="page">
+  <div class="sh">
+    <div><div class="sh-title">📊 ${isFR?"Performance Annuelle":"Annual Performance"} — ${thisYear}</div><div class="sh-sub">${isFR?"Indicateurs clés et évolution mensuelle":"Key indicators and monthly evolution"}</div></div>
+    <span class="sh-badge" style="background:#DBEAFE;color:#1D4ED8">${isFR?"Année en cours":"Current Year"} ${thisYear}</span>
+  </div>
+
+  <div class="kpi-grid kpi-3">
+    <div class="kpi" style="border-left:4px solid #2563EB;background:#EFF6FF">
+      <div class="kpi-label">${isFR?"PO Reçus (YTD)":"PO Received (YTD)"}</div>
+      <div class="kpi-val" style="color:#2563EB">${fmtK(ytdPO)} €</div>
+      <div class="kpi-sub">${ytdOrders.length} ${isFR?"commande":"order"}${ytdOrders.length>1?"s":""} · ${ytdInvoicesAll.length} ${isFR?"facture":"invoice"}${ytdInvoicesAll.length>1?"s":""}</div>
+    </div>
+    <div class="kpi" style="border-left:4px solid #0D9488;background:#F0FDFA">
+      <div class="kpi-label">${isFR?"Facturé (YTD)":"Invoiced (YTD)"}</div>
+      <div class="kpi-val" style="color:#0D9488">${fmtK(ytdInv)} €</div>
+      <div class="bar"><div class="bar-fill" style="width:${Math.min(100,invRate)}%;background:#0D9488"></div></div>
+      <div class="kpi-sub">${invRate.toFixed(1)}% ${isFR?"du PO total":"of total PO"}</div>
+    </div>
+    <div class="kpi" style="border-left:4px solid #059669;background:#F0FDF4">
+      <div class="kpi-label">${isFR?"Encaissé (YTD)":"Collected (YTD)"}</div>
+      <div class="kpi-val" style="color:#059669">${fmtK(ytdPay)} €</div>
+      <div class="bar"><div class="bar-fill" style="width:${Math.min(100,collRate)}%;background:#059669"></div></div>
+      <div class="kpi-sub">${collRate.toFixed(1)}% ${isFR?"des factures":"of invoiced"}</div>
+    </div>
+  </div>
+
+  <div class="gauge-row">
+    <div class="gauge">
+      <div class="gauge-label">${isFR?"📈 Taux de Facturation":"📈 Invoicing Rate"}</div>
+      <div class="gauge-val" style="color:${invRate>=80?"#059669":invRate>=50?"#D97706":"#DC2626"}">${invRate.toFixed(1)}%</div>
+      <div class="bar"><div class="bar-fill" style="width:${Math.min(100,invRate)}%;background:${invRate>=80?"#059669":invRate>=50?"#D97706":"#DC2626"}"></div></div>
+      <div style="font-size:9px;color:#8FA0B3;margin-top:3px">${fmtK(ytdInv)} € / ${fmtK(ytdPO)} €</div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-label">${isFR?"💰 Taux d'Encaissement":"💰 Collection Rate"}</div>
+      <div class="gauge-val" style="color:${collRate>=80?"#059669":collRate>=50?"#D97706":"#DC2626"}">${collRate.toFixed(1)}%</div>
+      <div class="bar"><div class="bar-fill" style="width:${Math.min(100,collRate)}%;background:${collRate>=80?"#059669":collRate>=50?"#D97706":"#DC2626"}"></div></div>
+      <div style="font-size:9px;color:#8FA0B3;margin-top:3px">${fmtK(ytdPay)} € / ${fmtK(ytdInv)} €</div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-label">📦 Open Orders</div>
+      <div class="gauge-val" style="color:#D97706">${fmtK(ytdOpen)} €</div>
+      <div class="bar"><div class="bar-fill" style="width:${Math.min(100,ytdPO>0?ytdOpen/ytdPO*100:0)}%;background:#D97706"></div></div>
+      <div style="font-size:9px;color:#8FA0B3;margin-top:3px">${isFR?"Reste à facturer":"Remaining to invoice"}</div>
+    </div>
+  </div>
+
+  ${overdueAmtYTD>0?`<div class="alert-box"><div class="alert-title">⚠ ${isFR?"Alerte — Factures Échues":"Alert — Overdue Invoices"}</div>${overdueYTD.slice(0,3).map((i:any)=>{const ps=payStatus(i);const days=i.dueDate?Math.abs(diffD(i.dueDate)):0;return`<div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span><b>${i._client}</b> — ${i.invoiceNumber||"—"} · ${fmt(ps.rem)} € ${isFR?"en retard de":"overdue by"} ${days}j</span></div>`;}).join("")}${overdueYTD.length>3?`<div style="font-size:9px;color:#DC2626;margin-top:3px">+ ${overdueYTD.length-3} ${isFR?"autres":"more"} · Total: ${fmt(overdueAmtYTD)} €</div>`:""}</div>`:""}
+
+  ${invRate>=80?`<div class="analysis"><div class="analysis-title">✅ ${isFR?"Excellente Performance":"Strong Performance"}</div><div class="analysis-item"><div class="dot"></div><span>${isFR?"Taux de facturation de "+invRate.toFixed(1)+"% — excellent.":"Invoicing rate of "+invRate.toFixed(1)+"% — excellent."}</span></div></div>`:invRate>=50?`<div style="background:#FEF9EC;border-left:4px solid #D97706;border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:8px"><div style="font-size:10px;font-weight:700;color:#D97706;margin-bottom:4px">⚡ ${isFR?"Facturation à Améliorer":"Invoicing Needs Attention"}</div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>${isFR?"Taux YTD de "+invRate.toFixed(1)+"% sous la cible de 80%. "+fmtK(ytdPO-ytdInv)+" € à facturer.":"YTD rate of "+invRate.toFixed(1)+"% below 80% target. "+fmtK(ytdPO-ytdInv)+" € still to invoice."}</span></div></div>`:`<div class="alert-box"><div class="alert-title">🔴 ${isFR?"Taux Faible":"Low Rate"}</div><div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span>${isFR?"Seulement "+invRate.toFixed(1)+"% facturés — rattrapage urgent.":"Only "+invRate.toFixed(1)+"% invoiced — urgent catch-up needed."}</span></div></div>`}
+
+  <div style="display:grid;grid-template-columns:220px 1fr;gap:10px">
+    <div>
+      <div class="col-title">${isFR?"Évolution Mensuelle":"Monthly Evolution"}</div>
+      <div class="legend">
+        <div class="leg-item"><div class="leg-dot" style="background:#2563EB"></div>${isFR?"PO":"PO"}</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#0D9488"></div>${isFR?"Fact.":"Inv."}</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#059669"></div>${isFR?"Enc.":"Pay."}</div>
+      </div>
+      <table>
+        <tbody>${barRows}</tbody>
+        <tfoot><tr class="total-row"><td>${isFR?"TOTAL":"TOTAL"}</td><td style="font-size:8px">${fmtK(ytdPO)} / ${fmtK(ytdInv)} / ${fmtK(ytdPay)}</td></tr></tfoot>
+      </table>
+    </div>
+    <div>
+      <div class="col-title">${isFR?"Classement Clients":"Client Ranking"} — YTD</div>
+      <table>
+        <thead><tr><th>#</th><th>${isFR?"Client":"Customer"}</th><th style="text-align:right">PO</th><th style="text-align:right">${isFR?"Fact.":"Inv."}</th><th style="text-align:right">${isFR?"Enc.":"Pay."}</th><th style="text-align:right">Open</th><th style="text-align:right">${isFR?"Échu":"Overdue"}</th><th style="text-align:right">${isFR?"Tx F.":"Rate"}</th></tr></thead>
+        <tbody>${clientRows}</tbody>
+        <tfoot><tr class="total-row"><td></td><td>TOTAL</td><td style="text-align:right">${fmtK(ytdPO)} €</td><td style="text-align:right">${fmtK(ytdInv)} €</td><td style="text-align:right">${fmtK(ytdPay)} €</td><td style="text-align:right">${fmtK(ytdOpen)} €</td><td style="text-align:right">${fmtK(overdueAmtYTD)} €</td><td style="text-align:right">${invRate.toFixed(0)}%</td></tr></tfoot>
+      </table>
+    </div>
+  </div>
+  <div class="footer"><span>${isFR?"Performance Annuelle — ":"Annual Performance — "}${thisYear}</span><span>1 / 2</span></div>
+</div>
+
+<!-- ══ PAGE 3: OUTSTANDING ══ -->
+<div class="page">
+  <div class="sh">
+    <div><div class="sh-title">💰 ${isFR?"Impayés & Échéances":"Outstanding & Upcoming"} — ${thisYear}</div><div class="sh-sub">${isFR?"Factures échues et échéances à venir":"Overdue invoices and upcoming due dates"}</div></div>
+    <span class="sh-badge" style="background:#FEE2E2;color:#B91C1C">${thisYear}</span>
+  </div>
+  <div class="two-col">
+    <div>
+      <div class="col-title">⚠ ${isFR?"Factures Échues":"Overdue Invoices"} — ${fmt(overdueAmtYTD)} €</div>
+      <table>
+        <thead><tr><th>${isFR?"N° Facture":"Invoice #"}</th><th>${isFR?"PO":"PO"}</th><th>${isFR?"Retard":"Overdue"}</th><th style="text-align:right">${isFR?"Solde":"Balance"}</th></tr></thead>
+        <tbody>${overdueYTD.length===0?`<tr><td colspan="4" style="text-align:center;color:#059669;padding:12px">✓ ${isFR?"Aucune facture échue":"No overdue invoices"}</td></tr>`:overdueRows}</tbody>
+      </table>
+    </div>
+    <div>
+      <div class="col-title">🔔 ${isFR?"Échéances à Venir (30 jours)":"Upcoming Due (30 days)"} — ${fmt(upcomingAmtYTD)} €</div>
+      <table>
+        <thead><tr><th>${isFR?"N° Facture":"Invoice #"}</th><th>${isFR?"PO":"PO"}</th><th>${isFR?"Échéance":"Due date"}</th><th style="text-align:right">${isFR?"Solde":"Balance"}</th></tr></thead>
+        <tbody>${upcomingRows}</tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="col-title" style="margin-top:8px">${isFR?"📊 Récapitulatif Annuel par Client":"📊 Annual Summary by Customer"} — ${thisYear}</div>
+  <table>
+    <thead><tr><th>${isFR?"Client":"Customer"}</th><th style="text-align:right">${isFR?"PO Reçus":"PO Received"}</th><th style="text-align:right">${isFR?"Facturé":"Invoiced"}</th><th style="text-align:right">${isFR?"Encaissé":"Collected"}</th><th style="text-align:right">Open Orders</th><th style="text-align:right">${isFR?"Échu":"Overdue"}</th><th style="text-align:right">${isFR?"Taux Fact.":"Inv. Rate"}</th></tr></thead>
+    <tbody>
+      ${byClientYTD.map(x=>{
+        const rc=x.rate>=80?"#059669":x.rate>=50?"#D97706":"#DC2626";
+        return`<tr><td style="font-weight:700">${x.c}</td><td style="text-align:right;color:#2563EB">${x.po>0?fmtK(x.po)+" €":"—"}</td><td style="text-align:right;color:#0D9488">${x.inv>0?fmtK(x.inv)+" €":"—"}</td><td style="text-align:right;color:#059669">${x.pay>0?fmtK(x.pay)+" €":"—"}</td><td style="text-align:right;color:#D97706">${x.openC>0?fmtK(x.openC)+" €":"—"}</td><td style="text-align:right;color:#DC2626">${x.overC>0?fmtK(x.overC)+" €":"—"}</td><td style="text-align:right;font-weight:700;color:${rc}">${x.po>0?x.rate.toFixed(0)+"%":"—"}</td></tr>`;
+      }).join("")}
+    </tbody>
+    <tfoot><tr class="total-row"><td>TOTAL ${thisYear}</td><td style="text-align:right">${fmtK(ytdPO)} €</td><td style="text-align:right">${fmtK(ytdInv)} €</td><td style="text-align:right">${fmtK(ytdPay)} €</td><td style="text-align:right">${fmtK(ytdOpen)} €</td><td style="text-align:right">${fmtK(overdueAmtYTD)} €</td><td style="text-align:right">${invRate.toFixed(0)}%</td></tr></tfoot>
+  </table>
+  <div class="footer"><span>${isFR?"Impayés & Échéances — ":"Outstanding & Upcoming — "}${thisYear}</span><span>2 / 2</span></div>
+</div>
+
+</body></html>`);
+    w.document.close();
+  };
+
   const printMonthlyReport=(reportLang:"en"|"fr"="en")=>{
     const isFR=reportLang==="fr";
     const w=window.open("","_blank","width=1200,height=900");
@@ -3305,15 +3618,22 @@ tr:nth-child(even) td{background:#F8FAFC;}
       <table>
         <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° Facture":"Invoice #"}</th><th>${isFR?"Retard":"Overdue"}</th><th style="text-align:right">${isFR?"Solde":"Balance"}</th></tr></thead>
         <tbody>
-          ${overdueInv.length===0?'<tr><td colspan="4" style="text-align:center;color:#059669;padding:12px">✓ No overdue invoices</td></tr>':
+          ${overdueInv.length===0?`<tr><td colspan="4" style="text-align:center;color:#059669;padding:12px">${isFR?"✓ Aucune facture échue":"✓ No overdue invoices"}</td></tr>`:
             (()=>{
-              const sorted=[...overdueInv].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||""));
-              let r4=sorted.map((i:any)=>{
-                const ps=payStatus(i);
-                const days=i.dueDate?Math.abs(diffD(i.dueDate)):0;
-                const urg=days>90?"#B91C1C":days>30?"#DC2626":"#EF4444";
-                return`<tr class="${days>30?"alert-row":""}"><td style="font-weight:700">${i._client}</td><td style="font-size:9px">${i.invoiceNumber||"—"}</td><td style="text-align:center"><span style="background:${urg};color:#fff;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700">${days}d</span></td><td style="text-align:right;font-weight:700;color:${urg}">${fmtK(ps.rem)} €</td></tr>`;
-              }).join("");
+              const byC4:Record<string,any[]>={};
+              [...overdueInv].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||"")).forEach((i:any)=>{ if(!byC4[i._client])byC4[i._client]=[]; byC4[i._client].push(i); });
+              let r4="";
+              Object.keys(byC4).sort().forEach(client=>{
+                const grp=byC4[client];
+                const cTot=grp.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+                r4+=`<tr style="background:#FEF2F2"><td colspan="3" style="font-weight:700;color:#DC2626;font-size:9px;padding:4px 8px">📁 ${client}</td><td style="text-align:right;font-weight:700;color:#DC2626;padding:4px 8px">${fmtK(cTot)} €</td></tr>`;
+                grp.forEach((i:any)=>{
+                  const ps=payStatus(i);
+                  const days=i.dueDate?Math.abs(diffD(i.dueDate)):0;
+                  const urg=days>90?"#B91C1C":days>30?"#DC2626":"#EF4444";
+                  r4+=`<tr class="${days>30?"alert-row":""}"><td style="padding-left:12px;font-size:9px;color:#4A5568">${i.invoiceNumber||"—"}</td><td style="font-size:9px;color:#6B7280">${i._po||"—"}</td><td style="text-align:center"><span style="background:${urg};color:#fff;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700">${days}d</span></td><td style="text-align:right;font-weight:700;color:${urg}">${fmtK(ps.rem)} €</td></tr>`;
+                });
+              });
               r4+=`<tr class="total-row"><td colspan="3">${isFR?"TOTAL ÉCHU":"TOTAL OVERDUE"}</td><td style="text-align:right;color:#FCA5A5">${fmtK(overdueAmt)} €</td></tr>`;
               return r4;
             })()
@@ -3327,13 +3647,19 @@ tr:nth-child(even) td{background:#F8FAFC;}
         <tbody>
           ${upcomingInv.length===0?`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">${isFR?"Aucune échéance à venir":"No upcoming due dates"}</td></tr>`:
             (()=>{
-              const sorted=[...upcomingInv].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||""));
-              let r5=sorted.slice(0,6).map((i:any)=>{
-                const ps=payStatus(i);
-                const days=diffD(i.dueDate||"");
-                return`<tr><td style="font-weight:600">${i._client}</td><td style="font-size:9px">${i.invoiceNumber||"—"}</td><td style="color:#0369A1;font-weight:600">${fmtD(i.dueDate)} <span style="font-size:9px;color:#8FA0B3">(${days}d)</span></td><td style="text-align:right;font-weight:600;color:#0369A1">${fmtK(ps.rem)} €</td></tr>`;
-              }).join("");
-              if(upcomingInv.length>6) r5+=`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;font-size:9px">${isFR?"+ "+(upcomingInv.length-6)+" autres · Total : "+fmt(upcomingAmt)+" €":"+ "+(upcomingInv.length-6)+" more — Total: "+fmt(upcomingAmt)+" €"}</td></tr>`;
+              const byC5:Record<string,any[]>={};
+              [...upcomingInv].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||"")).forEach((i:any)=>{ if(!byC5[i._client])byC5[i._client]=[]; byC5[i._client].push(i); });
+              let r5="";
+              Object.keys(byC5).sort().forEach(client=>{
+                const grp=byC5[client];
+                const cTot=grp.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+                r5+=`<tr style="background:#EFF6FF"><td colspan="3" style="font-weight:700;color:#1D4ED8;font-size:9px;padding:4px 8px">📁 ${client}</td><td style="text-align:right;font-weight:700;color:#1D4ED8;padding:4px 8px">${fmtK(cTot)} €</td></tr>`;
+                grp.forEach((i:any)=>{
+                  const ps=payStatus(i);
+                  const days=diffD(i.dueDate||"");
+                  r5+=`<tr><td style="padding-left:12px;font-size:9px;color:#4A5568">${i.invoiceNumber||"—"}</td><td style="font-size:9px;color:#6B7280">${i._po||"—"}</td><td style="color:#0369A1;font-weight:600;font-size:9px">${fmtD(i.dueDate)} <span style="color:#8FA0B3">(${days}d)</span></td><td style="text-align:right;font-weight:600;color:#0369A1">${fmtK(ps.rem)} €</td></tr>`;
+                });
+              });
               r5+=`<tr class="total-row"><td colspan="3">${isFR?"TOTAL À VENIR":"TOTAL UPCOMING"}</td><td style="text-align:right">${fmtK(upcomingAmt)} €</td></tr>`;
               return r5;
             })()
@@ -4024,6 +4350,16 @@ tr:nth-child(even) td{background:#F8FAFC;}
           style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#7C3AED,#0D9488)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(124,58,237,.4)"}}>
           <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
           Rapport mensuel (FR)
+        </button>
+        <button onClick={()=>printYearlyReport("en")}
+          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#1D4ED8,#7C3AED)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(29,78,216,.4)"}}>
+          <i className="ti ti-calendar-stats" style={{fontSize:18}} aria-hidden="true"/>
+          Yearly Report {thisYear} (EN)
+        </button>
+        <button onClick={()=>printYearlyReport("fr")}
+          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#0369A1,#7C3AED)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(3,105,161,.4)"}}>
+          <i className="ti ti-calendar-stats" style={{fontSize:18}} aria-hidden="true"/>
+          Rapport annuel {thisYear} (FR)
         </button>
       </div>
     </div>
