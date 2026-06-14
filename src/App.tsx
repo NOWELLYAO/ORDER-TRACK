@@ -3100,8 +3100,8 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     </div>
     <div class="kpi" style="border-left:4px solid #D97706">
       <div class="kpi-label">Expected Orders</div>
-      <div class="kpi-val" style="color:#D97706">${fmtK(expectedInvoicing)} €</div>
-      <div class="kpi-sub">Commandes attendues</div>
+      <div class="kpi-val" style="color:#D97706">${fmtK(expectedOrders.filter((e:any)=>e.est).reduce((s:number,e:any)=>s+(+e.est||0)*1000,0))} €</div>
+      <div class="kpi-sub">${expectedOrders.filter((e:any)=>e.client||e.project).length} commande${expectedOrders.filter((e:any)=>e.client||e.project).length>1?"s":""} attendue${expectedOrders.filter((e:any)=>e.client||e.project).length>1?"s":""}</div>
     </div>
     <div class="kpi" style="border-left:4px solid #059669">
       <div class="kpi-label">Total ${year} (YTD)</div>
@@ -3206,21 +3206,42 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
       </table>
     </div>
     <div>
-      <div class="col-header">📅 EXPECTED INVOICING</div>
+      <div class="col-header">📅 EXPECTED INVOICING — ${MONTH_NAMES[thisMonth].toUpperCase()} / ${MONTH_NAMES[thisMonth===11?0:thisMonth+1].toUpperCase()}</div>
       <table>
-        <thead><tr><th>Client</th><th>S/O</th><th style="text-align:right">Reste (K€)</th></tr></thead>
+        <thead><tr><th>Client</th><th>N° Facture</th><th>Échéance</th><th style="text-align:right">Reste (K€)</th></tr></thead>
         <tbody>
           ${(()=>{
-            const byC2:Record<string,number>={};
-            allOrders.filter((o:any)=>o.status!=="annule"&&o.status!=="livree").forEach((o:any)=>{
-              const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
-              const rem=Math.max(0,(+o.amount||0)-inv);
-              if(rem>0)byC2[o._client]=(byC2[o._client]||0)+rem;
+            // Invoices with dueDate in current month or next month, with remaining balance
+            const nextMonth=thisMonth===11?0:thisMonth+1;
+            const nextMonthYear=thisMonth===11?thisYear+1:thisYear;
+            const upcoming=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{
+              if(!i.dueDate)return null;
+              const due=new Date(i.dueDate+"T00:00:00");
+              const dueM=due.getMonth(),dueY=due.getFullYear();
+              const isCurr=dueM===thisMonth&&dueY===thisYear;
+              const isNext=dueM===nextMonth&&dueY===nextMonthYear;
+              if(!isCurr&&!isNext)return null;
+              const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+              const rem=Math.max(0,(+i.amount||0)-paid);
+              if(rem<=0)return null;
+              return{...i,_client:o._client,_po:o.poNumber,rem,monthLabel:isCurr?MONTH_NAMES[thisMonth]:MONTH_NAMES[nextMonth]};
+            }).filter(Boolean));
+            if(upcoming.length===0) return '<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucune échéance ce mois / mois prochain</td></tr>';
+            // Group by month then client
+            const byMonth:Record<string,any[]>={};
+            upcoming.forEach((i:any)=>{const k=i.monthLabel;if(!byMonth[k])byMonth[k]=[];byMonth[k].push(i);});
+            let r4="";
+            [MONTH_NAMES[thisMonth],MONTH_NAMES[nextMonth]].forEach(mLabel=>{
+              if(!byMonth[mLabel])return;
+              const mTot=byMonth[mLabel].reduce((s:number,i:any)=>s+i.rem,0);
+              r4+=`<tr style="background:#EFF6FF"><td colspan="3" style="font-weight:700;color:#1D4ED8;font-size:9px">📅 ${mLabel.toUpperCase()}</td><td style="text-align:right;font-weight:700;color:#1D4ED8">${fmtK(mTot)}</td></tr>`;
+              byMonth[mLabel].sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||"")).forEach((i:any)=>{
+                r4+=`<tr><td style="font-weight:600">${i._client}</td><td style="font-size:9px">${i.invoiceNumber||i._po||"—"}</td><td style="color:#8FA0B3">${fmtD(i.dueDate)}</td><td style="text-align:right;color:#D97706">${fmtK(i.rem)}</td></tr>`;
+              });
             });
-            if(Object.keys(byC2).length===0) return '<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">Aucun open order</td></tr>';
-            let r3=Object.keys(byC2).sort().map(c=>`<tr><td style="font-weight:600">${c}</td><td></td><td style="text-align:right;font-weight:600;color:#D97706">${fmtK(byC2[c])}</td></tr>`).join("");
-            r3+=`<tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtK(Object.values(byC2).reduce((s:number,v:any)=>s+v,0))}</td></tr>`;
-            return r3;
+            const grandTot=upcoming.reduce((s:number,i:any)=>s+i.rem,0);
+            r4+=`<tr class="total-row"><td colspan="3">TOTAL</td><td style="text-align:right">${fmtK(grandTot)}</td></tr>`;
+            return r4;
           })()}
         </tbody>
       </table>
