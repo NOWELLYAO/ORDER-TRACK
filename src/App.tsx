@@ -2817,6 +2817,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const [invoicePeriod,setInvoicePeriod]=useState(30);
   const [savedReports,setSavedReports]=useState<any[]>(()=>{try{const r=localStorage.getItem(REPORT_KEY);return r?JSON.parse(r):[];}catch{return [];}});
   const [showHistory,setShowHistory]=useState(false);
+  const [showOrders,setShowOrders]=useState(false);
   const [saveMsg,setSaveMsg]=useState("");
 
   // Auto-save draft on every change
@@ -2970,10 +2971,13 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const MONTH_NAMES=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
   // ── Print function ─────────────────────────────────────────────────────────
-  const printMonthlyReport=()=>{
+  const printMonthlyReport=(reportLang:"en"|"fr"="en")=>{
+    const isFR=reportLang==="fr";
     const w=window.open("","_blank","width=1200,height=900");
     if(!w)return;
-    const MN=["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const MN_EN=["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const MN_FR=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+    const MN=isFR?MN_FR:MN_EN;
     const monthName=MN[thisMonth];
     const prevMonthName=MN[prevMonth];
 
@@ -3028,7 +3032,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 
     w.document.write(`<!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8">
-<title>Monthly Report — ${monthName} ${thisYear}</title>
+<title>${isFR?"Rapport Mensuel":"Monthly Report"} — ${monthName} ${thisYear}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;background:#fff;}
@@ -3104,33 +3108,33 @@ tr:nth-child(even) td{background:#F8FAFC;}
 </head><body>
 
 <div class="no-print">
-  <button onclick="window.print()" style="background:#0D9488;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
-  <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial">✕ Close</button>
+  <button onclick="window.print()" style="background:#0D9488;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,.3)">${isFR?"🖨️ Imprimer / PDF":"🖨️ Print / PDF"}</button>
+  <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial">${isFR?"✕ Fermer":"✕ Close"}</button>
 </div>
 
 <!-- ══ PAGE 1: COVER ══ -->
 <div class="page cover">
   <div>
-    <div class="brand">OrderTrack — Monthly Performance Report</div>
+    <div class="brand">${isFR?"OrderTrack — Rapport Mensuel":"OrderTrack — Monthly Performance Report"}</div>
     <div style="margin-top:14px">
-      <div class="main-title">MONTHLY<br>REPORT</div>
-      <div class="month-badge">${monthName} ${thisYear} · West Africa</div>
+      <div class="main-title">${isFR?"RAPPORT<br>MENSUEL":"MONTHLY<br>REPORT"}</div>
+      <div class="month-badge">${monthName} ${thisYear} · ${isFR?"Afrique de l'Ouest":"West Africa"}</div>
     </div>
   </div>
   <div class="watermark">${monthName.slice(0,3).toUpperCase()}</div>
   <div>
     <div class="cover-kpi">
-      <div class="ck"><div class="ck-label">PO Received (${monthName})</div><div class="ck-val">${fmtK(poThisMonthAmt)} €</div><div class="ck-sub">${poThisMonth.length} order${poThisMonth.length>1?"s":""}</div></div>
-      <div class="ck"><div class="ck-label">Invoiced (${monthName})</div><div class="ck-val">${fmtK(invThisMonthAmt)} €</div><div class="ck-sub">${invThisMonth.length} invoice${invThisMonth.length>1?"s":""}</div></div>
-      <div class="ck"><div class="ck-label">Collected (${monthName})</div><div class="ck-val">${fmtK(payThisMonthAmt)} €</div><div class="ck-sub">${payThisMonth.length} payment${payThisMonth.length>1?"s":""}</div></div>
-      <div class="ck"><div class="ck-label">YTD Orders</div><div class="ck-val">${fmtK(ytdPO)} €</div><div class="ck-sub">Since Jan 1st</div></div>
-      <div class="ck"><div class="ck-label">YTD Invoiced</div><div class="ck-val">${fmtK(ytdInv)} €</div><div class="ck-sub">${invRate.toFixed(1)}% of PO</div></div>
-      <div class="ck"><div class="ck-label">Open Orders</div><div class="ck-val">${fmtK(openOrders)} €</div><div class="ck-sub">Remaining to invoice</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"PO Reçus":"PO Received"} (${monthName})</div><div class="ck-val">${fmtK(poThisMonthAmt)} €</div><div class="ck-sub">${poThisMonth.length} ${isFR?"commande":"order"}${poThisMonth.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Facturé":"Invoiced"} (${monthName})</div><div class="ck-val">${fmtK(invThisMonthAmt)} €</div><div class="ck-sub">${invThisMonth.length} ${isFR?"facture":"invoice"}${invThisMonth.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Encaissé":"Collected"} (${monthName})</div><div class="ck-val">${fmtK(payThisMonthAmt)} €</div><div class="ck-sub">${payThisMonth.length} ${isFR?"paiement":"payment"}${payThisMonth.length>1?"s":""}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Commandes (YTD)":"YTD Orders"}</div><div class="ck-val">${fmtK(ytdPO)} €</div><div class="ck-sub">${isFR?"Depuis le 1er janvier":"Since Jan 1st"}</div></div>
+      <div class="ck"><div class="ck-label">${isFR?"Facturé (YTD)":"YTD Invoiced"}</div><div class="ck-val">${fmtK(ytdInv)} €</div><div class="ck-sub">${invRate.toFixed(1)}% of PO</div></div>
+      <div class="ck"><div class="ck-label">Open Orders</div><div class="ck-val">${fmtK(openOrders)} €</div><div class="ck-sub">${isFR?"Reste à facturer":"Remaining to invoice"}</div></div>
     </div>
   </div>
   <div class="cover-footer">
-    <span>CONFIDENTIAL — Internal use only</span>
-    <span>Generated on ${genDate}</span>
+    <span>${isFR?"CONFIDENTIEL — Usage interne":"CONFIDENTIAL — Internal use only"}</span>
+    <span>${isFR?"Généré le":"Generated on"} ${genDate}</span>
   </div>
   <div class="footer"><span></span></div>
 </div>
@@ -3138,7 +3142,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
 <!-- ══ PAGE 2: KPI & ANALYSIS ══ -->
 <div class="page">
   <div class="sh">
-    <div><div class="sh-title">📊 Performance Overview — ${monthName} ${thisYear}</div><div class="sh-sub">Key indicators and comparative analysis</div></div>
+    <div><div class="sh-title">📊 Performance Overview — ${monthName} ${thisYear}</div><div class="sh-sub">${isFR?"Indicateurs clés et analyse comparative":"Key indicators and comparative analysis"}</div></div>
     <span class="sh-badge" style="background:#CCFBF1;color:#0D9488">${monthName} ${thisYear}</span>
   </div>
 
@@ -3170,16 +3174,16 @@ tr:nth-child(even) td{background:#F8FAFC;}
   <!-- YTD rates -->
   <div class="gauge-row">
     <div class="gauge">
-      <div class="gauge-label">📈 YTD Invoicing Rate</div>
+      <div class="gauge-label">${isFR?"📈 Taux de Facturation (YTD)":"📈 YTD Invoicing Rate"}</div>
       <div class="gauge-val" style="color:${invRate>=80?"#059669":invRate>=50?"#D97706":"#DC2626"}">${invRate.toFixed(1)}%</div>
       <div class="bar"><div class="bar-fill" style="width:${Math.min(100,invRate)}%;background:${invRate>=80?"#059669":invRate>=50?"#D97706":"#DC2626"}"></div></div>
-      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">${fmtK(ytdInv)} € invoiced out of ${fmtK(ytdPO)} € ordered</div>
+      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">${isFR?fmtK(ytdInv)+" € facturés sur "+fmtK(ytdPO)+" € commandés":fmtK(ytdInv)+" € invoiced out of "+fmtK(ytdPO)+" € ordered"}</div>
     </div>
     <div class="gauge">
-      <div class="gauge-label">💰 YTD Collection Rate</div>
+      <div class="gauge-label">${isFR?"💰 Taux d'Encaissement (YTD)":"💰 YTD Collection Rate"}</div>
       <div class="gauge-val" style="color:${collRate>=80?"#059669":collRate>=50?"#D97706":"#DC2626"}">${collRate.toFixed(1)}%</div>
       <div class="bar"><div class="bar-fill" style="width:${Math.min(100,collRate)}%;background:${collRate>=80?"#059669":collRate>=50?"#D97706":"#DC2626"}"></div></div>
-      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">${fmtK(ytdPay)} € collected out of ${fmtK(ytdInv)} € invoiced</div>
+      <div style="font-size:9px;color:#8FA0B3;margin-top:4px">${isFR?fmtK(ytdPay)+" € encaissés sur "+fmtK(ytdInv)+" € facturés":fmtK(ytdPay)+" € collected out of "+fmtK(ytdInv)+" € invoiced"}</div>
     </div>
     <div class="gauge">
       <div class="gauge-label">📦 Open Orders</div>
@@ -3190,26 +3194,26 @@ tr:nth-child(even) td{background:#F8FAFC;}
   </div>
 
   <!-- Analysis -->
-  ${overdueAmt>0?`<div class="alert-box"><div class="alert-title">⚠ Alert — Overdue Invoices</div>${overdueInv.slice(0,3).map((i:any)=>{const ps=payStatus(i);const days=i.dueDate?Math.abs(diffD(i.dueDate)):0;return`<div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span><b>${i._client}</b> — ${i.invoiceNumber||i._po||"—"} · ${fmt(ps.rem)} € overdue by ${days} day${days>1?"s":""}</span></div>`;}).join("")}${overdueInv.length>3?`<div style="font-size:9px;color:#DC2626;margin-top:4px">+ ${overdueInv.length-3} more overdue invoice${overdueInv.length-3>1?"s":""} · Total: ${fmt(overdueAmt)} €</div>`:""}</div>`:""}
+  ${overdueAmt>0?`<div class="alert-box"><div class="alert-title">${isFR?"⚠ Alerte — Factures Échues":"⚠ Alert — Overdue Invoices"}</div>${overdueInv.slice(0,3).map((i:any)=>{const ps=payStatus(i);const days=i.dueDate?Math.abs(diffD(i.dueDate)):0;return`<div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span><b>${i._client}</b> — ${i.invoiceNumber||i._po||"—"} · ${fmt(ps.rem)} € ${isFR?"en retard de "+days+" jour"+(days>1?"s":""):"overdue by "+days+" day"+(days>1?"s":"")}</span></div>`;}).join("")}${overdueInv.length>3?`<div style="font-size:9px;color:#DC2626;margin-top:4px">${isFR?"+ "+(overdueInv.length-3)+" autre"+(overdueInv.length-3>1?"s":"")+" facture échue · Total : "+fmt(overdueAmt)+" €":"+ "+(overdueInv.length-3)+" more overdue invoice"+(overdueInv.length-3>1?"s":"")+" · Total: "+fmt(overdueAmt)+" €"}</div>`:""}</div>`:""}
 
-  ${invRate>=80?`<div class="analysis"><div class="analysis-title">✅ Strong Invoicing Performance</div><div class="analysis-item"><div class="dot"></div><span>YTD invoicing rate of ${invRate.toFixed(1)}% is excellent — above the 80% target.</span></div><div class="analysis-item"><div class="dot"></div><span>Month-on-month invoiced: ${fmtK(invThisMonthAmt)} € (${invLastMonth>0?(((invThisMonthAmt-invLastMonth)/invLastMonth)*100).toFixed(0):"—"}% vs ${prevMonthName}).</span></div></div>`:invRate>=50?`<div class="warn-box"><div class="warn-title">⚡ Invoicing Needs Attention</div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>YTD invoicing rate of ${invRate.toFixed(1)}% is below the 80% target. ${fmtK(ytdPO-ytdInv)} € still to invoice.</span></div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>Open orders: ${fmtK(openOrders)} € — acceleration recommended.</span></div></div>`:`<div class="alert-box"><div class="alert-title">🔴 Low Invoicing Rate</div><div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span>Only ${invRate.toFixed(1)}% of orders invoiced YTD — significant catch-up needed.</span></div></div>`}
+  ${invRate>=80?`<div class="analysis"><div class="analysis-title">${isFR?"✅ Excellente Performance de Facturation":"✅ Strong Invoicing Performance"}</div><div class="analysis-item"><div class="dot"></div><span>${isFR?"Taux de facturation YTD de "+invRate.toFixed(1)+"% — excellent, au-dessus de la cible de 80%":"YTD invoicing rate of "+invRate.toFixed(1)+"% is excellent — above the 80% target."}</span></div><div class="analysis-item"><div class="dot"></div><span>${isFR?"Facturé ce mois : "+fmtK(invThisMonthAmt)+" €":"Month-on-month invoiced: "+fmtK(invThisMonthAmt)+" €."}</span></div></div>`:invRate>=50?`<div class="warn-box"><div class="warn-title">${isFR?"⚡ Facturation à Améliorer":"⚡ Invoicing Needs Attention"}</div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>${isFR?"Taux YTD de "+invRate.toFixed(1)+"% sous 80%. "+fmtK(ytdPO-ytdInv)+" € restants à facturer":"YTD invoicing rate of "+invRate.toFixed(1)+"% is below the 80% target. "+fmtK(ytdPO-ytdInv)+" € still to invoice."}</span></div><div class="analysis-item"><div class="dot" style="background:#D97706"></div><span>${isFR?"Open orders : "+fmtK(openOrders)+" € — accélération recommandée":"Open orders: "+fmtK(openOrders)+" € — acceleration recommended."}</span></div></div>`:`<div class="alert-box"><div class="alert-title">${isFR?"🔴 Taux de Facturation Faible":"🔴 Low Invoicing Rate"}</div><div class="analysis-item"><div class="dot" style="background:#DC2626"></div><span>${isFR?"Seulement "+invRate.toFixed(1)+"% facturés (YTD) — rattrapage nécessaire":"Only "+invRate.toFixed(1)+"% of orders invoiced YTD — significant catch-up needed."}</span></div></div>`}
 
-  ${upcomingAmt>0?`<div class="analysis"><div class="analysis-title">🔔 Upcoming Collections (next 30 days)</div>${upcomingInv.slice(0,4).map((i:any)=>{const ps=payStatus(i);return`<div class="analysis-item"><div class="dot"></div><span><b>${i._client}</b> — ${i.invoiceNumber||"—"} · ${fmt(ps.rem)} € due ${fmtD(i.dueDate)}</span></div>`;}).join("")}<div style="font-size:9px;color:#0D9488;margin-top:4px;font-weight:600">Total upcoming: ${fmt(upcomingAmt)} €</div></div>`:""}
+  ${upcomingAmt>0?`<div class="analysis"><div class="analysis-title">${isFR?"🔔 Encaissements à Venir (30 prochains jours)":"🔔 Upcoming Collections (next 30 days)"}</div>${upcomingInv.slice(0,4).map((i:any)=>{const ps=payStatus(i);return`<div class="analysis-item"><div class="dot"></div><span><b>${i._client}</b> — ${i.invoiceNumber||"—"} · ${fmt(ps.rem)} € due ${fmtD(i.dueDate)}</span></div>`;}).join("")}<div style="font-size:9px;color:#0D9488;margin-top:4px;font-weight:600">${isFR?"Total à encaisser : "+fmt(upcomingAmt)+" €":"Total upcoming: "+fmt(upcomingAmt)+" €"}</div></div>`:""}
 
-  <div class="footer"><span>Performance Overview — ${monthName} ${thisYear}</span><span>1 / 3</span></div>
+  <div class="footer"><span>${isFR?"Vue d'ensemble — ":"Performance Overview — "}${monthName} ${thisYear}</span><span>1 / 3</span></div>
 </div>
 
 <!-- ══ PAGE 3: PO & INVOICES ══ -->
 <div class="page">
   <div class="sh">
-    <div><div class="sh-title">📦 Orders & Invoices — ${monthName} ${thisYear}</div><div class="sh-sub">Purchase orders received and invoices issued this month</div></div>
+    <div><div class="sh-title">📦 Orders & Invoices — ${monthName} ${thisYear}</div><div class="sh-sub">${isFR?"Commandes reçues et factures émises ce mois":"Purchase orders received and invoices issued this month"}</div></div>
     <span class="sh-badge" style="background:#DBEAFE;color:#1D4ED8">${monthName} ${thisYear}</span>
   </div>
   <div class="two-col">
     <div>
       <div class="col-title">📦 PO Received — ${monthName}</div>
       <table>
-        <thead><tr><th>Customer</th><th>S/O #</th><th>Date</th><th style="text-align:right">Amount</th></tr></thead>
+        <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° S/O":"S/O #"}</th><th>Date</th><th style="text-align:right">${isFR?"Montant":"Amount"}</th></tr></thead>
         <tbody>
           ${poThisMonth.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No orders received this month</td></tr>':
             (()=>{
@@ -3232,7 +3236,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
     <div>
       <div class="col-title">🧾 Invoices Issued — ${monthName}</div>
       <table>
-        <thead><tr><th>Customer</th><th>Invoice #</th><th>Due date</th><th style="text-align:right">Amount</th></tr></thead>
+        <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° Facture":"Invoice #"}</th><th>${isFR?"Échéance":"Due date"}</th><th style="text-align:right">${isFR?"Montant":"Amount"}</th></tr></thead>
         <tbody>
           ${invThisMonth.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No invoices issued this month</td></tr>':
             (()=>{
@@ -3253,20 +3257,20 @@ tr:nth-child(even) td{background:#F8FAFC;}
       </table>
     </div>
   </div>
-  <div class="footer"><span>Orders & Invoices — ${monthName} ${thisYear}</span><span>2 / 3</span></div>
+  <div class="footer"><span>${isFR?"Commandes & Factures — ":"Orders & Invoices — "}${monthName} ${thisYear}</span><span>2 / 3</span></div>
 </div>
 
 <!-- ══ PAGE 4: COLLECTIONS & OUTSTANDING ══ -->
 <div class="page">
   <div class="sh">
-    <div><div class="sh-title">💰 Collections & Outstanding — ${monthName} ${thisYear}</div><div class="sh-sub">Payments received and outstanding balances</div></div>
+    <div><div class="sh-title">💰 Collections & Outstanding — ${monthName} ${thisYear}</div><div class="sh-sub">${isFR?"Paiements reçus et soldes impayés":"Payments received and outstanding balances"}</div></div>
     <span class="sh-badge" style="background:#D1FAE5;color:#065F46">${monthName} ${thisYear}</span>
   </div>
   <div class="two-col">
     <div>
       <div class="col-title">✅ Payments Received — ${monthName}</div>
       <table>
-        <thead><tr><th>Customer</th><th>Invoice #</th><th>Date</th><th style="text-align:right">Amount</th></tr></thead>
+        <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° Facture":"Invoice #"}</th><th>Date</th><th style="text-align:right">${isFR?"Montant":"Amount"}</th></tr></thead>
         <tbody>
           ${payThisMonth.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No payments received this month</td></tr>':
             (()=>{
@@ -3279,7 +3283,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
                 r3+=`<tr class="section-label"><td colspan="3">📁 ${c}</td><td style="text-align:right">${fmtK(cTot)} €</td></tr>`;
                 byC3[c].forEach((p:any)=>{ r3+=`<tr><td style="padding-left:12px;font-size:9px;color:#4A5568">${p._inv||"—"}</td><td style="font-size:9px;color:#6B7280">${p.reference||p.method||"—"}</td><td style="color:#8FA0B3">${fmtD(p.date)}</td><td style="text-align:right;font-weight:600;color:#059669">${fmtK(+p.amount||0)} €</td></tr>`; });
               });
-              r3+=`<tr class="total-row"><td colspan="3">TOTAL COLLECTED</td><td style="text-align:right">${fmtK(payThisMonthAmt)} €</td></tr>`;
+              r3+=`<tr class="total-row"><td colspan="3">${isFR?"TOTAL ENCAISSÉ":"TOTAL COLLECTED"}</td><td style="text-align:right">${fmtK(payThisMonthAmt)} €</td></tr>`;
               return r3;
             })()
           }
@@ -3287,9 +3291,9 @@ tr:nth-child(even) td{background:#F8FAFC;}
       </table>
     </div>
     <div>
-      <div class="col-title">⚠ Outstanding — Overdue Invoices</div>
+      <div class="col-title">${isFR?"⚠ Factures Échues":"⚠ Outstanding — Overdue Invoices"}</div>
       <table>
-        <thead><tr><th>Customer</th><th>Invoice #</th><th>Overdue</th><th style="text-align:right">Balance</th></tr></thead>
+        <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° Facture":"Invoice #"}</th><th>${isFR?"Retard":"Overdue"}</th><th style="text-align:right">${isFR?"Solde":"Balance"}</th></tr></thead>
         <tbody>
           ${overdueInv.length===0?'<tr><td colspan="4" style="text-align:center;color:#059669;padding:12px">✓ No overdue invoices</td></tr>':
             (()=>{
@@ -3300,16 +3304,16 @@ tr:nth-child(even) td{background:#F8FAFC;}
                 const urg=days>90?"#B91C1C":days>30?"#DC2626":"#EF4444";
                 return`<tr class="${days>30?"alert-row":""}"><td style="font-weight:700">${i._client}</td><td style="font-size:9px">${i.invoiceNumber||"—"}</td><td style="text-align:center"><span style="background:${urg};color:#fff;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700">${days}d</span></td><td style="text-align:right;font-weight:700;color:${urg}">${fmtK(ps.rem)} €</td></tr>`;
               }).join("");
-              r4+=`<tr class="total-row"><td colspan="3">TOTAL OVERDUE</td><td style="text-align:right;color:#FCA5A5">${fmtK(overdueAmt)} €</td></tr>`;
+              r4+=`<tr class="total-row"><td colspan="3">${isFR?"TOTAL ÉCHU":"TOTAL OVERDUE"}</td><td style="text-align:right;color:#FCA5A5">${fmtK(overdueAmt)} €</td></tr>`;
               return r4;
             })()
           }
         </tbody>
       </table>
 
-      <div class="col-title" style="margin-top:8px">🔔 Upcoming Due (next 30 days)</div>
+      <div class="col-title" style="margin-top:8px">${isFR?"🔔 Échéances à Venir (30 jours)":"🔔 Upcoming Due (next 30 days)"}</div>
       <table>
-        <thead><tr><th>Customer</th><th>Invoice #</th><th>Due date</th><th style="text-align:right">Balance</th></tr></thead>
+        <thead><tr><th>${isFR?"Client":"Customer"}</th><th>${isFR?"N° Facture":"Invoice #"}</th><th>${isFR?"Échéance":"Due date"}</th><th style="text-align:right">${isFR?"Solde":"Balance"}</th></tr></thead>
         <tbody>
           ${upcomingInv.length===0?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:12px">No upcoming due dates</td></tr>':
             (()=>{
@@ -3319,8 +3323,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
                 const days=diffD(i.dueDate||"");
                 return`<tr><td style="font-weight:600">${i._client}</td><td style="font-size:9px">${i.invoiceNumber||"—"}</td><td style="color:#0369A1;font-weight:600">${fmtD(i.dueDate)} <span style="font-size:9px;color:#8FA0B3">(${days}d)</span></td><td style="text-align:right;font-weight:600;color:#0369A1">${fmtK(ps.rem)} €</td></tr>`;
               }).join("");
-              if(upcomingInv.length>6) r5+=`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;font-size:9px">+ ${upcomingInv.length-6} more — Total: ${fmt(upcomingAmt)} €</td></tr>`;
-              r5+=`<tr class="total-row"><td colspan="3">TOTAL UPCOMING</td><td style="text-align:right">${fmtK(upcomingAmt)} €</td></tr>`;
+              if(upcomingInv.length>6) r5+=`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;font-size:9px">${isFR?"+ "+(upcomingInv.length-6)+" autres · Total : "+fmt(upcomingAmt)+" €":"+ "+(upcomingInv.length-6)+" more — Total: "+fmt(upcomingAmt)+" €"}</td></tr>`;
+              r5+=`<tr class="total-row"><td colspan="3">${isFR?"TOTAL À VENIR":"TOTAL UPCOMING"}</td><td style="text-align:right">${fmtK(upcomingAmt)} €</td></tr>`;
               return r5;
             })()
           }
@@ -3330,9 +3334,9 @@ tr:nth-child(even) td{background:#F8FAFC;}
   </div>
 
   <!-- Summary by client -->
-  <div class="col-title">📊 Monthly Summary by Customer</div>
+  <div class="col-title">${isFR?"📊 Récapitulatif par Client":"📊 Monthly Summary by Customer"}</div>
   <table>
-    <thead><tr><th>Customer</th><th style="text-align:right">PO Received</th><th style="text-align:right">Invoiced</th><th style="text-align:right">Collected</th><th style="text-align:right">Open Orders</th><th style="text-align:right">Inv. Rate</th></tr></thead>
+    <thead><tr><th>${isFR?"Client":"Customer"}</th><th style="text-align:right">${isFR?"PO Reçus":"PO Received"}</th><th style="text-align:right">${isFR?"Facturé":"Invoiced"}</th><th style="text-align:right">${isFR?"Encaissé":"Collected"}</th><th style="text-align:right">Open Orders</th><th style="text-align:right">${isFR?"Tx Fact.":"Inv. Rate"}</th></tr></thead>
     <tbody>
       ${(()=>{
         const clients2=Array.from(new Set([...Object.keys(byClientPO),...Object.keys(byClientInv),...Object.keys(byClientPay)])).sort();
@@ -3348,7 +3352,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
       })()}
     </tbody>
   </table>
-  <div class="footer"><span>Collections & Outstanding — ${monthName} ${thisYear}</span><span>3 / 3</span></div>
+  <div class="footer"><span>${isFR?"Encaissements & Impayés — ":"Collections & Outstanding — "}${monthName} ${thisYear}</span><span>3 / 3</span></div>
 </div>
 
 </body></html>`);
@@ -3825,37 +3829,32 @@ tr:nth-child(even) td{background:#F8FAFC;}
 
       {/* Auto data preview */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(4,1fr)",gap:12}}>
-        {/* Orders KPI — expandable to show detail */}
-        {(()=>{
-          const[showOrders,setShowOrders]=React.useState(false);
-          return(
-            <div style={{background:"#fff",borderRadius:C.r,border:`2px solid ${showOrders?C.blue:C.b}`,boxShadow:C.sh,padding:"14px 16px",cursor:"pointer",transition:"border-color .15s"}}
-              onClick={()=>setShowOrders(o=>!o)}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-                <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Orders reçus ({periodLabel})</div>
-                <i className={`ti ${showOrders?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:13,color:C.blue}} aria-hidden="true"/>
-              </div>
-              <div style={{fontSize:18,fontWeight:800,color:C.blue}}>{fmtK(recentOrdersAmt)} €</div>
-              <div style={{fontSize:11,color:C.t3,marginTop:3}}>{recentOrders.length} order{recentOrders.length>1?"s":""}</div>
-              {showOrders&&recentOrders.length>0&&(
-                <div style={{marginTop:10,borderTop:`1px solid ${C.b}`,paddingTop:8,display:"flex",flexDirection:"column",gap:4}} onClick={e=>e.stopPropagation()}>
-                  {recentOrders.map((o:any,i:number)=>(
-                    <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderBottom:`1px solid #F1F5F9`}}>
-                      <div>
-                        <span style={{fontWeight:700,color:C.t1}}>{o._client}</span>
-                        <span style={{color:C.t3,marginLeft:6,fontFamily:"monospace",fontSize:10}}>{o.soNumber||o.poNumber||"—"}</span>
-                      </div>
-                      <span style={{fontWeight:600,color:C.blue,flexShrink:0,marginLeft:8}}>{fmtK(+o.amount||0)} €</span>
-                    </div>
-                  ))}
-                  <div style={{display:"flex",justifyContent:"space-between",fontWeight:700,fontSize:11,paddingTop:4,color:C.blueDk}}>
-                    <span>TOTAL</span><span>{fmtK(recentOrdersAmt)} €</span>
+        {/* Orders KPI — expandable */}
+        <div style={{background:"#fff",borderRadius:C.r,border:`2px solid ${showOrders?C.blue:C.b}`,boxShadow:C.sh,padding:"14px 16px",cursor:"pointer",transition:"border-color .15s"}}
+          onClick={()=>setShowOrders(o=>!o)}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+            <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Orders reçus ({periodLabel})</div>
+            <i className={`ti ${showOrders?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:13,color:C.blue}} aria-hidden="true"/>
+          </div>
+          <div style={{fontSize:18,fontWeight:800,color:C.blue}}>{fmtK(recentOrdersAmt)} €</div>
+          <div style={{fontSize:11,color:C.t3,marginTop:3}}>{recentOrders.length} order{recentOrders.length>1?"s":""}</div>
+          {showOrders&&recentOrders.length>0&&(
+            <div style={{marginTop:10,borderTop:`1px solid ${C.b}`,paddingTop:8,display:"flex",flexDirection:"column",gap:4}} onClick={(e:any)=>e.stopPropagation()}>
+              {recentOrders.map((o:any,i:number)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderBottom:`1px solid #F1F5F9`}}>
+                  <div>
+                    <span style={{fontWeight:700,color:C.t1}}>{o._client}</span>
+                    <span style={{color:C.t3,marginLeft:6,fontFamily:"monospace",fontSize:10}}>{o.soNumber||o.poNumber||"—"}</span>
                   </div>
+                  <span style={{fontWeight:600,color:C.blue,flexShrink:0,marginLeft:8}}>{fmtK(+o.amount||0)} €</span>
                 </div>
-              )}
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",fontWeight:700,fontSize:11,paddingTop:4,color:C.blueDk}}>
+                <span>TOTAL</span><span>{fmtK(recentOrdersAmt)} €</span>
+              </div>
             </div>
-          );
-        })()}
+          )}
+        </div>
         {[
           {label:`Invoiced (${invoicePeriodLabel})`,val:`${fmtK(invoicedInPeriod)} €`,sub:`${invoicesInPeriod.length} invoice${invoicesInPeriod.length>1?"s":""}`,c:C.teal,bg:C.tealL},
           {label:"Facturé "+MONTH_NAMES[thisMonth],val:`${fmtK(invoicedThisMonth)} €`,sub:`Ce mois · ${invoicesThisMonth.length} fact.`,c:"#0D9488",bg:"#CCFBF1"},
@@ -4006,10 +4005,15 @@ tr:nth-child(even) td{background:#F8FAFC;}
           <i className="ti ti-printer" style={{fontSize:18}} aria-hidden="true"/>
           Générer & Imprimer le rapport PDF (5 pages)
         </button>
-        <button onClick={printMonthlyReport}
+        <button onClick={()=>printMonthlyReport("en")}
           style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#0D9488,#0369A1)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(13,148,136,.4)"}}>
           <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
-          Mois en cours — Rapport détaillé
+          Monthly Report (EN)
+        </button>
+        <button onClick={()=>printMonthlyReport("fr")}
+          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#7C3AED,#0D9488)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(124,58,237,.4)"}}>
+          <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
+          Rapport mensuel (FR)
         </button>
       </div>
     </div>
