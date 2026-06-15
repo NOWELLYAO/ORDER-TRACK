@@ -2822,6 +2822,8 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const [yearlyFrom,setYearlyFrom]=useState(()=>`${new Date().getFullYear()}-01-01`);
   const [yearlyTo,setYearlyTo]=useState(todayStr);
   const [yearlyLang,setYearlyLang]=useState<"en"|"fr">("fr");
+  const [aiLoading,setAiLoading]=useState(false);
+  const [aiLoadingMsg,setAiLoadingMsg]=useState("");
 
   // Auto-save draft on every change
   useEffect(()=>{
@@ -2977,77 +2979,33 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const generateAIAnalysis=async(reportType:"weekly"|"monthly"|"yearly",data:Record<string,any>,lang:"fr"|"en"):Promise<string>=>{
     const isFR=lang==="fr";
     const systemPrompt=isFR
-      ?`Tu es un expert commercial senior spécialisé dans l'analyse de performance des ventes B2B en Afrique de l'Ouest pour Grundfos (pompes et systèmes hydrauliques). 
-Tu analyses des données de commandes, facturation et encaissements pour fournir des insights stratégiques actionnables.
-Ton analyse doit être professionnelle, concise et orientée vers les décisions business.
-Réponds en HTML pur (pas de markdown), avec des balises <p>, <strong>, <ul>, <li>. 
-Maximum 400 mots. Sois direct et percutant.`
-      :`You are a senior commercial expert specializing in B2B sales performance analysis in West Africa for Grundfos (pumps and hydraulic systems).
-You analyze order, invoicing and collection data to provide actionable strategic insights.
-Your analysis must be professional, concise and decision-oriented.
-Respond in pure HTML (no markdown), using <p>, <strong>, <ul>, <li> tags.
-Maximum 400 words. Be direct and impactful.`;
-
+      ?`Tu es un expert commercial senior spécialisé dans la vente B2B en Afrique de l'Ouest pour Grundfos (pompes industrielles). Réponds UNIQUEMENT en HTML pur avec des balises <p>, <strong>, <ul>, <li>. Pas de markdown, pas de blocs de code. Maximum 400 mots.`
+      :`You are a senior B2B sales expert for Grundfos in West Africa. Respond ONLY in pure HTML using <p>, <strong>, <ul>, <li> tags. No markdown, no code blocks. Maximum 400 words.`;
     const userPrompt=isFR
-      ?`Analyse ce rapport ${reportType==="weekly"?"hebdomadaire":reportType==="monthly"?"mensuel":"annuel/période"} et fournis en HTML:
-<p><strong>Synthèse exécutive</strong></p><p>2-3 phrases sur la performance globale.</p>
-<p><strong>Points positifs</strong></p><ul><li>...</li></ul>
-<p><strong>Alertes et risques</strong></p><ul><li>...</li></ul>
-<p><strong>Recommandations prioritaires</strong></p><ul><li>...</li></ul>
-
-Données:
-${JSON.stringify(data,null,2)}`
+      ?`Analyse ce rapport ${reportType==="monthly"?"mensuel":"annuel/période"} et fournis en HTML :
+<p><strong>Synthèse exécutive</strong></p><p>[2-3 phrases sur la performance globale]</p>
+<p><strong>✅ Points positifs</strong></p><ul><li>[point 1]</li><li>[point 2]</li></ul>
+<p><strong>⚠️ Alertes et risques</strong></p><ul><li>[alerte 1]</li><li>[alerte 2]</li></ul>
+<p><strong>🎯 Recommandations prioritaires</strong></p><ul><li>[action 1]</li><li>[action 2]</li><li>[action 3]</li></ul>
+Données : ${JSON.stringify(data)}`
       :`Analyze this ${reportType} report and provide in HTML:
-<p><strong>Executive Summary</strong></p><p>2-3 sentences on overall performance.</p>
-<p><strong>Positive highlights</strong></p><ul><li>...</li></ul>
-<p><strong>Alerts and risks</strong></p><ul><li>...</li></ul>
-<p><strong>Priority recommendations</strong></p><ul><li>...</li></ul>
-
-Data:
-${JSON.stringify(data,null,2)}`;
-
-    return new Promise((resolve)=>{
-      // Use a hidden iframe pointing to an artifact that calls the API
-      const key=`ai_analysis_${Date.now()}`;
-      const iframeCode=`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
-<script>
-(async()=>{
-  try{
-    const r=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,system:${JSON.stringify(systemPrompt)},messages:[{role:"user",content:${JSON.stringify(userPrompt)}}]})
-    });
-    const d=await r.json();
-    const text=d.content?.[0]?.text||"";
-    window.parent.postMessage({type:"ai_result",key:${JSON.stringify(key)},html:text},"*");
-  }catch(e){
-    window.parent.postMessage({type:"ai_result",key:${JSON.stringify(key)},html:""},"*");
-  }
-})();
-<\/script></body></html>`;
-
-      const iframe=document.createElement("iframe");
-      iframe.style.cssText="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;";
-      iframe.srcdoc=iframeCode;
-      document.body.appendChild(iframe);
-
-      const timeout=setTimeout(()=>{
-        document.body.removeChild(iframe);
-        window.removeEventListener("message",handler);
-        resolve(isFR?"<p>Analyse indisponible (délai expiré).</p>":"<p>Analysis unavailable (timeout).</p>");
-      },15000);
-
-      const handler=(e:MessageEvent)=>{
-        if(e.data?.type==="ai_result"&&e.data?.key===key){
-          clearTimeout(timeout);
-          document.body.removeChild(iframe);
-          window.removeEventListener("message",handler);
-          resolve(e.data.html||"");
-        }
-      };
-      window.addEventListener("message",handler);
-    });
+<p><strong>Executive Summary</strong></p><p>[2-3 sentences on overall performance]</p>
+<p><strong>✅ Positive highlights</strong></p><ul><li>[point 1]</li><li>[point 2]</li></ul>
+<p><strong>⚠️ Alerts and risks</strong></p><ul><li>[alert 1]</li><li>[alert 2]</li></ul>
+<p><strong>🎯 Priority recommendations</strong></p><ul><li>[action 1]</li><li>[action 2]</li><li>[action 3]</li></ul>
+Data: ${JSON.stringify(data)}`;
+    try{
+      const r=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,system:systemPrompt,messages:[{role:"user",content:userPrompt}]})
+      });
+      if(!r.ok)return isFR?"<p>Analyse indisponible.</p>":"<p>Analysis unavailable.</p>";
+      const d=await r.json();
+      return d.content?.[0]?.text||"";
+    }catch{
+      return isFR?"<p>Analyse indisponible.</p>":"<p>Analysis unavailable.</p>";
+    }
   };
 
   // ── Print function ─────────────────────────────────────────────────────────
@@ -4194,6 +4152,14 @@ tr:nth-child(even) td{background:#F8FAFC;}
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      {/* Loading overlay for expert analysis */}
+      {aiLoading&&<div style={{position:"fixed",inset:0,background:"rgba(13,27,42,.6)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+        <div style={{background:"#fff",borderRadius:16,padding:"32px 48px",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+          <div style={{fontSize:36,marginBottom:12,animation:"spin 1s linear infinite",display:"inline-block"}}>⚙️</div>
+          <div style={{fontWeight:700,fontSize:16,color:"#0D1B2A",marginBottom:6}}>Analyse Expert en cours...</div>
+          <div style={{color:"#8FA0B3",fontSize:13}}>{aiLoadingMsg||"Génération des insights..."}</div>
+        </div>
+      </div>}
       {/* Header */}
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
         <div>
@@ -4534,10 +4500,10 @@ tr:nth-child(even) td{background:#F8FAFC;}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4,marginLeft:"auto"}}>
             <label style={{fontSize:11,color:"transparent"}}>_</label>
-            <button onClick={()=>printYearlyReport(yearlyLang,yearlyFrom,yearlyTo)}
-              style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,#1D4ED8,#7C3AED)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"9px 20px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 14px rgba(29,78,216,.4)",whiteSpace:"nowrap"}}>
-              <i className="ti ti-printer" style={{fontSize:15}} aria-hidden="true"/>
-              {yearlyLang==="fr"?"Générer le rapport":"Generate report"}
+            <button onClick={async()=>{setAiLoading(true);setAiLoadingMsg(yearlyLang==="fr"?"Génération de l'analyse en cours...":"Generating analysis...");try{await printYearlyReport(yearlyLang,yearlyFrom,yearlyTo);}finally{setAiLoading(false);setAiLoadingMsg("");}}}
+              style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,#1D4ED8,#7C3AED)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"9px 20px",fontSize:13,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",boxShadow:"0 4px 14px rgba(29,78,216,.4)",whiteSpace:"nowrap",opacity:aiLoading?0.7:1}}>
+              <i className={`ti ${aiLoading?"ti-loader":"ti-printer"}`} style={{fontSize:15,animation:aiLoading?"spin 1s linear infinite":"none"}} aria-hidden="true"/>
+              {aiLoading?aiLoadingMsg:(yearlyLang==="fr"?"Générer le rapport":"Generate report")}
             </button>
           </div>
         </div>
@@ -4553,15 +4519,15 @@ tr:nth-child(even) td{background:#F8FAFC;}
           <i className="ti ti-printer" style={{fontSize:18}} aria-hidden="true"/>
           Générer & Imprimer le rapport PDF (5 pages)
         </button>
-        <button onClick={()=>printMonthlyReport("en")}
-          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#0D9488,#0369A1)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(13,148,136,.4)"}}>
-          <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
-          Monthly Report (EN)
+        <button onClick={async()=>{setAiLoading(true);setAiLoadingMsg("Generating analysis...");try{await printMonthlyReport("en");}finally{setAiLoading(false);setAiLoadingMsg("");}} }
+          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#0D9488,#0369A1)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",boxShadow:"0 6px 20px rgba(13,148,136,.4)",opacity:aiLoading?0.7:1}}>
+          <i className={`ti ${aiLoading?"ti-loader":"ti-calendar-month"}`} style={{fontSize:18,animation:aiLoading?"spin 1s linear infinite":"none"}} aria-hidden="true"/>
+          {aiLoading?"Generating...":"Monthly Report (EN)"}
         </button>
-        <button onClick={()=>printMonthlyReport("fr")}
-          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#7C3AED,#0D9488)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(124,58,237,.4)"}}>
-          <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
-          Rapport mensuel (FR)
+        <button onClick={async()=>{setAiLoading(true);setAiLoadingMsg("Génération de l'analyse...");try{await printMonthlyReport("fr");}finally{setAiLoading(false);setAiLoadingMsg("");}} }
+          style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#7C3AED,#0D9488)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",boxShadow:"0 6px 20px rgba(124,58,237,.4)",opacity:aiLoading?0.7:1}}>
+          <i className={`ti ${aiLoading?"ti-loader":"ti-calendar-month"}`} style={{fontSize:18,animation:aiLoading?"spin 1s linear infinite":"none"}} aria-hidden="true"/>
+          {aiLoading?"Génération...":"Rapport mensuel (FR)"}
         </button>
 
       </div>
