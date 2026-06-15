@@ -4375,7 +4375,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
             setPlannedInvoices(prev=>prev.filter((p:any)=>p.key!==key));
           } else {
             const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
-            const rem=Math.max(0,(+o.amount||0)-inv);
+            const rem=Math.round(Math.max(0,(+o.amount||0)-inv)*100)/100;
             setPlannedInvoices(prev=>[...prev,{key,client:o._client,poNumber:o.poNumber,soNumber:o.soNumber,amount:rem,fullAmount:rem}]);
           }
         };
@@ -4423,8 +4423,9 @@ tr:nth-child(even) td{background:#F8FAFC;}
                           <td style={{padding:"8px 14px",textAlign:"right",color:C.amberDk,fontWeight:600}}>{fmt(rem)} €</td>
                           <td style={{padding:"6px 14px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
                             {isSelected
-                              ?<input type="number" value={planned.amount}
-                                  onChange={e=>setPlannedInvoices(prev=>prev.map((p:any)=>p.key===key?{...p,amount:+e.target.value||0}:p))}
+                              ?<input type="number" step="0.01"
+                                  value={Math.round((planned.amount||0)*100)/100}
+                                  onChange={e=>setPlannedInvoices(prev=>prev.map((p:any)=>p.key===key?{...p,amount:Math.round((+e.target.value||0)*100)/100}:p))}
                                   onClick={e=>e.stopPropagation()}
                                   style={{width:110,padding:"4px 8px",border:`2px solid ${C.teal}`,borderRadius:5,fontSize:12,fontWeight:600,color:C.teal,textAlign:"right",fontFamily:"inherit"}}
                                 />
