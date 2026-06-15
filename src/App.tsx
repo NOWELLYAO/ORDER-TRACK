@@ -1407,30 +1407,36 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"5fr 4fr",gap:isMobile?12:16}}>
         {/* Jauge double */}
         <Card title="Progression globale" icon="ti-target">
-          <div style={{display:"flex",gap:24,marginBottom:20}}>
-            <div style={{flex:1}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.t2,marginBottom:6}}>
-                <span>Taux de facturation</span><strong style={{color:txFact>=80?C.greenDk:txFact>=50?C.amberDk:C.redDk}}>{txFact.toFixed(1)}%</strong>
-              </div>
-              <Track val={txFact} max={100} color={txFact>=80?C.green:txFact>=50?C.amber:C.red} h={10}/>
+          {/* KPI globaux */}
+          <div style={{display:"flex",gap:16,marginBottom:20}}>
+            <div style={{flex:1,background:C.page,borderRadius:C.r,padding:"12px 16px"}}>
+              <div style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>Taux de facturation</div>
+              <div style={{fontSize:22,fontWeight:800,color:txFact>=80?C.greenDk:txFact>=50?C.amberDk:C.redDk,marginBottom:8}}>{txFact.toFixed(1)}%</div>
+              <Track val={txFact} max={100} color={txFact>=80?C.green:txFact>=50?C.amber:C.red} h={8}/>
             </div>
-            <div style={{flex:1}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.t2,marginBottom:6}}>
-                <span>Taux d'encaissement</span><strong style={{color:txPay>=80?C.greenDk:txPay>=50?C.amberDk:C.redDk}}>{txPay.toFixed(1)}%</strong>
-              </div>
-              <Track val={txPay} max={100} color={txPay>=80?C.green:txPay>=50?C.amber:C.red} h={10}/>
+            <div style={{flex:1,background:C.page,borderRadius:C.r,padding:"12px 16px"}}>
+              <div style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>Taux d'encaissement</div>
+              <div style={{fontSize:22,fontWeight:800,color:txPay>=80?C.greenDk:txPay>=50?C.amberDk:C.redDk,marginBottom:8}}>{txPay.toFixed(1)}%</div>
+              <Track val={txPay} max={100} color={txPay>=80?C.green:txPay>=50?C.amber:C.red} h={8}/>
             </div>
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {/* Par client */}
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
             {cStats.filter((c:any)=>c.totalPO>0).map((c:any)=>{
               const tf=c.totalPO>0?(c.totalInv/c.totalPO*100):0;
               const tp=c.totalInv>0?(c.totalPaid/c.totalInv*100):0;
               return(
-                <div key={c.name} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setPage(c.name)}>
-                  <span style={{fontSize:12,fontWeight:500,color:C.t1,width:110,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
-                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:3}}>
-                    <Track val={tf} max={100} color={tf>=80?C.teal:tf>=50?C.amber:C.red} h={5} label={`${tf.toFixed(0)}% facturé`}/>
-                    <Track val={tp} max={100} color={tp>=80?C.green:tp>=50?C.amber:C.red} h={4} label={`${tp.toFixed(0)}% encaissé`}/>
+                <div key={c.name} style={{cursor:"pointer"}} onClick={()=>setPage(c.name)}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <span style={{fontSize:12,fontWeight:700,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:120}}>{c.name}</span>
+                    <div style={{display:"flex",gap:10,fontSize:11}}>
+                      <span style={{color:tf>=80?C.greenDk:tf>=50?C.amberDk:C.redDk,fontWeight:600}}>{tf.toFixed(0)}% fact.</span>
+                      <span style={{color:tp>=80?C.greenDk:tp>=50?C.amberDk:C.redDk,fontWeight:600}}>{tp.toFixed(0)}% enc.</span>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    <Track val={tf} max={100} color={tf>=80?C.teal:tf>=50?C.amber:C.red} h={6}/>
+                    <Track val={tp} max={100} color={tp>=80?C.green:tp>=50?C.amber:C.red} h={5}/>
                   </div>
                 </div>
               );
