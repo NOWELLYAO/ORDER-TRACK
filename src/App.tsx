@@ -2981,57 +2981,73 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
 Tu analyses des données de commandes, facturation et encaissements pour fournir des insights stratégiques actionnables.
 Ton analyse doit être professionnelle, concise et orientée vers les décisions business.
 Réponds en HTML pur (pas de markdown), avec des balises <p>, <strong>, <ul>, <li>. 
-Maximum 350 mots. Sois direct et percutant.`
+Maximum 400 mots. Sois direct et percutant.`
       :`You are a senior commercial expert specializing in B2B sales performance analysis in West Africa for Grundfos (pumps and hydraulic systems).
 You analyze order, invoicing and collection data to provide actionable strategic insights.
 Your analysis must be professional, concise and decision-oriented.
 Respond in pure HTML (no markdown), using <p>, <strong>, <ul>, <li> tags.
-Maximum 350 words. Be direct and impactful.`;
+Maximum 400 words. Be direct and impactful.`;
 
     const userPrompt=isFR
-      ?`Analyse ce rapport ${reportType==="weekly"?"hebdomadaire":reportType==="monthly"?"mensuel":"annuel/période"} et fournis:
-1. **Synthèse exécutive** (2-3 phrases clés)
-2. **Points positifs** (max 3)
-3. **Alertes et risques** (max 3) 
-4. **Recommandations prioritaires** (max 3 actions concrètes)
+      ?`Analyse ce rapport ${reportType==="weekly"?"hebdomadaire":reportType==="monthly"?"mensuel":"annuel/période"} et fournis en HTML:
+<p><strong>Synthèse exécutive</strong></p><p>2-3 phrases sur la performance globale.</p>
+<p><strong>Points positifs</strong></p><ul><li>...</li></ul>
+<p><strong>Alertes et risques</strong></p><ul><li>...</li></ul>
+<p><strong>Recommandations prioritaires</strong></p><ul><li>...</li></ul>
 
-Données du rapport:
+Données:
 ${JSON.stringify(data,null,2)}`
-      :`Analyze this ${reportType} report and provide:
-1. **Executive Summary** (2-3 key sentences)
-2. **Positive highlights** (max 3)
-3. **Alerts and risks** (max 3)
-4. **Priority recommendations** (max 3 concrete actions)
+      :`Analyze this ${reportType} report and provide in HTML:
+<p><strong>Executive Summary</strong></p><p>2-3 sentences on overall performance.</p>
+<p><strong>Positive highlights</strong></p><ul><li>...</li></ul>
+<p><strong>Alerts and risks</strong></p><ul><li>...</li></ul>
+<p><strong>Priority recommendations</strong></p><ul><li>...</li></ul>
 
-Report data:
+Data:
 ${JSON.stringify(data,null,2)}`;
 
-    try{
-      const response=await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-          "anthropic-version":"2023-06-01",
-          "anthropic-dangerous-direct-browser-access":"true"
-        },
-        body:JSON.stringify({
-          model:"claude-sonnet-4-6",
-          max_tokens:1000,
-          system:systemPrompt,
-          messages:[{role:"user",content:userPrompt}]
-        })
-      });
-      if(!response.ok){
-        const err=await response.text().catch(()=>"");
-        console.error("AI Analysis API error:",response.status,err);
-        return isFR?`<p>Analyse indisponible (erreur ${response.status}).</p>`:`<p>Analysis unavailable (error ${response.status}).</p>`;
-      }
-      const result=await response.json();
-      return result.content?.[0]?.text||"";
-    }catch(e){
-      console.error("AI Analysis fetch error:",e);
-      return isFR?"<p>Analyse indisponible.</p>":"<p>Analysis unavailable.</p>";
-    }
+    return new Promise((resolve)=>{
+      // Use a hidden iframe pointing to an artifact that calls the API
+      const key=`ai_analysis_${Date.now()}`;
+      const iframeCode=`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<script>
+(async()=>{
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,system:${JSON.stringify(systemPrompt)},messages:[{role:"user",content:${JSON.stringify(userPrompt)}}]})
+    });
+    const d=await r.json();
+    const text=d.content?.[0]?.text||"";
+    window.parent.postMessage({type:"ai_result",key:${JSON.stringify(key)},html:text},"*");
+  }catch(e){
+    window.parent.postMessage({type:"ai_result",key:${JSON.stringify(key)},html:""},"*");
+  }
+})();
+<\/script></body></html>`;
+
+      const iframe=document.createElement("iframe");
+      iframe.style.cssText="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;";
+      iframe.srcdoc=iframeCode;
+      document.body.appendChild(iframe);
+
+      const timeout=setTimeout(()=>{
+        document.body.removeChild(iframe);
+        window.removeEventListener("message",handler);
+        resolve(isFR?"<p>Analyse indisponible (délai expiré).</p>":"<p>Analysis unavailable (timeout).</p>");
+      },15000);
+
+      const handler=(e:MessageEvent)=>{
+        if(e.data?.type==="ai_result"&&e.data?.key===key){
+          clearTimeout(timeout);
+          document.body.removeChild(iframe);
+          window.removeEventListener("message",handler);
+          resolve(e.data.html||"");
+        }
+      };
+      window.addEventListener("message",handler);
+    });
   };
 
   // ── Print function ─────────────────────────────────────────────────────────
