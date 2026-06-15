@@ -1547,29 +1547,36 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
               <span key={lbl} style={{fontSize:11,color:C.t3,display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:col,display:"inline-block"}}/>{lbl}</span>
             ))}
           </div>
-          <div style={{display:"flex",alignItems:"flex-end",gap:3,height:160}}>
+          <div style={{display:"flex",alignItems:"flex-end",gap:4,height:160,paddingBottom:20,position:"relative"}}>
             {monthly.map((m:any,i:number)=>{
               const hasData=m.po>0||m.inv>0||m.paid>0;
               return(
-                <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:0}}>
-                  {/* Bars area */}
-                  <div style={{width:"100%",display:"flex",gap:1.5,alignItems:"flex-end",justifyContent:"center",height:130}}>
-                    {[{v:m.po,c:"#3B82F6"},{v:m.inv,c:"#F59E0B"},{v:m.paid,c:"#10B981"}].map(({v,c},j)=>(
-                      <div key={j} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}>
-                        <div title={`${fmt(v)} €`} style={{width:"100%",background:c,borderRadius:"3px 3px 0 0",height:`${v>0?(v/maxM*100):0}%`,minHeight:v>0?2:0,opacity:.9}}/>
-                      </div>
-                    ))}
+                <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",height:"100%",justifyContent:"flex-end",position:"relative"}}
+                  onMouseEnter={e=>{const t=e.currentTarget.querySelector(".bar-tooltip") as HTMLElement;if(t)t.style.display="block";}}
+                  onMouseLeave={e=>{const t=e.currentTarget.querySelector(".bar-tooltip") as HTMLElement;if(t)t.style.display="none";}}>
+                  {/* Tooltip */}
+                  {hasData&&<div className="bar-tooltip" style={{display:"none",position:"absolute",bottom:"100%",left:"50%",transform:"translateX(-50%)",background:"#0D1B2A",color:"#fff",borderRadius:8,padding:"8px 12px",fontSize:11,whiteSpace:"nowrap",zIndex:100,boxShadow:"0 4px 12px rgba(0,0,0,.3)",marginBottom:6,pointerEvents:"none"}}>
+                    <div style={{fontWeight:700,marginBottom:4,color:"#94A3B8",fontSize:10,textTransform:"uppercase"}}>{MONTHS[i]}</div>
+                    {m.po>0&&<div style={{color:"#3B82F6"}}>PO : <strong>{fmt(m.po)} €</strong></div>}
+                    {m.inv>0&&<div style={{color:"#F59E0B"}}>Facturé : <strong>{fmt(m.inv)} €</strong></div>}
+                    {m.paid>0&&<div style={{color:"#10B981"}}>Encaissé : <strong>{fmt(m.paid)} €</strong></div>}
+                    <div style={{position:"absolute",bottom:-5,left:"50%",transform:"translateX(-50%)",width:10,height:10,background:"#0D1B2A",clipPath:"polygon(0 0,100% 0,50% 100%)"}}/>
+                  </div>}
+                  {/* Bars */}
+                  <div style={{width:"100%",display:"flex",gap:1.5,alignItems:"flex-end",justifyContent:"center",height:"calc(100% - 18px)"}}>
+                    {[{v:m.po,c:"#3B82F6"},{v:m.inv,c:"#F59E0B"},{v:m.paid,c:"#10B981"}].map(({v,c},j)=>{
+                      const pct=v>0?(v/maxM*100):0;
+                      const barH=pct;
+                      const showLabel=barH>18;
+                      return(
+                        <div key={j} title={`${fmt(v)} €`} style={{flex:1,background:v>0?c:"transparent",borderRadius:"3px 3px 0 0",height:`${barH}%`,minHeight:v>0?2:0,opacity:.92,display:"flex",alignItems:"flex-start",justifyContent:"center",overflow:"hidden",cursor:"pointer"}}>
+                          {showLabel&&<span style={{fontSize:7,fontWeight:800,color:"#fff",marginTop:2,writingMode:"vertical-rl",transform:"rotate(180deg)",lineHeight:1}}>{v>=1000?`${(v/1000).toFixed(0)}K`:v}</span>}
+                        </div>
+                      );
+                    })}
                   </div>
                   {/* Month label */}
-                  <div style={{fontSize:9,color:C.t3,whiteSpace:"nowrap",marginTop:3,marginBottom:hasData?2:0}}>{MONTHS[i]}</div>
-                  {/* Values below — only if month has data */}
-                  {hasData&&<div style={{display:"flex",gap:1.5,width:"100%",justifyContent:"center"}}>
-                    {[{v:m.po,c:"#3B82F6"},{v:m.inv,c:"#F59E0B"},{v:m.paid,c:"#10B981"}].map(({v,c},j)=>(
-                      <div key={j} style={{flex:1,textAlign:"center",fontSize:7,fontWeight:700,color:v>0?c:"transparent",whiteSpace:"nowrap",overflow:"hidden",lineHeight:1.2}}>
-                        {v>0?(v>=1000?`${(v/1000).toFixed(0)}K`:String(v)):""}
-                      </div>
-                    ))}
-                  </div>}
+                  <div style={{fontSize:9,color:C.t3,whiteSpace:"nowrap",marginTop:4,height:14}}>{MONTHS[i]}</div>
                 </div>
               );
             })}
