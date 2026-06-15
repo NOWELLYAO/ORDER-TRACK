@@ -2846,6 +2846,9 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const [savedReports,setSavedReports]=useState<any[]>(()=>{try{const r=localStorage.getItem(REPORT_KEY);return r?JSON.parse(r):[];}catch{return [];}});
   const [showHistory,setShowHistory]=useState(false);
   const [showOrders,setShowOrders]=useState(false);
+  const [showInvoiced,setShowInvoiced]=useState(false);
+  const [showFactMois,setShowFactMois]=useState(false);
+  const [showOpenOrders,setShowOpenOrders]=useState(false);
   const [saveMsg,setSaveMsg]=useState("");
   const [yearlyFrom,setYearlyFrom]=useState(()=>`${new Date().getFullYear()}-01-01`);
   const [yearlyTo,setYearlyTo]=useState(todayStr);
@@ -4235,17 +4238,100 @@ tr:nth-child(even) td{background:#F8FAFC;}
             </div>
           )}
         </div>
-        {[
-          {label:`Invoiced (${invoicePeriodLabel})`,val:`${fmtK(invoicedInPeriod)} €`,sub:`${invoicesInPeriod.length} invoice${invoicesInPeriod.length>1?"s":""}`,c:C.teal,bg:C.tealL},
-          {label:"Facturé "+MONTH_NAMES[thisMonth],val:`${fmtK(invoicedThisMonth)} €`,sub:`Ce mois · ${invoicesThisMonth.length} fact.`,c:"#0D9488",bg:"#CCFBF1"},
-          {label:"Open Orders",val:`${fmtK(openOrders)} €`,sub:"Remaining to invoice",c:C.amberDk,bg:C.amberL},
-        ].map((k,i)=>(
-          <div key={i} style={{background:"#fff",borderRadius:C.r,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
-            <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>{k.label}</div>
-            <div style={{fontSize:18,fontWeight:800,color:k.c}}>{k.val}</div>
-            <div style={{fontSize:11,color:C.t3,marginTop:3}}>{k.sub}</div>
+        {/* Invoiced — expandable */}
+        <div style={{background:"#fff",borderRadius:C.r,border:`2px solid ${showInvoiced?C.teal:C.b}`,boxShadow:C.sh,padding:"14px 16px",cursor:"pointer",transition:"border-color .15s"}}
+          onClick={()=>setShowInvoiced(o=>!o)}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+            <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Invoiced ({invoicePeriodLabel})</div>
+            <i className={`ti ${showInvoiced?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:13,color:C.teal}} aria-hidden="true"/>
           </div>
-        ))}
+          <div style={{fontSize:18,fontWeight:800,color:C.teal}}>{fmtK(invoicedInPeriod)} €</div>
+          <div style={{fontSize:11,color:C.t3,marginTop:3}}>{invoicesInPeriod.length} invoice{invoicesInPeriod.length>1?"s":""}</div>
+          {showInvoiced&&invoicesInPeriod.length>0&&(
+            <div style={{marginTop:10,borderTop:`1px solid ${C.b}`,paddingTop:8,display:"flex",flexDirection:"column",gap:4}} onClick={(e:any)=>e.stopPropagation()}>
+              {invoicesInPeriod.map((inv:any,i:number)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderBottom:`1px solid #F1F5F9`}}>
+                  <div>
+                    <span style={{fontWeight:700,color:C.t1}}>{inv._client}</span>
+                    <span style={{color:C.t3,marginLeft:6,fontFamily:"monospace",fontSize:10}}>{inv.invoiceNumber||"—"}</span>
+                  </div>
+                  <span style={{fontWeight:600,color:C.teal,flexShrink:0,marginLeft:8}}>{fmtK(+inv.amount||0)} €</span>
+                </div>
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",fontWeight:700,fontSize:11,paddingTop:4,color:"#0D9488"}}>
+                <span>TOTAL</span><span>{fmtK(invoicedInPeriod)} €</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Facturé ce mois — expandable */}
+        <div style={{background:"#fff",borderRadius:C.r,border:`2px solid ${showFactMois?"#0D9488":C.b}`,boxShadow:C.sh,padding:"14px 16px",cursor:"pointer",transition:"border-color .15s"}}
+          onClick={()=>setShowFactMois(o=>!o)}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+            <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Facturé {MONTH_NAMES[thisMonth]}</div>
+            <i className={`ti ${showFactMois?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:13,color:"#0D9488"}} aria-hidden="true"/>
+          </div>
+          <div style={{fontSize:18,fontWeight:800,color:"#0D9488"}}>{fmtK(invoicedThisMonth)} €</div>
+          <div style={{fontSize:11,color:C.t3,marginTop:3}}>Ce mois · {invoicesThisMonth.length} fact.</div>
+          {showFactMois&&invoicesThisMonth.length>0&&(
+            <div style={{marginTop:10,borderTop:`1px solid ${C.b}`,paddingTop:8,display:"flex",flexDirection:"column",gap:4}} onClick={(e:any)=>e.stopPropagation()}>
+              {invoicesThisMonth.map((inv:any,i:number)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderBottom:`1px solid #F1F5F9`}}>
+                  <div>
+                    <span style={{fontWeight:700,color:C.t1}}>{inv._client}</span>
+                    <span style={{color:C.t3,marginLeft:6,fontFamily:"monospace",fontSize:10}}>{inv.invoiceNumber||"—"}</span>
+                  </div>
+                  <span style={{fontWeight:600,color:"#0D9488",flexShrink:0,marginLeft:8}}>{fmtK(+inv.amount||0)} €</span>
+                </div>
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",fontWeight:700,fontSize:11,paddingTop:4,color:"#0D9488"}}>
+                <span>TOTAL</span><span>{fmtK(invoicedThisMonth)} €</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Open Orders — expandable par client */}
+        <div style={{background:"#fff",borderRadius:C.r,border:`2px solid ${showOpenOrders?C.amberDk:C.b}`,boxShadow:C.sh,padding:"14px 16px",cursor:"pointer",transition:"border-color .15s"}}
+          onClick={()=>setShowOpenOrders(o=>!o)}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+            <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Open Orders</div>
+            <i className={`ti ${showOpenOrders?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:13,color:C.amberDk}} aria-hidden="true"/>
+          </div>
+          <div style={{fontSize:18,fontWeight:800,color:C.amberDk}}>{fmtK(openOrders)} €</div>
+          <div style={{fontSize:11,color:C.t3,marginTop:3}}>Remaining to invoice</div>
+          {showOpenOrders&&(()=>{
+            const openList=allOrders.filter((o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return inv<(+o.amount||0)*0.999&&o.status!=="annule";});
+            const byClient:Record<string,{orders:any[],total:number}>=openList.reduce((acc:any,o:any)=>{
+              const rem=Math.max(0,(+o.amount||0)-(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0));
+              if(!acc[o._client])acc[o._client]={orders:[],total:0};
+              acc[o._client].orders.push({...o,rem});
+              acc[o._client].total+=rem;
+              return acc;
+            },{});
+            return(
+              <div style={{marginTop:10,borderTop:`1px solid ${C.b}`,paddingTop:8,display:"flex",flexDirection:"column",gap:6}} onClick={(e:any)=>e.stopPropagation()}>
+                {Object.entries(byClient).sort((a:any,b:any)=>b[1].total-a[1].total).map(([client,info]:any)=>(
+                  <div key={client}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,fontWeight:700,color:C.t1,padding:"2px 0",borderBottom:`1px solid #F1F5F9`,marginBottom:2}}>
+                      <span>{client}</span><span style={{color:C.amberDk}}>{fmtK(info.total)} €</span>
+                    </div>
+                    {info.orders.map((o:any,j:number)=>(
+                      <div key={j} style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.t3,padding:"2px 6px"}}>
+                        <span style={{fontFamily:"monospace"}}>{o.soNumber||o.poNumber||"—"}</span>
+                        <span style={{color:C.amber}}>{fmtK(o.rem)} €</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",fontWeight:700,fontSize:11,paddingTop:4,color:C.amberDk}}>
+                  <span>TOTAL</span><span>{fmtK(openOrders)} €</span>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
       </div>
 
       {/* Expected orders */}
