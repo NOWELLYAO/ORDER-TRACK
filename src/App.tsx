@@ -1543,17 +1543,23 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:isMobile?12:16}}>
         <Card title="Évolution mensuelle 2026" icon="ti-chart-bar">
           <div style={{display:"flex",gap:16,marginBottom:12}}>
-            {[["#3B82F6","PO"],["#0D9488","Facturé"],["#059669","Encaissé"]].map(([col,lbl])=>(
+            {[["#3B82F6","PO"],["#F59E0B","Facturé"],["#10B981","Encaissé"]].map(([col,lbl])=>(
               <span key={lbl} style={{fontSize:11,color:C.t3,display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:col,display:"inline-block"}}/>{lbl}</span>
             ))}
           </div>
-          <div style={{display:"flex",alignItems:"flex-end",gap:3,height:130}}>
+          <div style={{display:"flex",alignItems:"flex-end",gap:3,height:160}}>
             {monthly.map((m:any,i:number)=>(
               <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,height:"100%",justifyContent:"flex-end"}}>
-                <div style={{width:"100%",display:"flex",gap:1.5,alignItems:"flex-end",justifyContent:"center",height:"100%"}}>
-                  {[{v:m.po,c:"#3B82F6"},{v:m.inv,c:"#0D9488"},{v:m.paid,c:"#059669"}].map(({v,c},j)=>(
-                    <div key={j} title={`${fmt(v)} €`} style={{flex:1,background:c,borderRadius:"3px 3px 0 0",height:`${v>0?(v/maxM*100):1}%`,minHeight:v>0?3:1,opacity:.85}}/>
-                  ))}
+                <div style={{width:"100%",display:"flex",gap:1.5,alignItems:"flex-end",justifyContent:"center",height:"100%",position:"relative"}}>
+                  {[{v:m.po,c:"#3B82F6"},{v:m.inv,c:"#F59E0B"},{v:m.paid,c:"#10B981"}].map(({v,c},j)=>{
+                    const pct=v>0?(v/maxM*100):0;
+                    return(
+                      <div key={j} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}>
+                        {v>0&&pct>8&&<span style={{fontSize:7,fontWeight:700,color:c,marginBottom:1,whiteSpace:"nowrap",letterSpacing:"-.02em"}}>{v>=1000?`${(v/1000).toFixed(0)}K`:`${v}`}</span>}
+                        <div title={`${fmt(v)} €`} style={{width:"100%",background:c,borderRadius:"3px 3px 0 0",height:`${pct||0.5}%`,minHeight:v>0?3:1,opacity:.9}}/>
+                      </div>
+                    );
+                  })}
                 </div>
                 <div style={{fontSize:9,color:C.t3,whiteSpace:"nowrap"}}>{MONTHS[i]}</div>
               </div>
