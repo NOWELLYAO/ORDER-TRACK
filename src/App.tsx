@@ -3009,7 +3009,11 @@ ${JSON.stringify(data,null,2)}`;
     try{
       const response=await fetch("https://api.anthropic.com/v1/messages",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{
+          "Content-Type":"application/json",
+          "anthropic-version":"2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true"
+        },
         body:JSON.stringify({
           model:"claude-sonnet-4-6",
           max_tokens:1000,
@@ -3017,10 +3021,16 @@ ${JSON.stringify(data,null,2)}`;
           messages:[{role:"user",content:userPrompt}]
         })
       });
+      if(!response.ok){
+        const err=await response.text().catch(()=>"");
+        console.error("AI Analysis API error:",response.status,err);
+        return isFR?`<p>Analyse indisponible (erreur ${response.status}).</p>`:`<p>Analysis unavailable (error ${response.status}).</p>`;
+      }
       const result=await response.json();
       return result.content?.[0]?.text||"";
     }catch(e){
-      return isFR?"<p>Analyse IA indisponible.</p>":"<p>AI analysis unavailable.</p>";
+      console.error("AI Analysis fetch error:",e);
+      return isFR?"<p>Analyse indisponible.</p>":"<p>Analysis unavailable.</p>";
     }
   };
 
@@ -3447,14 +3457,17 @@ tr:nth-child(even) td{background:#F8FAFC;}
       kpis:{
         ordersReceived:Math.round(poThisMonthAmt),ordersCount:poThisMonth.length,
         invoiced:Math.round(invThisMonthAmt),collected:Math.round(payThisMonthAmt),
-        invoiceRate:monthInvRate.toFixed(1)+"%",collectionRate:monthCollRate.toFixed(1)+"%",
-        openOrders:Math.round(openOrders),overdue:Math.round(overdueAmt),upcoming:Math.round(upcomingAmt),
-        overdueCount:overdueInvoices.length,upcomingCount:upcomingInvoices.length
+        invoiceRate:monthInvRate.toFixed(1)+"%",
+        collectionRate:invThisMonthAmt>0?(payThisMonthAmt/invThisMonthAmt*100).toFixed(1)+"%":"0%",
+        overdue:Math.round(overdueAmt),upcoming:Math.round(upcomingAmt),
+        overdueCount:overdueInv.length,upcomingCount:upcomingInv.length
       },
       vsLastMonth:{
-        poGrowth:poGrowth.toFixed(1)+"%",invGrowth:invGrowth.toFixed(1)+"%",payGrowth:payGrowth.toFixed(1)+"%"
+        poGrowth:(poLastMonth>0?((poThisMonthAmt-poLastMonth)/poLastMonth*100):0).toFixed(1)+"%",
+        invGrowth:(invLastMonth>0?((invThisMonthAmt-invLastMonth)/invLastMonth*100):0).toFixed(1)+"%",
+        payGrowth:(payLastMonth>0?((payThisMonthAmt-payLastMonth)/payLastMonth*100):0).toFixed(1)+"%"
       },
-      topOverdueClients:overdueInvoices.slice(0,3).map((i:any)=>({client:i._client,amount:Math.round(payStatus(i).rem),invoice:i.invoiceNumber}))
+      topOverdueClients:overdueInv.slice(0,3).map((i:any)=>({client:i._client,amount:Math.round(payStatus(i).rem),invoice:i.invoiceNumber}))
     };
     const aiHtmlM=await generateAIAnalysis("monthly",aiDataM,reportLang);
     const w=window.open("","_blank","width=1200,height=900");
