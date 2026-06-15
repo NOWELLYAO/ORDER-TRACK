@@ -3000,11 +3000,15 @@ Data: ${JSON.stringify(data)}`;
         headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
         body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,system:systemPrompt,messages:[{role:"user",content:userPrompt}]})
       });
-      if(!r.ok)return isFR?"<p>Analyse indisponible.</p>":"<p>Analysis unavailable.</p>";
-      const d=await r.json();
+      console.log("AI API status:",r.status,r.statusText);
+      const raw=await r.text();
+      console.log("AI API raw response:",raw.slice(0,500));
+      if(!r.ok)return isFR?`<p>Erreur ${r.status}: ${raw.slice(0,100)}</p>`:`<p>Error ${r.status}: ${raw.slice(0,100)}</p>`;
+      const d=JSON.parse(raw);
       return d.content?.[0]?.text||"";
-    }catch{
-      return isFR?"<p>Analyse indisponible.</p>":"<p>Analysis unavailable.</p>";
+    }catch(e:any){
+      console.error("AI Analysis exception:",e?.message,e);
+      return isFR?`<p>Exception: ${e?.message||"inconnue"}</p>`:`<p>Exception: ${e?.message||"unknown"}</p>`;
     }
   };
 
