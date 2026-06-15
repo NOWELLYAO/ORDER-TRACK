@@ -1548,22 +1548,31 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
             ))}
           </div>
           <div style={{display:"flex",alignItems:"flex-end",gap:3,height:160}}>
-            {monthly.map((m:any,i:number)=>(
-              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2,height:"100%",justifyContent:"flex-end"}}>
-                <div style={{width:"100%",display:"flex",gap:1.5,alignItems:"flex-end",justifyContent:"center",height:"100%",position:"relative"}}>
-                  {[{v:m.po,c:"#3B82F6"},{v:m.inv,c:"#F59E0B"},{v:m.paid,c:"#10B981"}].map(({v,c},j)=>{
-                    const pct=v>0?(v/maxM*100):0;
-                    return(
+            {monthly.map((m:any,i:number)=>{
+              const hasData=m.po>0||m.inv>0||m.paid>0;
+              return(
+                <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:0}}>
+                  {/* Bars area */}
+                  <div style={{width:"100%",display:"flex",gap:1.5,alignItems:"flex-end",justifyContent:"center",height:130}}>
+                    {[{v:m.po,c:"#3B82F6"},{v:m.inv,c:"#F59E0B"},{v:m.paid,c:"#10B981"}].map(({v,c},j)=>(
                       <div key={j} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%"}}>
-                        {v>0&&pct>8&&<span style={{fontSize:7,fontWeight:700,color:c,marginBottom:1,whiteSpace:"nowrap",letterSpacing:"-.02em"}}>{v>=1000?`${(v/1000).toFixed(0)}K`:`${v}`}</span>}
-                        <div title={`${fmt(v)} €`} style={{width:"100%",background:c,borderRadius:"3px 3px 0 0",height:`${pct||0.5}%`,minHeight:v>0?3:1,opacity:.9}}/>
+                        <div title={`${fmt(v)} €`} style={{width:"100%",background:c,borderRadius:"3px 3px 0 0",height:`${v>0?(v/maxM*100):0}%`,minHeight:v>0?2:0,opacity:.9}}/>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
+                  {/* Month label */}
+                  <div style={{fontSize:9,color:C.t3,whiteSpace:"nowrap",marginTop:3,marginBottom:hasData?2:0}}>{MONTHS[i]}</div>
+                  {/* Values below — only if month has data */}
+                  {hasData&&<div style={{display:"flex",gap:1.5,width:"100%",justifyContent:"center"}}>
+                    {[{v:m.po,c:"#3B82F6"},{v:m.inv,c:"#F59E0B"},{v:m.paid,c:"#10B981"}].map(({v,c},j)=>(
+                      <div key={j} style={{flex:1,textAlign:"center",fontSize:7,fontWeight:700,color:v>0?c:"transparent",whiteSpace:"nowrap",overflow:"hidden",lineHeight:1.2}}>
+                        {v>0?(v>=1000?`${(v/1000).toFixed(0)}K`:String(v)):""}
+                      </div>
+                    ))}
+                  </div>}
                 </div>
-                <div style={{fontSize:9,color:C.t3,whiteSpace:"nowrap"}}>{MONTHS[i]}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
 
