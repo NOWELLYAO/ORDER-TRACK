@@ -4398,6 +4398,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>Customer</th>
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>PO #</th>
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>S/O #</th>
+                      <th style={{padding:"8px 14px",textAlign:"center",color:C.t3,fontWeight:500,fontSize:11}}>Dispo prévue</th>
                       <th style={{padding:"8px 14px",textAlign:"right",color:C.t3,fontWeight:500,fontSize:11}}>Reste à fact.</th>
                       <th style={{padding:"8px 14px",textAlign:"right",color:C.teal,fontWeight:600,fontSize:11}}>Montant prévu (€)</th>
                     </tr>
@@ -4420,6 +4421,15 @@ tr:nth-child(even) td{background:#F8FAFC;}
                           <td style={{padding:"8px 14px",fontWeight:600,color:C.t1}}>{o._client}</td>
                           <td style={{padding:"8px 14px",color:C.t2,fontFamily:"monospace",fontSize:11}}>{o.poNumber||"—"}</td>
                           <td style={{padding:"8px 14px",color:C.t2,fontFamily:"monospace",fontSize:11}}>{o.soNumber||"—"}</td>
+                          <td style={{padding:"8px 14px",textAlign:"center"}}>
+                            {o.expectedDate?(()=>{
+                              const isPast=new Date(o.expectedDate+"T00:00:00")<today;
+                              const d=diffD(o.expectedDate);
+                              return <span style={{fontSize:11,fontWeight:600,color:isPast?C.redDk:d<=14?C.amberDk:C.greenDk,background:isPast?C.redL:d<=14?C.amberL:C.greenL,padding:"2px 8px",borderRadius:4,whiteSpace:"nowrap"}}>
+                                {fmtD(o.expectedDate)}{isPast?" ⚠️":""}
+                              </span>;
+                            })():<span style={{color:C.t3,fontSize:11}}>—</span>}
+                          </td>
                           <td style={{padding:"8px 14px",textAlign:"right",color:C.amberDk,fontWeight:600}}>{fmt(rem)} €</td>
                           <td style={{padding:"6px 14px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
                             {isSelected
