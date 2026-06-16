@@ -3753,20 +3753,20 @@ tr:nth-child(even) td{background:#F8FAFC;}
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
   body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;background:#fff;}
-  .page{width:297mm;padding:10mm 12mm 14mm;display:flex;flex-direction:column;page-break-after:always;position:relative;break-after:page;}
+  .page{width:297mm;height:277mm;padding:10mm 12mm 10mm;display:flex;flex-direction:column;page-break-after:always;position:relative;break-after:page;overflow:hidden;}
   .page:last-child{page-break-after:avoid;break-after:avoid;}
   
   /* Cover page */
-  .cover{background:linear-gradient(135deg,#0D1B2A 0%,#1E3A5F 60%,#2563EB 100%);color:#fff;justify-content:space-between;}
+  .cover{background:linear-gradient(160deg,#1E3A5F 0%,#2563EB 55%,#3B82F6 100%);color:#fff;justify-content:space-between;}
   .cover-logo{font-size:11px;opacity:.5;letter-spacing:.1em;text-transform:uppercase;}
-  .cover-title{font-size:34px;font-weight:900;letter-spacing:-.02em;line-height:1;}
-  .cover-sub{font-size:16px;opacity:.75;margin-top:8px;}
-  .cover-week{font-size:56px;font-weight:900;color:rgba(255,255,255,.1);position:absolute;right:12mm;top:50%;transform:translateY(-50%);}
+  .cover-title{font-size:38px;font-weight:900;letter-spacing:-.02em;line-height:1;text-shadow:0 2px 8px rgba(0,0,0,.3);}
+  .cover-sub{font-size:16px;opacity:.95;margin-top:8px;font-weight:500;}
+  .cover-week{font-size:72px;font-weight:900;color:rgba(255,255,255,.18);position:absolute;right:12mm;top:50%;transform:translateY(-50%);letter-spacing:-.04em;}
   .cover-meta{display:flex;gap:24px;align-items:center;}
-  .cover-badge{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:6px 14px;font-size:13px;font-weight:600;}
+  .cover-badge{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:6px 14px;font-size:13px;font-weight:700;}
   .cover-toc{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:0;}
-  .toc-item{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:7px 12px;display:flex;align-items:center;gap:8px;}
-  .toc-num{font-size:24px;font-weight:900;opacity:.3;}
+  .toc-item{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);border-radius:8px;padding:7px 12px;display:flex;align-items:center;gap:8px;}
+  .toc-num{font-size:24px;font-weight:900;opacity:.6;}
   .toc-label{font-size:12px;font-weight:600;}
 
   /* Section pages */
@@ -4074,11 +4074,11 @@ tr:nth-child(even) td{background:#F8FAFC;}
 </div>
 
 
-<div class='no-print' style='position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px'>
+<div style='position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px'>
 <button onclick='window.print()' style='background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)'>🖨️ Print / PDF</button>
 <button onclick='window.close()' style='background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif'>✕ Close</button>
 </div>
-<style>@media print{.no-print{display:none!important}@page{margin:0}}</style>
+<style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}}</style>
 </body></html>`);
     w.document.close();
 
@@ -5836,11 +5836,11 @@ function CataloguePage({clients,lang,isMobile}:any){
     <span>Ce devis est valable ${qValidity} jours à compter de la date d'émission.</span>
     <span>GRUNDFOS — kyao@grundfos.com</span>
   </div>
-<div class='no-print' style='position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px'>
+<div style='position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px'>
 <button onclick='window.print()' style='background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)'>🖨️ Print / PDF</button>
 <button onclick='window.close()' style='background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif'>✕ Close</button>
 </div>
-<style>@media print{.no-print{display:none!important}@page{margin:0}}</style>
+<style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}}</style>
 </body></html>`);
     w.document.close();
   };
@@ -7244,7 +7244,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
     <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
     <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">✕ Close</button>
     </div>
-    <style>@media print{.no-print{display:none!important}@page{margin:0}}</style>
+    <style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}}</style>
     <div class="header">
       <div><div class="logo">OrderTrack</div><h1>${title}</h1></div>
       <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Période : ${fmtD(from)} → ${fmtD(to)}</div>
