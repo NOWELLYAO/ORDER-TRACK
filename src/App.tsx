@@ -2832,7 +2832,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     return null;
   };
   const draft=loadDraft();
-  const defaultPeriod=()=>{const m=today.toLocaleDateString("fr-FR",{month:"long"});return m.charAt(0).toUpperCase()+m.slice(1)+" "+year;};
+  const defaultPeriod=()=>{const m=today.toLocaleDateString("en-GB",{month:"long"});return m.charAt(0).toUpperCase()+m.slice(1)+" "+year;};
 
   const [weekLabel,setWeekLabel]=useState(draft?.weekLabel||`S${weekNum}`);
   const [period,setPeriod]=useState(draft?.period||defaultPeriod());
