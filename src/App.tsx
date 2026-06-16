@@ -170,7 +170,7 @@ const T:Record<Lang,Record<string,string>>={
     total_shown:"Total affiché", payments_total:"paiement{s}",
     global_total:"Total global",
     // Modals
-    new_client:"Nouveau client", edit_client_title:"Modifier le client",
+    new_client:"New client", edit_client_title:"Modifier le client",
     client_name:"Nom du client *", account_num:"N° de compte",
     pay_terms:"Conditions de paiement", custom_days:"Délai en jours",
     uppercase_note:"Le nom sera automatiquement mis en majuscules.",
@@ -198,7 +198,7 @@ const T:Record<Lang,Record<string,string>>={
     already_paid:"Déjà payé", remain_to_pay:"Reste",
     // Reports
     report_title:"Générer un rapport PDF", report_sub:"Sélectionnez le type et la période",
-    report_generate:"Générer & Imprimer",
+    report_generate:"Générer & Print",
     r_open:"Open Orders", r_open_desc:"Commandes non entièrement facturées",
     r_overdue:"Factures échues", r_overdue_desc:"Échéance dépassée, solde non réglé",
     r_upcoming:"Échéances à venir", r_upcoming_desc:"Factures dues dans les 30 prochains jours",
@@ -668,7 +668,7 @@ function UserManager({session,onClose}:any){
                         style={{padding:"5px 8px",border:"1px solid #93C5FD",borderRadius:5,fontSize:12,fontFamily:"inherit",flex:1,minWidth:80}}/>
                       <div style={{display:"flex",alignItems:"center",gap:4}}>
                         <input value={editPin} onChange={e=>setEditPin(e.target.value)}
-                          type={editShowPin?"text":"password"} placeholder="Nouveau code (optionnel)"
+                          type={editShowPin?"text":"password"} placeholder="New code (optionnel)"
                           style={{padding:"5px 8px",border:"1px solid #93C5FD",borderRadius:5,fontSize:12,fontFamily:"inherit",width:140}}/>
                         <button onClick={()=>setEditShowPin(!editShowPin)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#8FA0B3",padding:2}}>
                           <i className={`ti ${editShowPin?"ti-eye-off":"ti-eye"}`} style={{fontSize:13}} aria-hidden="true"/>
@@ -1072,7 +1072,7 @@ export default function App(){
           <SBtn icon="ti-table-column" label={t(lang,"nav_compilation")} active={page==="dashboard"} open={sideOpen} onClick={()=>{setPage("dashboard");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-search" label={t(lang,"nav_search")} active={false} open={sideOpen} onClick={()=>{setShowSearch(true);if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-chart-area-line" label="Trésorerie" active={page==="tresorerie"} open={sideOpen} onClick={()=>{setPage("tresorerie");if(isMobile)setMobileMenuOpen(false);}}/>
-          <SBtn icon="ti-file-report" label="Rapport Hebdo" active={page==="rapport"} open={sideOpen} onClick={()=>{setPage("rapport");if(isMobile)setMobileMenuOpen(false);}}/>
+          <SBtn icon="ti-file-report" label="Weekly Report" active={page==="rapport"} open={sideOpen} onClick={()=>{setPage("rapport");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-receipt" label="Catalogue & Devis" active={page==="catalogue"} open={sideOpen} onClick={()=>{setPage("catalogue");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-files" label="Documents" active={page==="documents"} open={sideOpen} onClick={()=>{setPage("documents");if(isMobile)setMobileMenuOpen(false);}}/>
 
@@ -1105,7 +1105,7 @@ export default function App(){
               <div style={{display:"flex",gap:4}}>
                 {session?.role==="admin"&&<button onClick={()=>setShowUserMgr(true)} title="Gérer les accès" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-users" style={{fontSize:14}} aria-hidden="true"/></button>}
                 <button onClick={logout} title="Se déconnecter" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-logout" style={{fontSize:14}} aria-hidden="true"/></button>
-                {session?.role==="admin"&&<button onClick={()=>setPage("logs")} title="Logs d'activité" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-activity" style={{fontSize:14}} aria-hidden="true"/></button>}
+                {session?.role==="admin"&&<button onClick={()=>setPage("logs")} title="Activity Logs" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-activity" style={{fontSize:14}} aria-hidden="true"/></button>}
               </div>
             </div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -2949,7 +2949,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
     return new Date(o.date+"T00:00:00")>=periodStart;
   });
   const recentOrdersAmt=recentOrders.reduce((s:number,o:any)=>s+(+o.amount||0),0);
-  const periodLabel=orderPeriod===7?"7 jours":orderPeriod===30?"1 mois":orderPeriod===60?"2 mois":"3 mois";
+  const periodLabel=orderPeriod===7?"7 days":orderPeriod===30?"1 month":orderPeriod===60?"2 months":"3 months";
 
   // Monthly invoicing (current month)
   const thisMonth=today.getMonth();const thisYear=today.getFullYear();
@@ -2957,7 +2957,7 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const allInvoices=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_client:o._client,_po:o.poNumber,_so:o.soNumber})));
   // Dynamic invoice period
   const invPeriodStart=new Date(today);invPeriodStart.setDate(today.getDate()-invoicePeriod);
-  const invoicePeriodLabel=invoicePeriod===7?"7 jours":invoicePeriod===30?"1 mois":invoicePeriod===60?"2 mois":"3 mois";
+  const invoicePeriodLabel=invoicePeriod===7?"7 days":invoicePeriod===30?"1 month":invoicePeriod===60?"2 months":"3 months";
   const invoicesInPeriod=allInvoices.filter((i:any)=>{
     if(!i.date)return false;
     return new Date(i.date+"T00:00:00")>=invPeriodStart;
@@ -3176,7 +3176,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
 .leg-dot{width:10px;height:5px;border-radius:3px;}
 </style></head><body>
 <div class="no-print">
-  <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,.3)">${isFR?"🖨️ Imprimer / PDF":"🖨️ Print / PDF"}</button>
+  <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,.3)">${isFR?"🖨️ Print / PDF":"🖨️ Print / PDF"}</button>
   <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial">${isFR?"✕ Fermer":"✕ Close"}</button>
 </div>
 
@@ -3473,7 +3473,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
 </head><body>
 
 <div class="no-print">
-  <button onclick="window.print()" style="background:#0D9488;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,.3)">${isFR?"🖨️ Imprimer / PDF":"🖨️ Print / PDF"}</button>
+  <button onclick="window.print()" style="background:#0D9488;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial;box-shadow:0 2px 8px rgba(0,0,0,.3)">${isFR?"🖨️ Print / PDF":"🖨️ Print / PDF"}</button>
   <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial">${isFR?"✕ Fermer":"✕ Close"}</button>
 </div>
 
@@ -4093,24 +4093,24 @@ tr:nth-child(even) td{background:#F8FAFC;}
       {/* Header */}
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
         <div>
-          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Rapport Hebdomadaire</h1>
-          <p style={{margin:0,color:C.t3,fontSize:13}}>Saisie des activités · données commerciales auto-générées</p>
+          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Weekly Report</h1>
+          <p style={{margin:0,color:C.t3,fontSize:13}}>Activity log · auto-generated commercial data</p>
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
           {saveMsg&&<span style={{background:C.greenL,color:C.greenDk,padding:"8px 14px",borderRadius:C.r,fontSize:12,fontWeight:600,display:"flex",alignItems:"center"}}>{saveMsg}</span>}
           <button onClick={newReport} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",color:C.t2,border:`1px solid ${C.b}`,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-            <i className="ti ti-file-plus" style={{fontSize:15}} aria-hidden="true"/> Nouveau
+            <i className="ti ti-file-plus" style={{fontSize:15}} aria-hidden="true"/> New
           </button>
           <button onClick={()=>setShowHistory(!showHistory)} style={{display:"flex",alignItems:"center",gap:6,background:C.blueL,color:C.blueDk,border:`1px solid ${C.blue}30`,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",position:"relative"}}>
-            <i className="ti ti-history" style={{fontSize:15}} aria-hidden="true"/> Historique
+            <i className="ti ti-history" style={{fontSize:15}} aria-hidden="true"/> History
             {savedReports.length>0&&<span style={{background:C.blue,color:"#fff",borderRadius:99,fontSize:10,fontWeight:700,padding:"1px 6px",marginLeft:2}}>{savedReports.length}</span>}
           </button>
           <button onClick={saveReport} style={{display:"flex",alignItems:"center",gap:6,background:C.greenL,color:C.greenDk,border:`1px solid ${C.green}30`,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-            <i className="ti ti-device-floppy" style={{fontSize:15}} aria-hidden="true"/> Sauvegarder
+            <i className="ti ti-device-floppy" style={{fontSize:15}} aria-hidden="true"/> Save
           </button>
           <button onClick={printReport} style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",border:"none",borderRadius:C.r,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 15px rgba(37,99,235,.35)"}}>
             <i className="ti ti-printer" style={{fontSize:16}} aria-hidden="true"/>
-            Imprimer
+            Print
           </button>
         </div>
       </div>
@@ -4140,8 +4140,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
                   <div style={{fontWeight:700,fontSize:13,color:C.t1}}>{r.label}</div>
                   <div style={{fontSize:11,color:C.t3,marginTop:2}}>
                     Sauvegardé le {new Date(r.savedAt).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"})}
-                    {" · "}{(r.lastWeekItems?.filter((x:any)=>x.client||x.action).length||0)} activités semaine passée
-                    {" · "}{(r.thisWeekItems?.filter((x:any)=>x.client||x.action).length||0)} activités semaine en cours
+                    {" · "}{(r.lastWeekItems?.filter((x:any)=>x.client||x.action).length||0)} activities last week
+                    {" · "}{(r.thisWeekItems?.filter((x:any)=>x.client||x.action).length||0)} activities this week
                   </div>
                 </div>
                 <div style={{display:"flex",gap:6,flexShrink:0}}>
@@ -4162,8 +4162,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
       {/* Report settings */}
       <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 20px"}}>
         <div style={{fontSize:12,fontWeight:600,color:C.t1,marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <span style={{display:"flex",alignItems:"center",gap:6}}><i className="ti ti-settings" style={{fontSize:14,color:C.t3}} aria-hidden="true"/> Paramètres du rapport</span>
-          <span style={{fontSize:10,color:C.t3,fontStyle:"italic"}}>💾 Brouillon auto-sauvegardé</span>
+          <span style={{display:"flex",alignItems:"center",gap:6}}><i className="ti ti-settings" style={{fontSize:14,color:C.t3}} aria-hidden="true"/> Report settings</span>
+          <span style={{fontSize:10,color:C.t3,fontStyle:"italic"}}>💾 Draft auto-saved</span>
         </div>
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr",gap:12}}>
           <div>
@@ -4173,7 +4173,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
           </div>
           <div>
             <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>Période</label>
-            <input value={period} onChange={e=>setPeriod(e.target.value)} placeholder="ex: Mai 2026"
+            <input value={period} onChange={e=>setPeriod(e.target.value)} placeholder="e.g. June 2026"
               style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
         </div>
@@ -4181,9 +4181,9 @@ tr:nth-child(even) td{background:#F8FAFC;}
 
       {/* Period selector for orders */}
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:12,fontWeight:600,color:C.t2}}>Période commandes reçues :</span>
+        <span style={{fontSize:12,fontWeight:600,color:C.t2}}>Order period:</span>
         <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
-          {[{v:7,l:"7 jours"},{v:30,l:"1 mois"},{v:60,l:"2 mois"},{v:90,l:"3 mois"}].map(({v,l})=>(
+          {[{v:7,l:"7 days"},{v:30,l:"1 month"},{v:60,l:"2 months"},{v:90,l:"3 months"}].map(({v,l})=>(
             <button key={v} onClick={()=>setOrderPeriod(v)}
               style={{padding:"7px 16px",border:"none",borderRight:`1px solid ${C.b}`,
                 background:orderPeriod===v?C.blue:"transparent",
@@ -4198,9 +4198,9 @@ tr:nth-child(even) td{background:#F8FAFC;}
 
       {/* Period selector for invoices */}
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:12,fontWeight:600,color:C.t2}}>Période factures :</span>
+        <span style={{fontSize:12,fontWeight:600,color:C.t2}}>Invoice period:</span>
         <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
-          {[{v:7,l:"7 jours"},{v:30,l:"1 mois"},{v:60,l:"2 mois"},{v:90,l:"3 mois"}].map(({v,l})=>(
+          {[{v:7,l:"7 days"},{v:30,l:"1 month"},{v:60,l:"2 months"},{v:90,l:"3 months"}].map(({v,l})=>(
             <button key={v} onClick={()=>setInvoicePeriod(v)}
               style={{padding:"7px 16px",border:"none",borderRight:`1px solid ${C.b}`,
                 background:invoicePeriod===v?C.teal:"transparent",
@@ -4210,7 +4210,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
             </button>
           ))}
         </div>
-        <span style={{fontSize:11,color:C.t3}}>Depuis le {invPeriodStart.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}</span>
+        <span style={{fontSize:11,color:C.t3}}>Since {invPeriodStart.toLocaleDateString("en-GB",{day:"numeric",month:"long"})}</span>
       </div>
 
       {/* Auto data preview */}
@@ -4272,11 +4272,11 @@ tr:nth-child(even) td{background:#F8FAFC;}
         <div style={{background:"#fff",borderRadius:C.r,border:`2px solid ${showFactMois?"#0D9488":C.b}`,boxShadow:C.sh,padding:"14px 16px",cursor:"pointer",transition:"border-color .15s"}}
           onClick={()=>setShowFactMois(o=>!o)}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-            <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Facturé {MONTH_NAMES[thisMonth]}</div>
+            <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>{["January","February","March","April","May","June","July","August","September","October","November","December"][thisMonth]}</div>
             <i className={`ti ${showFactMois?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:13,color:"#0D9488"}} aria-hidden="true"/>
           </div>
           <div style={{fontSize:18,fontWeight:800,color:"#0D9488"}}>{fmtK(invoicedThisMonth)} €</div>
-          <div style={{fontSize:11,color:C.t3,marginTop:3}}>Ce mois · {invoicesThisMonth.length} fact.</div>
+          <div style={{fontSize:11,color:C.t3,marginTop:3}}>This month · {invoicesThisMonth.length} inv.</div>
           {showFactMois&&invoicesThisMonth.length>0&&(
             <div style={{marginTop:10,borderTop:`1px solid ${C.b}`,paddingTop:8,display:"flex",flexDirection:"column",gap:4}} onClick={(e:any)=>e.stopPropagation()}>
               {invoicesThisMonth.map((inv:any,i:number)=>(
@@ -4386,8 +4386,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
           <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
             <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div>
-                <span style={{fontWeight:600,fontSize:13,color:C.t1}}>🧾 Factures prévues (Expected Invoicing)</span>
-                <span style={{fontSize:11,color:C.t3,marginLeft:10}}>Sélectionne les open orders à facturer ce mois / mois prochain</span>
+                <span style={{fontWeight:600,fontSize:13,color:C.t1}}>🧾 Planned Invoices (Expected Invoicing)</span>
+                <span style={{fontSize:11,color:C.t3,marginLeft:10}}>Select open orders to invoice this month / next month</span>
               </div>
               {totalPlanned>0&&<span style={{background:C.tealL,color:C.teal,fontWeight:700,fontSize:13,padding:"4px 12px",borderRadius:6}}>{fmtK(totalPlanned)} €</span>}
             </div>
@@ -4401,9 +4401,9 @@ tr:nth-child(even) td{background:#F8FAFC;}
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>Customer</th>
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>PO #</th>
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>S/O #</th>
-                      <th style={{padding:"8px 14px",textAlign:"center",color:C.t3,fontWeight:500,fontSize:11}}>Dispo prévue</th>
-                      <th style={{padding:"8px 14px",textAlign:"right",color:C.t3,fontWeight:500,fontSize:11}}>Reste à fact.</th>
-                      <th style={{padding:"8px 14px",textAlign:"right",color:C.teal,fontWeight:600,fontSize:11}}>Montant prévu (€)</th>
+                      <th style={{padding:"8px 14px",textAlign:"center",color:C.t3,fontWeight:500,fontSize:11}}>Expected Dispo</th>
+                      <th style={{padding:"8px 14px",textAlign:"right",color:C.t3,fontWeight:500,fontSize:11}}>Remaining</th>
+                      <th style={{padding:"8px 14px",textAlign:"right",color:C.teal,fontWeight:600,fontSize:11}}>Planned Amount (€)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4470,7 +4470,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
         onAdd={()=>setLastWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
         onUpdate={(idx:number,field:string,val:string)=>setLastWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
         onRemove={(idx:number)=>setLastWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
-        title="📋 Semaine passée — Activités terrain" color={C.purple} isMobile={isMobile}/>
+        title="📋 Last Week — Field Activity" color={C.purple} isMobile={isMobile}/>
       <ActivityTable
         items={thisWeekItems}
         onAdd={()=>setThisWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
@@ -4482,21 +4482,21 @@ tr:nth-child(even) td{background:#F8FAFC;}
       <div style={{background:"#fff",borderRadius:C.rLg,border:`2px solid #1D4ED8`,boxShadow:C.shMd,overflow:"hidden"}}>
         <div style={{padding:"12px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",gap:8,background:"#EFF6FF"}}>
           <i className="ti ti-calendar-stats" style={{fontSize:16,color:"#1D4ED8"}} aria-hidden="true"/>
-          <span style={{fontWeight:700,fontSize:13,color:"#1D4ED8"}}>Rapport sur une période personnalisée</span>
+          <span style={{fontWeight:700,fontSize:13,color:"#1D4ED8"}}>Custom Period Report</span>
         </div>
         <div style={{padding:"14px 18px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Date début</label>
+            <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Start date</label>
             <input type="date" value={yearlyFrom} onChange={e=>setYearlyFrom(e.target.value)}
               style={{padding:"7px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit"}}/>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Date fin</label>
+            <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>End date</label>
             <input type="date" value={yearlyTo} onChange={e=>setYearlyTo(e.target.value)}
               style={{padding:"7px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit"}}/>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Langue</label>
+            <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Language</label>
             <div style={{display:"flex",background:C.page,border:`1px solid ${C.b}`,borderRadius:C.rSm,overflow:"hidden"}}>
               {(["fr","en"] as ("fr"|"en")[]).map(l=>(
                 <button key={l} onClick={()=>setYearlyLang(l)}
@@ -4512,8 +4512,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
               {([
                 {label:`YTD ${new Date().getFullYear()}`, f:`${new Date().getFullYear()}-01-01`, t:todayStr()},
                 {label:`${new Date().getFullYear()-1}`,   f:`${new Date().getFullYear()-1}-01-01`, t:`${new Date().getFullYear()-1}-12-31`},
-                {label:"6 mois",  f:addDays(todayStr(),-180), t:todayStr()},
-                {label:"12 mois", f:addDays(todayStr(),-365), t:todayStr()},
+                {label:"6 months",f:addDays(todayStr(),-180), t:todayStr()},
+                {label:"12 months",f:addDays(todayStr(),-365), t:todayStr()},
               ] as {label:string,f:string,t:string}[]).map(({label,f,t})=>(
                 <button key={label} onClick={()=>{setYearlyFrom(f);setYearlyTo(t);}}
                   style={{padding:"7px 12px",background:yearlyFrom===f&&yearlyTo===t?"#DBEAFE":"#F1F5F9",color:yearlyFrom===f&&yearlyTo===t?"#1D4ED8":C.t2,border:"none",borderRadius:C.rSm,fontSize:11,fontWeight:600,cursor:"pointer"}}>
@@ -4527,12 +4527,12 @@ tr:nth-child(even) td{background:#F8FAFC;}
             <button onClick={()=>printYearlyReport(yearlyLang,yearlyFrom,yearlyTo)}
               style={{display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,#1D4ED8,#7C3AED)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"9px 20px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 14px rgba(29,78,216,.4)",whiteSpace:"nowrap"}}>
               <i className="ti ti-printer" style={{fontSize:15}} aria-hidden="true"/>
-              {yearlyLang==="fr"?"Générer le rapport":"Generate report"}
+              "Generate report"
             </button>
           </div>
         </div>
         <div style={{padding:"6px 18px 10px",fontSize:11,color:C.t3}}>
-          Période : <strong style={{color:"#1D4ED8"}}>{fmtD(yearlyFrom)}</strong> → <strong style={{color:"#1D4ED8"}}>{fmtD(yearlyTo)}</strong> · Langue : <strong style={{color:"#1D4ED8"}}>{yearlyLang.toUpperCase()}</strong>
+          Period: <strong style={{color:"#1D4ED8"}}>{fmtD(yearlyFrom)}</strong> → <strong style={{color:"#1D4ED8"}}>{fmtD(yearlyTo)}</strong> · Language: <strong style={{color:"#1D4ED8"}}>{yearlyLang.toUpperCase()}</strong>
         </div>
       </div>
 
@@ -4541,7 +4541,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
         <button onClick={printReport}
           style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(37,99,235,.4)"}}>
           <i className="ti ti-printer" style={{fontSize:18}} aria-hidden="true"/>
-          Générer & Imprimer le rapport PDF (5 pages)
+          Générer & Print le rapport PDF (5 pages)
         </button>
         <button onClick={()=>printMonthlyReport("en")}
           style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#0D9488,#0369A1)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(13,148,136,.4)"}}>
@@ -4551,7 +4551,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
         <button onClick={()=>printMonthlyReport("fr")}
           style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#7C3AED,#0D9488)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(124,58,237,.4)"}}>
           <i className="ti ti-calendar-month" style={{fontSize:18}} aria-hidden="true"/>
-          Rapport mensuel (FR)
+          Monthly Report (FR)
         </button>
 
 
@@ -4808,7 +4808,7 @@ function ManualProductEntry({products,saveProducts}:any){
         prices:[priceEntry],
         lastUpdated:today
       },...updated];
-      setMsg(`✓ Nouveau produit ajouté : ${pn.trim()}`);
+      setMsg(`✓ New produit ajouté : ${pn.trim()}`);
     }
     await saveProducts(updated);
     setPn("");setDesc("");setPrice("");setCustomer("");
@@ -4991,7 +4991,7 @@ function CatEditModal({product,onSave,onClose}:any){
             {/* Add new price */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 130px 120px 32px",gap:6,alignItems:"end"}}>
               <div>
-                <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>Nouveau prix (€)</label>
+                <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>New prix (€)</label>
                 <input value={newPrice} onChange={e=>setNewPrice(e.target.value)} type="number" step="0.01" placeholder="ex: 1250.00"
                   style={{width:"100%",padding:"7px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
               </div>
@@ -5535,7 +5535,7 @@ function CataloguePage({clients,lang,isMobile}:any){
 </head>
 <body>
 <div class="no-print" style="position:fixed;top:10px;right:10px;z-index:9999;display:flex;gap:8px;background:rgba(255,255,255,.92);padding:8px 10px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.2)">
-  <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">&#128424; Imprimer / PDF</button>
+  <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">&#128424; Print / PDF</button>
   <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">&times; Fermer</button>
 </div>
 <table style="width:100%;margin-bottom:14px">
@@ -5851,7 +5851,7 @@ function CataloguePage({clients,lang,isMobile}:any){
   );
 
   const TABS=[
-    {id:"devis",label:"Nouveau devis",icon:"ti-file-plus"},
+    {id:"devis",label:"New devis",icon:"ti-file-plus"},
     {id:"catalogue",label:"Catalogue",icon:"ti-database"},
     {id:"upload",label:"Importer prix",icon:"ti-upload"},
   ];
@@ -6129,7 +6129,7 @@ function CataloguePage({clients,lang,isMobile}:any){
               </button>
               <button onClick={()=>{setQLines([{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1}]);setQCustomer("");setQNotes("");setQRef(`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);}}
                 style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:"#F1F5F9",color:C.t3,border:"none",borderRadius:C.r,padding:"8px",fontSize:12,cursor:"pointer"}}>
-                <i className="ti ti-refresh" style={{fontSize:13}} aria-hidden="true"/> Nouveau devis
+                <i className="ti ti-refresh" style={{fontSize:13}} aria-hidden="true"/> New devis
               </button>
             </div>
           </div>
