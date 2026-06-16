@@ -3849,7 +3849,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
     <div>
       <div style="font-size:10px;color:#2563EB;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">1 / 4</div>
       <div class="section-title">📦 ORDER INTAKE</div>
-      <div class="section-sub">— ${period} · Orders received sur ${periodLabel}</div>
+      <div class="section-sub">— ${period} · Orders received over the last ${periodLabel}</div>
     </div>
     <div class="section-meta">
       <div class="section-badge">${weekLabel} · ${period}</div>
@@ -3879,13 +3879,16 @@ tr:nth-child(even) td{background:#F8FAFC;}
     <div>
       <div class="col-header">📦 ORDERS RECEIVED — ${period}</div>
       <table>
-        <thead><tr><th>Customer</th><th>S/O Number</th><th style="text-align:right">Amount (K€)</th></tr></thead>
+        <thead><tr><th>Customer</th><th>S/O Number</th><th style="text-align:center">Date</th><th style="text-align:right">Amount (K€)</th></tr></thead>
         <tbody>
           ${recentOrders.length===0
-            ?'<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:16px">No orders this week</td></tr>'
-            :recentOrders.map((o:any)=>`<tr><td style="font-weight:600">${o._client}</td><td style="font-family:monospace;font-size:9px">${o.soNumber||"—"}</td><td style="text-align:right;font-weight:600;color:#2563EB">${fmtK(+o.amount||0)}</td></tr>`).join("")
+            ?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">No orders this period</td></tr>'
+            :recentOrders.map((o:any)=>{
+              const d=o.date?new Date(o.date+"T00:00:00").toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—";
+              return `<tr><td style="font-weight:600">${o._client}</td><td style="font-family:monospace;font-size:9px">${o.soNumber||"—"}</td><td style="text-align:center;font-size:9px;color:#6B7280">${d}</td><td style="text-align:right;font-weight:600;color:#2563EB">${fmtK(+o.amount||0)}</td></tr>`;
+            }).join("")
           }
-          <tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmtK(recentOrdersAmt)}</td></tr>
+          <tr class="total-row"><td colspan="3">TOTAL</td><td style="text-align:right">${fmtK(recentOrdersAmt)}</td></tr>
         </tbody>
       </table>
     </div>
@@ -3977,7 +3980,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
       </table>
     </div>
     <div>
-      <div class="col-header">📅 EXPECTED INVOICING — ${MONTH_NAMES[thisMonth].toUpperCase()} / ${MONTH_NAMES[thisMonth===11?0:thisMonth+1].toUpperCase()}</div>
+      <div class="col-header">📅 EXPECTED INVOICING — ${["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"][thisMonth]} / ${["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"][thisMonth===11?0:thisMonth+1]}</div>
       <table>
         <thead><tr><th>Customer</th><th>PO #</th><th>S/O #</th><th style="text-align:right">Planned amount (K€)</th></tr></thead>
         <tbody>
@@ -4190,7 +4193,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
             </button>
           ))}
         </div>
-        <span style={{fontSize:11,color:C.t3}}>Depuis le {periodStart.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}</span>
+        <span style={{fontSize:11,color:C.t3}}>Since {periodStart.toLocaleDateString("en-GB",{day:"numeric",month:"long"})}</span>
       </div>
 
       {/* Period selector for invoices */}
