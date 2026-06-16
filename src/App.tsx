@@ -4562,7 +4562,7 @@ window.addEventListener('load', function(){
         <button onClick={printReport}
           style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,${C.blue},${C.purple})`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(37,99,235,.4)"}}>
           <i className="ti ti-printer" style={{fontSize:18}} aria-hidden="true"/>
-          Générer & Print le rapport PDF (5 pages)
+          Générer & Print le rapport PDF (4 sections)
         </button>
         <button onClick={()=>printMonthlyReport("en")}
           style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#0D9488,#0369A1)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(13,148,136,.4)"}}>
