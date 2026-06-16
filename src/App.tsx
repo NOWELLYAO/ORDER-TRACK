@@ -3148,7 +3148,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:14px;color:#0D1B2A;backgr
 .kpi-3{grid-template-columns:repeat(3,1fr);}
 .kpi-4{grid-template-columns:repeat(4,1fr);}
 .kpi{border-radius:8px;padding:10px 12px;border:1px solid #E5EAF0;}
-.kpi-label{font-size:12px;color:#8FA0B3;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
+.kpi-label{font-size:11px;color:#8FA0B3;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
 .kpi-val{font-size:18px;font-weight:900;line-height:1;}
 .kpi-sub{font-size:9px;color:#8FA0B3;margin-top:3px;}
 .bar{height:6px;border-radius:99px;background:#E5EAF0;overflow:hidden;margin-top:6px;}
@@ -3447,7 +3447,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;backgr
 /* Tables */
 table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:8px;}
 th{background:#0D1B2A;color:#fff;padding:6px 8px;text-align:left;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}
-td{padding:7px 10px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
+td{padding:6px 10px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
 tr:nth-child(even) td{background:#F8FAFC;}
 .total-row td{background:#0D1B2A!important;color:#fff!important;font-weight:700;}
 .section-label td{background:#F0FDFA!important;color:#0D9488!important;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.05em;}
@@ -3757,10 +3757,10 @@ tr:nth-child(even) td{background:#F8FAFC;}
   .page:last-child{page-break-after:avoid;break-after:avoid;}
   
   /* Cover page */
-  .cover{background:linear-gradient(160deg,#0D1B2A 0%,#1E3A5F 40%,#2563EB 100%);color:#fff;display:flex!important;flex-direction:column!important;justify-content:center;align-items:center;text-align:center;min-height:250mm;}
+  .cover{background:linear-gradient(160deg,#0D1B2A 0%,#1E3A5F 40%,#2563EB 100%);color:#fff;display:flex!important;flex-direction:column!important;justify-content:center;align-items:center;text-align:center;min-height:230mm;}
   .cover-logo{font-size:11px;opacity:.5;letter-spacing:.1em;text-transform:uppercase;}
   .cover-title{font-size:56px;font-weight:900;letter-spacing:-.02em;line-height:1.05;text-shadow:0 4px 20px rgba(0,0,0,.5);margin:24px 0 10px;}
-  .cover-sub{font-size:20px;opacity:.9;margin-top:8px;font-weight:400;letter-spacing:.03em;}
+  .cover-sub{font-size:20px;opacity:.9;margin-top:8px;font-weight:400;}
   .cover-week{font-size:100px;font-weight:900;color:rgba(255,255,255,.08);position:absolute;right:6mm;bottom:8mm;letter-spacing:-.04em;}
   .cover-meta{display:flex;gap:14px;align-items:center;justify-content:center;flex-wrap:wrap;margin:28px 0 24px;}
   .cover-badge{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.45);border-radius:8px;padding:10px 20px;font-size:15px;font-weight:700;}
@@ -3771,21 +3771,21 @@ tr:nth-child(even) td{background:#F8FAFC;}
 
   /* Section pages */
   .section-header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:7px;border-bottom:3px solid #0D1B2A;margin-bottom:10px;}
-  .section-title{font-size:24px;font-weight:900;color:#0D1B2A;letter-spacing:-.01em;}
-  .section-sub{font-size:15px;color:#8FA0B3;margin-top:2px;}
+  .section-title{font-size:22px;font-weight:900;color:#0D1B2A;letter-spacing:-.01em;}
+  .section-sub{font-size:14px;color:#8FA0B3;margin-top:2px;}
   .section-meta{text-align:right;font-size:13px;color:#8FA0B3;}
-  .section-badge{font-size:14px;font-weight:600;color:#2563EB;background:#DBEAFE;padding:4px 12px;border-radius:4px;}
+  .section-badge{font-size:13px;font-weight:600;color:#2563EB;background:#DBEAFE;padding:4px 12px;border-radius:4px;}
 
   /* KPI cards */
   .kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;}
   .kpi{background:#F8FAFC;border:1px solid #E5EAF0;border-radius:8px;padding:8px 12px;}
   .kpi-label{font-size:9px;color:#8FA0B3;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
-  .kpi-val{font-size:26px;font-weight:800;color:#0D1B2A;}
-  .kpi-sub{font-size:12px;color:#8FA0B3;margin-top:3px;}
+  .kpi-val{font-size:24px;font-weight:800;color:#0D1B2A;}
+  .kpi-sub{font-size:12px;color:#8FA0B3;margin-top:2px;}
 
   /* Tables */
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  th{background:#0D1B2A;color:#fff;padding:7px 10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;}
+  th{background:#0D1B2A;color:#fff;padding:6px 10px;text-align:left;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;}
   td{padding:5px 8px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
   tr:nth-child(even) td{background:#F8FAFC;}
   .subtotal td{background:#EFF6FF!important;font-weight:700;color:#1D4ED8;}
@@ -3796,23 +3796,20 @@ tr:nth-child(even) td{background:#F8FAFC;}
   .priority-badge{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
   .status-icon{font-size:16px;flex-shrink:0;}
   .activity-content{flex:1;}
-  .activity-client{font-weight:700;font-size:16px;color:#0D1B2A;}
-  .activity-desc{font-size:14px;color:#4A5568;margin-top:3px;}
+  .activity-client{font-weight:700;font-size:15px;color:#0D1B2A;}
+  .activity-desc{font-size:13px;color:#4A5568;margin-top:2px;}
 
   /* Two column layout */
   .two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-  .col-header{font-size:13px;font-weight:700;color:#0D1B2A;padding:5px 0;border-bottom:2px solid #0D1B2A;margin-bottom:8px;}
+  .col-header{font-size:13px;font-weight:700;color:#0D1B2A;padding:4px 0;border-bottom:2px solid #0D1B2A;margin-bottom:6px;}
 
   /* Footer */
   .footer{position:absolute;bottom:8mm;left:14mm;right:14mm;display:flex;justify-content:space-between;font-size:12px;color:#8FA0B3;border-top:1px solid #E5EAF0;padding-top:6px;}
 
   @media print{
-    body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:14px;}
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:14px;margin:0;padding:0;}
     .no-print{display:none!important}
-    @page{margin:0;size:A4}
-    html,body{margin:0;padding:0}
-    .page{page-break-after:always;break-after:page;}
-    .page:last-child{page-break-after:avoid;}
+    @page{margin:12mm;size:A4}
   }
 </style>
 </head><body>
