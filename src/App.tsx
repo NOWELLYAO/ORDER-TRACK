@@ -3753,7 +3753,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
   body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;background:#fff;}
-  .page{width:297mm;height:277mm;padding:10mm 12mm 10mm;display:flex;flex-direction:column;page-break-after:always;position:relative;break-after:page;overflow:hidden;}
+  .page{width:297mm;padding:10mm 12mm 14mm;display:flex;flex-direction:column;page-break-after:always;position:relative;break-after:page;}
   .page:last-child{page-break-after:avoid;break-after:avoid;}
   
   /* Cover page */
@@ -4074,11 +4074,11 @@ tr:nth-child(even) td{background:#F8FAFC;}
 </div>
 
 
-<div style='position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px'>
+<div class='no-print' style='position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px'>
 <button onclick='window.print()' style='background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)'>🖨️ Print / PDF</button>
 <button onclick='window.close()' style='background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif'>✕ Close</button>
 </div>
-<style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}}</style>
+<style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}html,body{margin:0;padding:0}.cover{min-height:277mm}}</style>
 </body></html>`);
     w.document.close();
 
@@ -5836,11 +5836,11 @@ function CataloguePage({clients,lang,isMobile}:any){
     <span>Ce devis est valable ${qValidity} jours à compter de la date d'émission.</span>
     <span>GRUNDFOS — kyao@grundfos.com</span>
   </div>
-<div style='position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px'>
+<div class='no-print' style='position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px'>
 <button onclick='window.print()' style='background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)'>🖨️ Print / PDF</button>
 <button onclick='window.close()' style='background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif'>✕ Close</button>
 </div>
-<style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}}</style>
+<style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}html,body{margin:0;padding:0}.cover{min-height:277mm}}</style>
 </body></html>`);
     w.document.close();
   };
@@ -7244,7 +7244,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
     <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
     <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">✕ Close</button>
     </div>
-    <style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}}</style>
+    <style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}html,body{margin:0;padding:0}.cover{min-height:277mm}}</style>
     <div class="header">
       <div><div class="logo">OrderTrack</div><h1>${title}</h1></div>
       <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Période : ${fmtD(from)} → ${fmtD(to)}</div>
