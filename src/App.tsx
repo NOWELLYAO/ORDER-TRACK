@@ -3753,11 +3753,11 @@ tr:nth-child(even) td{background:#F8FAFC;}
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
   body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#0D1B2A;background:#fff;}
-  .page{width:297mm;padding:10mm 12mm 14mm;display:flex;flex-direction:column;page-break-after:always;position:relative;break-after:page;}
-  .page:last-child{page-break-after:avoid;break-after:avoid;}
+  .page{width:297mm;padding:10mm 12mm 14mm;display:flex;flex-direction:column;position:relative;}
+  
   
   /* Cover page */
-  .cover{background:linear-gradient(160deg,#1E3A5F 0%,#2563EB 55%,#3B82F6 100%);color:#fff;justify-content:space-between;}
+  .cover{background:linear-gradient(160deg,#1E3A5F 0%,#2563EB 55%,#3B82F6 100%);color:#fff;justify-content:space-between;min-height:200mm;}
   .cover-logo{font-size:11px;opacity:.5;letter-spacing:.1em;text-transform:uppercase;}
   .cover-title{font-size:38px;font-weight:900;letter-spacing:-.02em;line-height:1;text-shadow:0 2px 8px rgba(0,0,0,.3);}
   .cover-sub{font-size:16px;opacity:.95;margin-top:8px;font-weight:500;}
@@ -3808,8 +3808,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
 
   @media print{
     body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:10px;}
-    .page{page-break-after:always;break-after:page;}
-    .page:last-child{page-break-after:avoid;}
+    .no-print{display:none!important}
+    @page{margin:10mm;size:A4}
   }
 </style>
 </head><body>
@@ -4078,7 +4078,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
 <button onclick='window.print()' style='background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)'>🖨️ Print / PDF</button>
 <button onclick='window.close()' style='background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif'>✕ Close</button>
 </div>
-<style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}html,body{margin:0;padding:0}.cover{min-height:277mm}}</style>
+<style>@media print{.no-print{display:none!important}}</style>
 </body></html>`);
     w.document.close();
 
@@ -5840,7 +5840,7 @@ function CataloguePage({clients,lang,isMobile}:any){
 <button onclick='window.print()' style='background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)'>🖨️ Print / PDF</button>
 <button onclick='window.close()' style='background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif'>✕ Close</button>
 </div>
-<style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}html,body{margin:0;padding:0}.cover{min-height:277mm}}</style>
+<style>@media print{.no-print{display:none!important}}</style>
 </body></html>`);
     w.document.close();
   };
@@ -7244,7 +7244,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
     <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
     <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">✕ Close</button>
     </div>
-    <style>@media print{.no-print{display:none!important}@page{margin:0;size:A4}html,body{margin:0;padding:0}.cover{min-height:277mm}}</style>
+    <style>@media print{.no-print{display:none!important}}</style>
     <div class="header">
       <div><div class="logo">OrderTrack</div><h1>${title}</h1></div>
       <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Période : ${fmtD(from)} → ${fmtD(to)}</div>
