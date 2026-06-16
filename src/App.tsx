@@ -3757,7 +3757,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
   .page:last-child{page-break-after:avoid;break-after:avoid;}
   
   /* Cover page */
-  .cover{background:linear-gradient(160deg,#0D1B2A 0%,#1E3A5F 40%,#2563EB 100%);color:#fff;display:flex!important;flex-direction:column!important;justify-content:center;align-items:center;text-align:center;}
+  .cover{background:linear-gradient(160deg,#0D1B2A 0%,#1E3A5F 40%,#2563EB 100%);color:#fff;display:flex!important;flex-direction:column!important;justify-content:center;align-items:center;text-align:center;min-height:250mm;}
   .cover-logo{font-size:11px;opacity:.5;letter-spacing:.1em;text-transform:uppercase;}
   .cover-title{font-size:56px;font-weight:900;letter-spacing:-.02em;line-height:1.05;text-shadow:0 4px 20px rgba(0,0,0,.5);margin:24px 0 10px;}
   .cover-sub{font-size:20px;opacity:.9;margin-top:8px;font-weight:400;letter-spacing:.03em;}
@@ -3807,9 +3807,10 @@ tr:nth-child(even) td{background:#F8FAFC;}
   .footer{position:absolute;bottom:8mm;left:14mm;right:14mm;display:flex;justify-content:space-between;font-size:12px;color:#8FA0B3;border-top:1px solid #E5EAF0;padding-top:6px;}
 
   @media print{
-    body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:14px;background:#fff;}
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:14px;}
     .no-print{display:none!important}
-    @page{margin:10mm;size:A4}
+    @page{margin:0;size:A4}
+    html,body{margin:0;padding:0}
     .page{page-break-after:always;break-after:page;}
     .page:last-child{page-break-after:avoid;}
   }
@@ -3849,7 +3850,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
 <div class="page">
   <div class="section-header">
     <div>
-      <div style="font-size:10px;color:#2563EB;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">1 / 4</div>
+      <div style="font-size:13px;color:#2563EB;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">1 / 4</div>
       <div class="section-title">📦 ORDER INTAKE</div>
       <div class="section-sub">— ${period} · Orders received over the last ${periodLabel}</div>
     </div>
@@ -3887,7 +3888,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
             ?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">No orders this period</td></tr>'
             :recentOrders.map((o:any)=>{
               const d=o.date?new Date(o.date+"T00:00:00").toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—";
-              return `<tr><td style="font-weight:600">${o._client}</td><td style="font-family:monospace;font-size:9px">${o.soNumber||"—"}</td><td style="text-align:center;font-size:9px;color:#6B7280">${d}</td><td style="text-align:right;font-weight:600;color:#2563EB">${fmtK(+o.amount||0)}</td></tr>`;
+              return `<tr><td style="font-weight:600">${o._client}</td><td style="font-family:monospace;font-size:13px">${o.soNumber||"—"}</td><td style="text-align:center;font-size:9px;color:#6B7280">${d}</td><td style="text-align:right;font-weight:600;color:#2563EB">${fmtK(+o.amount||0)}</td></tr>`;
             }).join("")
           }
           <tr class="total-row"><td colspan="3">TOTAL</td><td style="text-align:right">${fmtK(recentOrdersAmt)}</td></tr>
@@ -3924,7 +3925,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
 <div class="page">
   <div class="section-header">
     <div>
-      <div style="font-size:10px;color:#0D9488;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">2 / 4</div>
+      <div style="font-size:13px;color:#0D9488;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">2 / 4</div>
       <div class="section-title">🧾 INVOICING — ${invoicePeriodLabel.toUpperCase()}</div>
       <div class="section-sub">— Invoices issued over the last ${invoicePeriodLabel} · Since ${invPeriodStart.toLocaleDateString("en-GB",{day:"numeric",month:"long"})}</div>
     </div>
@@ -3969,9 +3970,9 @@ tr:nth-child(even) td{background:#F8FAFC;}
               Object.keys(byC).sort().forEach(c=>{
                 const tot=byC[c].reduce((s:number,i:any)=>s+(+i.amount||0),0);
                 // Customer header
-                r2+=`<tr style="background:#F0FDFA"><td colspan="3" style="font-weight:700;color:#0D9488;font-size:10px">📁 ${c}</td><td style="text-align:right;font-weight:700;color:#0D9488">${fmtK(tot)}</td></tr>`;
+                r2+=`<tr style="background:#F0FDFA"><td colspan="3" style="font-weight:700;color:#0D9488;font-size:13px">📁 ${c}</td><td style="text-align:right;font-weight:700;color:#0D9488">${fmtK(tot)}</td></tr>`;
                 byC[c].forEach((i:any)=>{
-                  r2+=`<tr><td style="padding-left:16px;color:#4A5568">${i.invoiceNumber||"—"}</td><td style="font-family:monospace;font-size:9px">${i._po||"—"}</td><td style="color:#8FA0B3">${fmtD(i.date)}</td><td style="text-align:right;color:#0D9488">${fmtK(+i.amount||0)}</td></tr>`;
+                  r2+=`<tr><td style="padding-left:16px;color:#4A5568">${i.invoiceNumber||"—"}</td><td style="font-family:monospace;font-size:13px">${i._po||"—"}</td><td style="color:#8FA0B3">${fmtD(i.date)}</td><td style="text-align:right;color:#0D9488">${fmtK(+i.amount||0)}</td></tr>`;
                 });
               });
               r2+=`<tr class="total-row"><td colspan="3">PERIOD TOTAL</td><td style="text-align:right">${fmtK(invoicedInPeriod)}</td></tr>`;
@@ -3994,8 +3995,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
               plannedInvoices.forEach((p:any)=>{if(!byC3[p.client])byC3[p.client]=[];byC3[p.client].push(p);});
               let r5=Object.keys(byC3).sort().map(c=>{
                 const cTot=byC3[c].reduce((s:number,p:any)=>s+(+p.amount||0),0);
-                const rows=byC3[c].map((p:any)=>`<tr><td style="padding-left:16px;color:#4A5568">${p.client}</td><td style="font-family:monospace;font-size:9px">${p.poNumber||"—"}</td><td style="font-family:monospace;font-size:9px">${p.soNumber||"—"}</td><td style="text-align:right;color:#D97706;font-weight:600">${fmtK(+p.amount||0)}</td></tr>`).join("");
-                return `<tr style="background:#FFF7ED"><td colspan="3" style="font-weight:700;color:#D97706;font-size:10px">📁 ${c}</td><td style="text-align:right;font-weight:700;color:#D97706">${fmtK(cTot)}</td></tr>${rows}`;
+                const rows=byC3[c].map((p:any)=>`<tr><td style="padding-left:16px;color:#4A5568">${p.client}</td><td style="font-family:monospace;font-size:13px">${p.poNumber||"—"}</td><td style="font-family:monospace;font-size:13px">${p.soNumber||"—"}</td><td style="text-align:right;color:#D97706;font-weight:600">${fmtK(+p.amount||0)}</td></tr>`).join("");
+                return `<tr style="background:#FFF7ED"><td colspan="3" style="font-weight:700;color:#D97706;font-size:13px">📁 ${c}</td><td style="text-align:right;font-weight:700;color:#D97706">${fmtK(cTot)}</td></tr>${rows}`;
               }).join("");
               const grand=plannedInvoices.reduce((s:number,p:any)=>s+(+p.amount||0),0);
               r5+=`<tr class="total-row"><td colspan="3">PLANNED TOTAL</td><td style="text-align:right">${fmtK(grand)}</td></tr>`;
@@ -4017,7 +4018,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
 <div class="page">
   <div class="section-header">
     <div>
-      <div style="font-size:10px;color:#7C3AED;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">3 / 4</div>
+      <div style="font-size:13px;color:#7C3AED;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">3 / 4</div>
       <div class="section-title">📋 LAST WEEK — Field Activity</div>
       <div class="section-sub">Last week field activities</div>
     </div>
@@ -4048,7 +4049,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
 <div class="page">
   <div class="section-header">
     <div>
-      <div style="font-size:10px;color:#059669;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">4 / 4</div>
+      <div style="font-size:13px;color:#059669;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px">4 / 4</div>
       <div class="section-title">📋 THIS WEEK — Field Activity</div>
       <div class="section-sub">Planned activity</div>
     </div>
