@@ -1010,6 +1010,10 @@ export default function App(){
   const getConfig=(c:string)=>configs[c]||{accountNumber:"",termId:"net60",customDays:0};
   const [blockDays,setBlockDays]=useState<number>(()=>{try{const v=localStorage.getItem(DELIVERY_BLOCK_KEY);return v?+v:DEFAULT_BLOCK_DAYS;}catch{return DEFAULT_BLOCK_DAYS;}});
   const saveBlockDays=(d:number)=>{setBlockDays(d);try{localStorage.setItem(DELIVERY_BLOCK_KEY,String(d));}catch{}};
+  // Computed at App level so it's available everywhere
+  const blockedClientsMap:Record<string,{blocked:boolean,maxDays:number,invoices:any[]}>=
+    Object.fromEntries((clients||[]).map(cl=>[cl,getDeliveryBlock(data?.[cl]||[],blockDays)]));
+  const blockedClientsList=(clients||[]).filter(cl=>blockedClientsMap[cl]?.blocked);
 
   // ── Compute global alerts (for ticker on all pages) ──────────────
   const _allOrders=getAllOrders();
@@ -1021,7 +1025,8 @@ export default function App(){
     const _echuesAmt=_echues.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
     if(_echues.length>0) alerts.push({level:"critical",icon:"ti-clock-exclamation",text:`${_echues.length} facture${_echues.length>1?"s":""} échue${_echues.length>1?"s":""}`,detail:`${fmt(_echuesAmt)} € à recouvrer`});
     // Blocked deliveries alert
-    const _blockedCls=Object.entries(blockedClients).filter(([,v]:any)=>v.blocked);
+    const _tmpBlockedMap=Object.fromEntries((clients||[]).map((cl:string)=>[cl,getDeliveryBlock(data?.[cl]||[],blockDays)]));
+    const _blockedCls=Object.entries(_tmpBlockedMap).filter(([,v]:any)=>v.blocked);
     if(_blockedCls.length>0) alerts.push({level:"critical",icon:"ti-ban",text:`${_blockedCls.length} client${_blockedCls.length>1?"s":""} bloqué${_blockedCls.length>1?"s":""} — livraison suspendue`,detail:_blockedCls.map(([k]:any)=>k).join(", ")+" · impayé >"+blockDays+"j"});
     // P2 — Facturées non expédiées
     const _factNonExp=_allOrders.filter((o:any)=>o.status==="fact_non_exp");
@@ -1192,7 +1197,7 @@ export default function App(){
         {!special.includes(page)&&(
           <CustomerPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
-            blockDays={blockDays} blockInfo={blockedClients[page]||{blocked:false,maxDays:0,invoices:[]}}
+            blockDays={blockDays} blockInfo={blockedClientsMap[page]||{blocked:false,maxDays:0,invoices:[]}}
             onSaveOrder={(f:any)=>saveOrder(page,f)}
             onAdd={()=>setModal({type:"order",client:page})}
             onEditOrder={(o:any)=>setModal({type:"order",client:page,order:o})}
@@ -1353,11 +1358,6 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
 
   // Commandes sans facture (hors annulé)
   const noInv=all.filter((o:any)=>o.status!=="annule"&&(o.invoices||[]).length===0);
-  // Delivery block per client
-  const blockedClients:Record<string,{blocked:boolean,maxDays:number,invoices:any[]}>=Object.fromEntries(
-    clients.map(cl=>[cl,getDeliveryBlock(data?.[cl]||[],blockDays)])
-  );
-  const blockedClientsList=clients.filter(cl=>blockedClients[cl]?.blocked);
   // Alertes statuts critiques
   const factNonExp=all.filter((o:any)=>o.status==="fact_non_exp");
   const attentesFDI=all.filter((o:any)=>o.status==="attente_fdi");
