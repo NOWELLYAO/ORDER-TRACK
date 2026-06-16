@@ -395,6 +395,8 @@ const DELIVERY_MODES  = ["Transitaire FCA","Air","PL","Air Abidjan","Maritime","
 const PAY_METHODS     = ["Virement bancaire","Chèque","Traite","Espèces","Autre"];
 const MONTHS          = ["JAN","FÉV","MAR","AVR","MAI","JUN","JUL","AOÛ","SEP","OCT","NOV","DÉC"];
 const KEY             = "order_mgmt_v4";
+const DELIVERY_BLOCK_KEY = "ordertrack_delivery_block_days";
+const DEFAULT_BLOCK_DAYS  = 30; // Auto-block delivery if overdue > 30 days
 
 const PAY_TERMS = [
   {id:"comptant",  label:"Comptant / Immédiat",           days:0,   advance:false},
@@ -1006,6 +1008,8 @@ export default function App(){
 
   const special=["kpi","dashboard","tresorerie","rapport","catalogue","documents","logs"];
   const getConfig=(c:string)=>configs[c]||{accountNumber:"",termId:"net60",customDays:0};
+  const [blockDays,setBlockDays]=useState<number>(()=>{try{const v=localStorage.getItem(DELIVERY_BLOCK_KEY);return v?+v:DEFAULT_BLOCK_DAYS;}catch{return DEFAULT_BLOCK_DAYS;}});
+  const saveBlockDays=(d:number)=>{setBlockDays(d);try{localStorage.setItem(DELIVERY_BLOCK_KEY,String(d));}catch{}};
 
   // ── Compute global alerts (for ticker on all pages) ──────────────
   const _allOrders=getAllOrders();
@@ -1016,6 +1020,9 @@ export default function App(){
     const _echues=_allInvoices.filter((i:any)=>["overdue","ov_part"].includes(payStatus(i).key));
     const _echuesAmt=_echues.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
     if(_echues.length>0) alerts.push({level:"critical",icon:"ti-clock-exclamation",text:`${_echues.length} facture${_echues.length>1?"s":""} échue${_echues.length>1?"s":""}`,detail:`${fmt(_echuesAmt)} € à recouvrer`});
+    // Blocked deliveries alert
+    const _blockedCls=Object.entries(blockedClients).filter(([,v]:any)=>v.blocked);
+    if(_blockedCls.length>0) alerts.push({level:"critical",icon:"ti-ban",text:`${_blockedCls.length} client${_blockedCls.length>1?"s":""} bloqué${_blockedCls.length>1?"s":""} — livraison suspendue`,detail:_blockedCls.map(([k]:any)=>k).join(", ")+" · impayé >"+blockDays+"j"});
     // P2 — Facturées non expédiées
     const _factNonExp=_allOrders.filter((o:any)=>o.status==="fact_non_exp");
     if(_factNonExp.length>0) alerts.push({level:"critical",icon:"ti-alert-circle",text:`${_factNonExp.length} commande${_factNonExp.length>1?"s":""} facturée${_factNonExp.length>1?"s":""} non expédiée${_factNonExp.length>1?"s":""}`,detail:_factNonExp.map((o:any)=>o.poNumber).join(", ")});
@@ -1185,6 +1192,7 @@ export default function App(){
         {!special.includes(page)&&(
           <CustomerPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
+            blockDays={blockDays} blockInfo={blockedClients[page]||{blocked:false,maxDays:0,invoices:[]}}
             onSaveOrder={(f:any)=>saveOrder(page,f)}
             onAdd={()=>setModal({type:"order",client:page})}
             onEditOrder={(o:any)=>setModal({type:"order",client:page,order:o})}
@@ -1345,6 +1353,11 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
 
   // Commandes sans facture (hors annulé)
   const noInv=all.filter((o:any)=>o.status!=="annule"&&(o.invoices||[]).length===0);
+  // Delivery block per client
+  const blockedClients:Record<string,{blocked:boolean,maxDays:number,invoices:any[]}>=Object.fromEntries(
+    clients.map(cl=>[cl,getDeliveryBlock(data?.[cl]||[],blockDays)])
+  );
+  const blockedClientsList=clients.filter(cl=>blockedClients[cl]?.blocked);
   // Alertes statuts critiques
   const factNonExp=all.filter((o:any)=>o.status==="fact_non_exp");
   const attentesFDI=all.filter((o:any)=>o.status==="attente_fdi");
@@ -1406,6 +1419,46 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       {/* Row 2 : jauges + alertes paiements */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"5fr 4fr",gap:isMobile?12:16}}>
         {/* Jauge double */}
+        {/* Delivery Block Settings + Status */}
+        {blockedClientsList.length>0&&(
+          <div style={{background:"#7F1D1D",borderRadius:C.rLg,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+            <i className="ti ti-ban" style={{fontSize:22,color:"#FEF2F2",flexShrink:0}} aria-hidden="true"/>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#FEF2F2",marginBottom:2}}>
+                DELIVERY BLOCKED — {blockedClientsList.length} client{blockedClientsList.length>1?"s":""}: {blockedClientsList.join(", ")}
+              </div>
+              <div style={{fontSize:12,color:"#FECACA"}}>
+                Overdue invoices &gt;{blockDays} days — Suspend all shipments until payment received
+              </div>
+            </div>
+          </div>
+        )}
+        <Card title="Delivery Block Settings" icon="ti-ban">
+          <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>Auto-block if overdue &gt;</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {[7,14,30,60,90].map(d=>(
+                  <button key={d} onClick={()=>saveBlockDays(d)}
+                    style={{padding:"6px 14px",background:blockDays===d?"#7F1D1D":"#F1F5F9",color:blockDays===d?"#FEF2F2":C.t2,border:"none",borderRadius:C.rSm,fontSize:12,fontWeight:blockDays===d?700:400,cursor:"pointer"}}>
+                    {d}d
+                  </button>
+                ))}
+                <input type="number" min={1} max={365} value={blockDays}
+                  onChange={e=>saveBlockDays(Math.max(1,+e.target.value||30))}
+                  style={{width:60,padding:"5px 8px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",textAlign:"center"}}/>
+                <span style={{fontSize:12,color:C.t3}}>days</span>
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              <div style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Status</div>
+              {blockedClientsList.length===0
+                ?<span style={{fontSize:12,color:C.greenDk,fontWeight:600}}>✓ No clients blocked</span>
+                :<span style={{fontSize:12,color:"#B91C1C",fontWeight:700}}>⛔ {blockedClientsList.length} blocked: {blockedClientsList.slice(0,3).join(", ")}{blockedClientsList.length>3?"…":""}</span>
+              }
+            </div>
+          </div>
+        </Card>
         <Card title="Progression globale" icon="ti-target">
           {/* KPI globaux */}
           <div style={{display:"flex",gap:16,marginBottom:20}}>
@@ -1932,7 +1985,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
 }
 
 // ─── CLIENT PAGE ─────────────────────────────────────────────────────────────
-function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder}:any){
+function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,blockDays=30,blockInfo={blocked:false,maxDays:0,invoices:[]}}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
   const tgl=(id:string)=>setExp(p=>({...p,[id]:!p[id]}));
@@ -1963,7 +2016,11 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
             <span style={{background:C.purpleL,color:C.purple,padding:"3px 10px",borderRadius:5,fontSize:11,fontWeight:600}}>{term.label}</span>
           </div>
           <p style={{margin:0,color:C.t3,fontSize:13}}>Gestion des commandes 2026</p>
-          {(lateOrders.length>0||overduePayments.length>0)&&<div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}>
+          {(lateOrders.length>0||overduePayments.length>0||blockInfo.blocked)&&<div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}>
+            {blockInfo.blocked&&<span style={{background:"#7F1D1D",color:"#FEF2F2",fontSize:12,fontWeight:800,padding:"5px 14px",borderRadius:6,display:"flex",alignItems:"center",gap:6,letterSpacing:".03em"}}>
+              <i className="ti ti-ban" style={{fontSize:15}} aria-hidden="true"/>
+              DELIVERY BLOCKED — Non-payment ({blockInfo.maxDays}d overdue &gt;{blockDays}d limit)
+            </span>}
             {lateOrders.length>0&&<span style={{background:C.redL,color:C.redDk,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:4,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-truck-off" style={{fontSize:13}} aria-hidden="true"/> {lateOrders.length} livraison{lateOrders.length>1?"s":""} en retard</span>}
             {overduePayments.length>0&&<span style={{background:C.amberL,color:C.amberDk,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:4,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-clock-exclamation" style={{fontSize:13}} aria-hidden="true"/> {overduePayments.length} paiement{overduePayments.length>1?"s":""} à surveiller</span>}
           </div>}
@@ -4559,6 +4616,29 @@ tr:nth-child(even) td{background:#F8FAFC;}
     </div>
   );
 }
+
+// ─── DELIVERY BLOCK HELPER ───────────────────────────────────────────────────
+// Returns {blocked:bool, maxOverdueDays:number, invoices:[...]} for a client's orders
+const getDeliveryBlock=(orders:any[],blockDays:number)=>{
+  const overdueInvs:any[]=[];
+  let maxDays=0;
+  orders.forEach((o:any)=>{
+    (o.invoices||[]).forEach((inv:any)=>{
+      const ps=payStatus(inv);
+      if(["overdue","ov_part"].includes(ps.key)&&ps.rem>0){
+        const dueDate=inv.dueDate?new Date(inv.dueDate+"T00:00:00"):null;
+        if(dueDate){
+          const diff=Math.floor((new Date().getTime()-dueDate.getTime())/86400000);
+          if(diff>0){
+            overdueInvs.push({...inv,_client:o._client,_po:o.poNumber,_so:o.soNumber,overdueDays:diff,rem:ps.rem});
+            if(diff>maxDays)maxDays=diff;
+          }
+        }
+      }
+    });
+  });
+  return{blocked:maxDays>=blockDays&&overdueInvs.length>0,maxDays,invoices:overdueInvs};
+};
 
 // ─── CATALOGUE & DEVIS ───────────────────────────────────────────────────────
 // ─── EXPORT EXCEL (SheetJS CDN) ──────────────────────────────────────────────
