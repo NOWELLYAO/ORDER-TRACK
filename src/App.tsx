@@ -5048,7 +5048,8 @@ function CatEditModal({product,onSave,onClose}:any){
 
 // ─── CATALOGUE PAGE ───────────────────────────────────────────────────────────
 function CataloguePage({clients,lang,isMobile}:any){
-  const[tab,setTab]=useState<"upload"|"catalogue"|"devis">("devis");
+  const[tab,setTab]=useState<"upload"|"catalogue"|"devis"|"search">("devis");
+  const[quoteSearch,setQuoteSearch]=useState("");
   const[products,setProducts]=useState<any[]>([]);
   const[quotes,setQuotes]=useState<any[]>([]);
   const[loading,setLoading]=useState(true);
@@ -5873,6 +5874,7 @@ function CataloguePage({clients,lang,isMobile}:any){
 
   const TABS=[
     {id:"devis",label:"New devis",icon:"ti-file-plus"},
+    {id:"search",label:"Recherche devis",icon:"ti-search"},
     {id:"catalogue",label:"Catalogue",icon:"ti-database"},
     {id:"upload",label:"Importer prix",icon:"ti-upload"},
   ];
@@ -6177,6 +6179,135 @@ function CataloguePage({clients,lang,isMobile}:any){
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB: RECHERCHE DEVIS ────────────────────────────────────────────── */}
+      {tab==="search"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          {/* Barre de recherche */}
+          <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 18px"}}>
+            <div style={{fontSize:14,fontWeight:700,color:C.t1,marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+              <i className="ti ti-search" style={{fontSize:16,color:C.blue}} aria-hidden="true"/>
+              Rechercher dans les devis
+            </div>
+            <div style={{position:"relative"}}>
+              <i className="ti ti-search" style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:15,color:C.t3}} aria-hidden="true"/>
+              <input
+                value={quoteSearch}
+                onChange={e=>setQuoteSearch(e.target.value)}
+                placeholder="Rechercher par PN, désignation, client, référence devis…"
+                autoFocus
+                style={{width:"100%",padding:"10px 12px 10px 38px",border:`2px solid ${quoteSearch?C.blue:C.b}`,borderRadius:C.r,fontSize:14,fontFamily:"inherit",boxSizing:"border-box" as const,outline:"none",transition:"border .2s"}}
+              />
+              {quoteSearch&&<button onClick={()=>setQuoteSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:C.t3}}>✕</button>}
+            </div>
+            {quoteSearch&&<div style={{marginTop:8,fontSize:12,color:C.t3}}>
+              {(()=>{
+                const q=quoteSearch.toLowerCase();
+                const results=quotes.filter((qt:any)=>
+                  (qt.number||"").toLowerCase().includes(q)||
+                  (qt.client||"").toLowerCase().includes(q)||
+                  (qt.lines||[]).some((l:any)=>(l.pn||"").toLowerCase().includes(q)||(l.description||"").toLowerCase().includes(q))
+                );
+                return `${results.length} devis trouvé${results.length>1?"s":""}`;
+              })()}
+            </div>}
+          </div>
+
+          {/* Résultats */}
+          {quoteSearch&&(()=>{
+            const q=quoteSearch.toLowerCase();
+            const results=quotes.filter((qt:any)=>
+              (qt.number||"").toLowerCase().includes(q)||
+              (qt.client||"").toLowerCase().includes(q)||
+              (qt.lines||[]).some((l:any)=>(l.pn||"").toLowerCase().includes(q)||(l.description||"").toLowerCase().includes(q))
+            );
+            if(results.length===0) return(
+              <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"40px",textAlign:"center",color:C.t3}}>
+                <i className="ti ti-file-search" style={{fontSize:32,display:"block",marginBottom:8}} aria-hidden="true"/>
+                Aucun devis ne contient "{quoteSearch}"
+              </div>
+            );
+            return(
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {results.map((qt:any,i:number)=>{
+                  const q2=quoteSearch.toLowerCase();
+                  const matchedLines=(qt.lines||[]).filter((l:any)=>(l.pn||"").toLowerCase().includes(q2)||(l.description||"").toLowerCase().includes(q2));
+                  return(
+                    <div key={i} style={{background:"#fff",borderRadius:C.rLg,border:`2px solid ${C.blue}`,boxShadow:C.sh,overflow:"hidden"}}>
+                      {/* Header devis */}
+                      <div style={{background:C.blueL,padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                        <div style={{display:"flex",alignItems:"center",gap:12}}>
+                          <span style={{fontWeight:800,fontSize:14,color:C.blue}}>{qt.number}</span>
+                          <span style={{fontWeight:600,fontSize:13,color:C.t1}}>{qt.client}</span>
+                          <span style={{fontSize:12,color:C.t3}}>{fmtD(qt.date)}</span>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:12}}>
+                          <span style={{fontSize:13,fontWeight:700,color:C.teal}}>{fmt(qt.totalHT)} €</span>
+                          <span style={{fontSize:11,color:C.t3,background:"#fff",padding:"3px 10px",borderRadius:99,border:`1px solid ${C.b}`}}>
+                            {qt.lines?.length||0} ligne{(qt.lines?.length||0)>1?"s":""}
+                          </span>
+                        </div>
+                      </div>
+                      {/* Lignes qui matchent */}
+                      {matchedLines.length>0&&(
+                        <div style={{padding:"10px 16px"}}>
+                          <div style={{fontSize:11,fontWeight:600,color:C.t3,textTransform:"uppercase" as const,letterSpacing:".05em",marginBottom:8}}>
+                            {matchedLines.length} ligne{matchedLines.length>1?"s":""} correspondante{matchedLines.length>1?"s":""}
+                          </div>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                            <thead><tr style={{background:"#F8FAFC"}}>
+                              {["PN","Désignation","Qté","Prix U.","Total"].map(h=>(
+                                <th key={h} style={{padding:"5px 10px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase" as const,borderBottom:`1px solid ${C.b}`}}>{h}</th>
+                              ))}
+                            </tr></thead>
+                            <tbody>
+                              {matchedLines.map((l:any,j:number)=>(
+                                <tr key={j} style={{background:j%2===0?"#FFF":"#F8FAFC"}}>
+                                  <td style={{padding:"5px 10px",fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{l.pn}</td>
+                                  <td style={{padding:"5px 10px",color:C.t1,maxWidth:280}}>
+                                    {(l.description||"").split(new RegExp(`(${quoteSearch})`, "gi")).map((part:string,k:number)=>
+                                      part.toLowerCase()===quoteSearch.toLowerCase()
+                                        ?<mark key={k} style={{background:"#FEF08A",color:"#713F12",borderRadius:2,padding:"0 2px"}}>{part}</mark>
+                                        :<span key={k}>{part}</span>
+                                    )}
+                                  </td>
+                                  <td style={{padding:"5px 10px",color:C.t3,textAlign:"center"}}>{l.qty}</td>
+                                  <td style={{padding:"5px 10px",color:C.t2,textAlign:"right"}}>{fmt(l.unitPrice)} €</td>
+                                  <td style={{padding:"5px 10px",fontWeight:700,color:C.teal,textAlign:"right"}}>{fmt((l.qty||0)*(l.unitPrice||0))} €</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {/* Si match sur client/ref seulement, montrer toutes les lignes */}
+                      {matchedLines.length===0&&(qt.lines||[]).length>0&&(
+                        <div style={{padding:"8px 16px 12px"}}>
+                          <div style={{fontSize:11,color:C.t3,marginBottom:6}}>Toutes les lignes :</div>
+                          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                            {(qt.lines||[]).map((l:any,j:number)=>(
+                              <span key={j} style={{background:C.blueL,color:C.blue,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:99,fontFamily:"monospace"}}>{l.pn}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* Etat vide */}
+          {!quoteSearch&&(
+            <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"48px",textAlign:"center",color:C.t3}}>
+              <i className="ti ti-file-search" style={{fontSize:40,display:"block",marginBottom:12,color:C.blue}} aria-hidden="true"/>
+              <div style={{fontSize:15,fontWeight:600,color:C.t1,marginBottom:6}}>Recherche dans {quotes.length} devis</div>
+              <div style={{fontSize:13}}>Tapez un PN, une désignation, un client ou une référence devis</div>
             </div>
           )}
         </div>
