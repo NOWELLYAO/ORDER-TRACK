@@ -6259,7 +6259,7 @@ function CataloguePage({clients,lang,isMobile}:any){
                 const results=quotes.filter((qt:any)=>
                   (qt.number||"").toLowerCase().includes(q)||
                   (qt.client||"").toLowerCase().includes(q)||
-                  (qt.lines||[]).some((l:any)=>(l.pn||"").toLowerCase().includes(q)||(l.description||"").toLowerCase().includes(q))
+                  (qt.lines||[]).some((l:any)=>(l.pn||"").toLowerCase().includes(q)||(l.desc||l.description||"").toLowerCase().includes(q))
                 );
                 return `${results.length} devis trouvé${results.length>1?"s":""}`;
               })()}
@@ -6272,7 +6272,7 @@ function CataloguePage({clients,lang,isMobile}:any){
             const results=quotes.filter((qt:any)=>
               (qt.number||"").toLowerCase().includes(q)||
               (qt.client||"").toLowerCase().includes(q)||
-              (qt.lines||[]).some((l:any)=>(l.pn||"").toLowerCase().includes(q)||(l.description||"").toLowerCase().includes(q))
+              (qt.lines||[]).some((l:any)=>(l.pn||"").toLowerCase().includes(q)||(l.desc||l.description||"").toLowerCase().includes(q))
             );
             if(results.length===0) return(
               <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"40px",textAlign:"center",color:C.t3}}>
@@ -6284,7 +6284,7 @@ function CataloguePage({clients,lang,isMobile}:any){
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {results.map((qt:any,i:number)=>{
                   const q2=quoteSearch.toLowerCase();
-                  const matchedLines=(qt.lines||[]).filter((l:any)=>(l.pn||"").toLowerCase().includes(q2)||(l.description||"").toLowerCase().includes(q2));
+                  const matchedLines=(qt.lines||[]).filter((l:any)=>(l.pn||"").toLowerCase().includes(q2)||(l.desc||l.description||"").toLowerCase().includes(q2));
                   return(
                     <div key={i} style={{background:"#fff",borderRadius:C.rLg,border:`2px solid ${C.blue}`,boxShadow:C.sh,overflow:"hidden"}}>
                       {/* Header devis */}
@@ -6326,7 +6326,7 @@ function CataloguePage({clients,lang,isMobile}:any){
                                 <tr key={j} style={{background:j%2===0?"#FFF":"#F8FAFC"}}>
                                   <td style={{padding:"5px 10px",fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{l.pn}</td>
                                   <td style={{padding:"5px 10px",color:C.t1,maxWidth:280}}>
-                                    {(l.description||"").split(new RegExp(`(${quoteSearch})`, "gi")).map((part:string,k:number)=>
+                                    {(l.desc||l.description||"").split(new RegExp(`(${quoteSearch})`, "gi")).map((part:string,k:number)=>
                                       part.toLowerCase()===quoteSearch.toLowerCase()
                                         ?<mark key={k} style={{background:"#FEF08A",color:"#713F12",borderRadius:2,padding:"0 2px"}}>{part}</mark>
                                         :<span key={k}>{part}</span>
