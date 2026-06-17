@@ -5082,6 +5082,43 @@ function CataloguePage({clients,lang,isMobile}:any){
     setDropdownPos({top:rect.bottom+4,left:rect.left,width:Math.max(rect.width,280)});
     setDropdownType(type);setDropdownLineIdx(idx);setDropdownItems(items);
   };
+  // Charger un devis dans le formulaire pour modifier/dupliquer
+  const loadQuoteIntoForm=(qt:any,mode:"edit"|"duplicate")=>{
+    const newRef=mode==="duplicate"
+      ?`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`
+      :(qt.number||qt.ref||"");
+    setQRef(newRef);
+    setQDate(mode==="duplicate"?new Date().toISOString().slice(0,10):(qt.date||new Date().toISOString().slice(0,10)));
+    setQValidity(String(qt.validity||"30"));
+    setQNotes(qt.notes||"");
+    // Customer
+    if(qt.clientManual||qt.clientAddr){
+      setUseManualCustomer(true);
+      setQCustomerManual(qt.clientManual||qt.client||"");
+      setQCustomerAddr(qt.clientAddr||"");
+      setQCustomer("");
+    } else {
+      setUseManualCustomer(false);
+      setQCustomer(qt.client||"");
+      setQCustomerManual("");
+      setQCustomerAddr("");
+    }
+    // Lines
+    const lines=(qt.lines||[]).map((l:any)=>({
+      pn:l.pn||"",
+      desc:l.description||l.desc||"",
+      qty:l.qty||1,
+      unitPrice:l.unitPrice||l.prix||0,
+      avail:l.avail||"",
+      priceOptions:[],
+      selectedPriceIdx:-1,
+    }));
+    setQLines(lines.length>0?lines:[{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1}]);
+    setTab("devis");
+    setQuoteSearch("");
+    setTimeout(()=>window.scrollTo({top:0,behavior:"smooth"}),100);
+  };
+
   const[qRef,setQRef]=useState(()=>`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`);
   const[qDate,setQDate]=useState(new Date().toISOString().slice(0,10));
   const[qValidity,setQValidity]=useState("30");
@@ -6164,7 +6201,7 @@ function CataloguePage({clients,lang,isMobile}:any){
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                   <thead><tr style={{background:"#F8FAFC"}}>
-                    {["Référence","Customer","Date","Lignes","Total HT"].map(h=><th key={h} style={{padding:"7px 12px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>)}
+                    {["Référence","Customer","Date","Lignes","Total HT","Actions"].map(h=><th key={h} style={{padding:"7px 12px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase"}}>{h}</th>)}
                   </tr></thead>
                   <tbody>
                     {quotes.slice(0,8).map((q:any,i:number)=>(
@@ -6174,6 +6211,18 @@ function CataloguePage({clients,lang,isMobile}:any){
                         <td style={{padding:"7px 12px",color:C.t3}}>{fmtD(q.date)}</td>
                         <td style={{padding:"7px 12px",color:C.t3,textAlign:"center"}}>{q.lines?.length||0}</td>
                         <td style={{padding:"7px 12px",fontWeight:700,color:C.teal}}>{fmt(q.totalHT)} €</td>
+                        <td style={{padding:"7px 12px"}}>
+                          <div style={{display:"flex",gap:6}}>
+                            <button onClick={()=>loadQuoteIntoForm(q,"edit")} title="Modifier ce devis"
+                              style={{background:C.blueL,color:C.blue,border:"none",borderRadius:C.rSm,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                              <i className="ti ti-edit" style={{fontSize:12}} aria-hidden="true"/> Modifier
+                            </button>
+                            <button onClick={()=>loadQuoteIntoForm(q,"duplicate")} title="Dupliquer ce devis"
+                              style={{background:"#F1F5F9",color:C.t2,border:"none",borderRadius:C.rSm,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                              <i className="ti ti-copy" style={{fontSize:12}} aria-hidden="true"/> Dupliquer
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -6250,6 +6299,14 @@ function CataloguePage({clients,lang,isMobile}:any){
                           <span style={{fontSize:11,color:C.t3,background:"#fff",padding:"3px 10px",borderRadius:99,border:`1px solid ${C.b}`}}>
                             {qt.lines?.length||0} ligne{(qt.lines?.length||0)>1?"s":""}
                           </span>
+                          <button onClick={()=>loadQuoteIntoForm(qt,"edit")}
+                            style={{display:"flex",alignItems:"center",gap:5,background:C.blue,color:"#fff",border:"none",borderRadius:C.rSm,padding:"5px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                            <i className="ti ti-edit" style={{fontSize:13}} aria-hidden="true"/> Modifier
+                          </button>
+                          <button onClick={()=>loadQuoteIntoForm(qt,"duplicate")}
+                            style={{display:"flex",alignItems:"center",gap:5,background:"#fff",color:C.blue,border:`1px solid ${C.blue}`,borderRadius:C.rSm,padding:"5px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                            <i className="ti ti-copy" style={{fontSize:13}} aria-hidden="true"/> Dupliquer
+                          </button>
                         </div>
                       </div>
                       {/* Lignes qui matchent */}
