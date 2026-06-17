@@ -5555,6 +5555,15 @@ function CataloguePage({clients,lang,isMobile}:any){
     const effectiveCustomer=useManualCustomer?qCustomerManual:qCustomer;
     if(!effectiveCustomer){alert('Sélectionnez ou saisissez un client');return;}
     if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert('Ajoutez au moins une ligne avec PN et prix');return;}
+    // Auto-save quote
+    const quoteToSave={
+      id:Date.now().toString(),number:qRef,client:effectiveCustomer,date:qDate,
+      validity:qValidity,notes:qNotes,
+      lines:qLines.filter((l:any)=>l.pn),
+      totalHT:qLines.filter((l:any)=>l.pn).reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0),
+      createdAt:new Date().toISOString()
+    };
+    await saveQuotes([quoteToSave,...quotes.filter((q:any)=>q.number!==qRef)].slice(0,50));
     // FIX: pas de validation avail pour le draft — affiche TBC si vide
     const validLines=qLines.filter((l:any)=>l.pn);
     const dateStr=new Date(qDate).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
@@ -5666,6 +5675,15 @@ function CataloguePage({clients,lang,isMobile}:any){
     const effectiveCustomer=useManualCustomer?qCustomerManual:qCustomer;
     if(!effectiveCustomer){alert('Sélectionnez ou saisissez un client');return;}
     if(!qLines.some((l:any)=>l.pn&&l.unitPrice>0)){alert('Ajoutez au moins une ligne avec PN et prix');return;}
+    // Auto-save quote
+    const quoteToSave={
+      id:Date.now().toString(),number:qRef,client:effectiveCustomer,date:qDate,
+      validity:qValidity,notes:qNotes,
+      lines:qLines.filter((l:any)=>l.pn),
+      totalHT:qLines.filter((l:any)=>l.pn).reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0),
+      createdAt:new Date().toISOString()
+    };
+    await saveQuotes([quoteToSave,...quotes.filter((q:any)=>q.number!==qRef)].slice(0,50));
     const validLines=qLines.filter((l:any)=>l.pn);
     const dateStr=new Date(qDate).toLocaleDateString('fr-FR');
     const fileName=`Draft_${effectiveCustomer}_${qRef}_${qDate}.xlsx`;
