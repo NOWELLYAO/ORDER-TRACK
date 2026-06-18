@@ -6096,14 +6096,40 @@ function CataloguePage({clients,lang,isMobile}:any){
                                 </div>
                               </label>
                             ))}
-                            <input type="number" value={line.unitPrice} onChange={e=>updateLine(idx,"unitPrice",+e.target.value)}
-                              placeholder="Ou saisir manuellement"
-                              style={{padding:"5px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:11,fontFamily:"inherit",marginTop:2}}/>
+                            <input type="text" inputMode="decimal"
+                              value={line._priceRaw!==undefined?line._priceRaw:String(line.unitPrice||"")}
+                              onChange={e=>{
+                                const raw=e.target.value.replace(/[^0-9.,]/g,"");
+                                updateLine(idx,"_priceRaw",raw);
+                                const num=parseFloat(raw.replace(",","."));
+                                if(!isNaN(num))updateLine(idx,"unitPrice",num);
+                              }}
+                              onFocus={e=>{updateLine(idx,"_priceRaw",String(line.unitPrice||""));e.target.select();}}
+                              onBlur={e=>{
+                                const num=parseFloat(String(line._priceRaw||"").replace(",","."));
+                                updateLine(idx,"unitPrice",isNaN(num)?0:num);
+                                updateLine(idx,"_priceRaw",undefined);
+                              }}
+                              placeholder="Saisir un prix différent…"
+                              style={{padding:"5px 8px",border:`2px solid ${C.blue}`,borderRadius:5,fontSize:12,fontFamily:"inherit",marginTop:4,width:"100%",boxSizing:"border-box" as const,fontWeight:600}}/>
                           </div>
                         ):(
-                          <input type="number" value={line.unitPrice} onChange={e=>updateLine(idx,"unitPrice",+e.target.value)}
+                          <input type="text" inputMode="decimal"
+                            value={line._priceRaw!==undefined?line._priceRaw:String(line.unitPrice||"")}
+                            onChange={e=>{
+                              const raw=e.target.value.replace(/[^0-9.,]/g,"");
+                              updateLine(idx,"_priceRaw",raw);
+                              const num=parseFloat(raw.replace(",","."));
+                              if(!isNaN(num))updateLine(idx,"unitPrice",num);
+                            }}
+                            onFocus={e=>{updateLine(idx,"_priceRaw",String(line.unitPrice||""));e.target.select();}}
+                            onBlur={e=>{
+                              const num=parseFloat(String(line._priceRaw||"").replace(",","."));
+                              updateLine(idx,"unitPrice",isNaN(num)?0:num);
+                              updateLine(idx,"_priceRaw",undefined);
+                            }}
                             placeholder="Prix €"
-                            style={{width:"100%",padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                            style={{width:"100%",padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box" as const}}/>
                         )}
                       </td>
                       <td style={{padding:"8px 8px",verticalAlign:"top"}}>
@@ -6126,6 +6152,14 @@ function CataloguePage({clients,lang,isMobile}:any){
                   ))}
                 </tbody>
                 <tfoot>
+                  <tr>
+                    <td colSpan={7} style={{padding:"8px 10px",borderTop:`1px dashed ${C.b}`}}>
+                      <button onClick={()=>{addLine();setTimeout(()=>{const rows=document.querySelectorAll("tbody tr");if(rows.length)rows[rows.length-1].scrollIntoView({behavior:"smooth",block:"nearest"});},80);}}
+                        style={{display:"flex",alignItems:"center",gap:6,background:C.blueL,color:C.blue,border:`1px dashed ${C.blue}`,borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,cursor:"pointer",width:"auto"}}>
+                        <i className="ti ti-plus" style={{fontSize:13}} aria-hidden="true"/> Ajouter une ligne
+                      </button>
+                    </td>
+                  </tr>
                   <tr style={{background:C.blueL,borderTop:`2px solid ${C.blue}30`}}>
                     <td colSpan={5} style={{padding:"10px 10px",textAlign:"right",fontWeight:700,color:C.blueDk}}>TOTAL HT</td>
                     <td style={{padding:"10px 10px",textAlign:"right",fontWeight:800,color:C.blueDk,fontSize:14}}>{fmt(totalHT)} €</td>
