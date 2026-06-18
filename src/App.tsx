@@ -5137,6 +5137,69 @@ function CataloguePage({clients,lang,isMobile}:any){
     w.document.close();
   };
 
+  // Exporter devis en Excel depuis données sauvegardées
+  const exportQuoteExcelFromData=async(q:any)=>{
+    const lines=(q.lines||[]).filter((l:any)=>l.pn);
+    const totalHT_val=lines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
+    const loadExcelJS=():Promise<any>=>new Promise((resolve,reject)=>{
+      if((window as any).ExcelJS){resolve((window as any).ExcelJS);return;}
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+      s.crossOrigin='anonymous';
+      s.onload=()=>resolve((window as any).ExcelJS);
+      s.onerror=reject;
+      document.head.appendChild(s);
+    });
+    try{
+      const ExcelJS=await loadExcelJS();
+      const wb=new ExcelJS.Workbook();
+      wb.creator='OrderTrack';wb.created=new Date();
+      const ws=wb.addWorksheet('Devis');
+      // En-tête info
+      ws.mergeCells('A1:F1');ws.getCell('A1').value='DEVIS — '+q.number;
+      ws.getCell('A1').font={bold:true,size:14,color:{argb:'FF1D4ED8'}};
+      ws.getCell('A1').alignment={horizontal:'center'};
+      ws.addRow(['Client:',q.client,'','Date:',q.date,'']);
+      ws.addRow(['Validité:',q.validity+' jours','','','','']);
+      ws.addRow([]);
+      // Colonnes
+      ws.columns=[
+        {key:'pn',width:18},{key:'desc',width:40},{key:'qty',width:8},
+        {key:'prix',width:14},{key:'avail',width:18},{key:'total',width:14}
+      ];
+      // Header tableau
+      const hRow=ws.addRow(['Part Number','Description','Qté','Prix U. (€)','Disponibilité','Total (€)']);
+      hRow.eachCell((cell:any)=>{
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0D1B2A'}};
+        cell.font={bold:true,color:{argb:'FFFFFFFF'},size:10};
+        cell.alignment={horizontal:'center'};
+      });
+      // Lignes
+      lines.forEach((l:any,i:number)=>{
+        const row=ws.addRow([l.pn,l.desc||'',l.qty||1,+l.unitPrice||0,l.avail||'—',(+l.qty||0)*(+l.unitPrice||0)]);
+        row.getCell(4).numFmt='#,##0.00 €';
+        row.getCell(6).numFmt='#,##0.00 €';
+        row.getCell(6).font={bold:true,color:{argb:'FF1D4ED8'}};
+        if(i%2===1)row.eachCell((cell:any)=>{cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF8FAFC'}};});
+      });
+      // Total
+      ws.addRow([]);
+      const tRow=ws.addRow(['','','','','TOTAL HT',totalHT_val]);
+      tRow.getCell(5).font={bold:true,size:12,color:{argb:'FF1E40AF'}};
+      tRow.getCell(5).alignment={horizontal:'right'};
+      tRow.getCell(6).numFmt='#,##0.00 €';
+      tRow.getCell(6).font={bold:true,size:13,color:{argb:'FF1D4ED8'}};
+      // Notes
+      if(q.notes){ws.addRow([]);ws.addRow(['Notes:',q.notes]);}
+      // Download
+      const buf=await wb.xlsx.writeBuffer();
+      const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');a.href=url;a.download=`${q.number}_${q.client}_${q.date}.xlsx`;a.click();
+      URL.revokeObjectURL(url);
+    }catch(e){alert('Erreur export Excel');}
+  };
+
   // Charger un devis dans le formulaire pour modifier/dupliquer
   const loadQuoteIntoForm=(qt:any,mode:"edit"|"duplicate")=>{
     const newRef=mode==="duplicate"
@@ -6332,6 +6395,10 @@ function CataloguePage({clients,lang,isMobile}:any){
                               style={{background:"#F0FDF4",color:"#15803D",border:"1px solid #86EFAC",borderRadius:C.rSm,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                               <i className="ti ti-download" style={{fontSize:12}} aria-hidden="true"/> PDF
                             </button>
+                            <button onClick={()=>exportQuoteExcelFromData(q)} title="Télécharger Excel"
+                              style={{background:"#F0FFF4",color:"#166534",border:"1px solid #6EE7B7",borderRadius:C.rSm,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                              <i className="ti ti-file-spreadsheet" style={{fontSize:12}} aria-hidden="true"/> XLS
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -6421,6 +6488,10 @@ function CataloguePage({clients,lang,isMobile}:any){
                           <button onClick={()=>printQuoteFromData(qt)}
                             style={{display:"flex",alignItems:"center",gap:5,background:"#F0FDF4",color:"#15803D",border:"1px solid #86EFAC",borderRadius:C.rSm,padding:"5px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                             <i className="ti ti-download" style={{fontSize:13}} aria-hidden="true"/> PDF
+                          </button>
+                          <button onClick={()=>exportQuoteExcelFromData(qt)}
+                            style={{display:"flex",alignItems:"center",gap:5,background:"#F0FFF4",color:"#166534",border:"1px solid #6EE7B7",borderRadius:C.rSm,padding:"5px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                            <i className="ti ti-file-spreadsheet" style={{fontSize:13}} aria-hidden="true"/> XLS
                           </button>
                         </div>
                       </div>
