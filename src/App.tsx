@@ -5082,6 +5082,61 @@ function CataloguePage({clients,lang,isMobile}:any){
     setDropdownPos({top:rect.bottom+4,left:rect.left,width:Math.max(rect.width,280)});
     setDropdownType(type);setDropdownLineIdx(idx);setDropdownItems(items);
   };
+  // Générer PDF directement depuis les données sauvegardées
+  const printQuoteFromData=(q:any)=>{
+    const w=window.open("","_blank","width=900,height=700");
+    if(!w)return;
+    const lines=(q.lines||[]).filter((l:any)=>l.pn);
+    const totalHT_val=lines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
+    const fmtN=(n:number)=>n.toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const linesHTML=lines.map((l:any,i:number)=>`
+      <tr style="background:${i%2===0?"#fff":"#F8FAFC"}">
+        <td style="padding:8px 10px;border-bottom:1px solid #E5EAF0;font-weight:600;color:#1E3A5F;font-family:monospace">${l.pn}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #E5EAF0">${l.desc||"—"}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #E5EAF0;text-align:center">${l.qty||1}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #E5EAF0;text-align:right">${fmtN(+l.unitPrice||0)} €</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #E5EAF0;text-align:center;color:#374151">${l.avail||"—"}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #E5EAF0;text-align:right;font-weight:700;color:#2563EB">${fmtN((+l.qty||0)*(+l.unitPrice||0))} €</td>
+      </tr>`).join("");
+    const b64=localStorage.getItem("grundfos_logo_b64")||"";
+    const logoHtml=b64?`<img src="data:image/png;base64,${b64}" style="height:48px;object-fit:contain" alt="GRUNDFOS"/>`:`<span style="font-weight:900;font-size:18px;color:#005F8E">GRUNDFOS</span>`;
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${q.number}</title>
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#0D1B2A;background:#fff;padding:12mm}
+    table{width:100%;border-collapse:collapse}th{background:#0D1B2A;color:#fff;padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+    .no-print{display:none}@media print{.no-print{display:none}@page{margin:10mm;size:A4}}</style></head><body>
+    <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999">
+      <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer">🖨️ Télécharger PDF</button>
+      <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">✕</button>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px">
+      <div>${logoHtml}</div>
+      <div style="text-align:right">
+        <div style="font-size:22px;font-weight:900;color:#0D1B2A">DEVIS</div>
+        <div style="font-size:14px;font-weight:700;color:#2563EB">${q.number}</div>
+        <div style="font-size:11px;color:#6B7280;margin-top:4px">Date : ${new Date(q.date).toLocaleDateString("fr-FR")}</div>
+        <div style="font-size:11px;color:#6B7280">Validité : ${q.validity||30} jours</div>
+      </div>
+    </div>
+    <div style="margin-bottom:20px;padding:12px 16px;background:#F8FAFC;border-radius:8px;border:1px solid #E5EAF0">
+      <div style="font-size:10px;color:#6B7280;font-weight:600;text-transform:uppercase;margin-bottom:4px">Client</div>
+      <div style="font-size:14px;font-weight:700">${q.client}</div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Part Number</th><th>Description</th><th style="text-align:center">Qté</th>
+        <th style="text-align:right">Prix U. (€)</th><th style="text-align:center">Disponibilité</th><th style="text-align:right">Total (€)</th>
+      </tr></thead>
+      <tbody>${linesHTML}</tbody>
+      <tfoot><tr style="background:#DBEAFE">
+        <td colspan="5" style="padding:10px;text-align:right;font-weight:700;font-size:13px;color:#1E40AF">TOTAL HT</td>
+        <td style="padding:10px;text-align:right;font-weight:900;font-size:16px;color:#1D4ED8">${fmtN(totalHT_val)} €</td>
+      </tr></tfoot>
+    </table>
+    ${q.notes?`<div style="margin-top:20px;padding:12px;background:#FFFBEB;border-radius:8px;border:1px solid #FDE68A"><div style="font-size:10px;color:#92400E;font-weight:600;text-transform:uppercase;margin-bottom:4px">Notes / Conditions</div><div style="font-size:11px;color:#374151">${q.notes}</div></div>`:""}
+    </body></html>`);
+    w.document.close();
+  };
+
   // Charger un devis dans le formulaire pour modifier/dupliquer
   const loadQuoteIntoForm=(qt:any,mode:"edit"|"duplicate")=>{
     const newRef=mode==="duplicate"
@@ -6273,6 +6328,10 @@ function CataloguePage({clients,lang,isMobile}:any){
                               style={{background:"#F1F5F9",color:C.t2,border:"none",borderRadius:C.rSm,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                               <i className="ti ti-copy" style={{fontSize:12}} aria-hidden="true"/> Dupliquer
                             </button>
+                            <button onClick={()=>printQuoteFromData(q)} title="Télécharger PDF"
+                              style={{background:"#F0FDF4",color:"#15803D",border:"1px solid #86EFAC",borderRadius:C.rSm,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                              <i className="ti ti-download" style={{fontSize:12}} aria-hidden="true"/> PDF
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -6358,6 +6417,10 @@ function CataloguePage({clients,lang,isMobile}:any){
                           <button onClick={()=>loadQuoteIntoForm(qt,"duplicate")}
                             style={{display:"flex",alignItems:"center",gap:5,background:"#fff",color:C.blue,border:`1px solid ${C.blue}`,borderRadius:C.rSm,padding:"5px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                             <i className="ti ti-copy" style={{fontSize:13}} aria-hidden="true"/> Dupliquer
+                          </button>
+                          <button onClick={()=>printQuoteFromData(qt)}
+                            style={{display:"flex",alignItems:"center",gap:5,background:"#F0FDF4",color:"#15803D",border:"1px solid #86EFAC",borderRadius:C.rSm,padding:"5px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                            <i className="ti ti-download" style={{fontSize:13}} aria-hidden="true"/> PDF
                           </button>
                         </div>
                       </div>
@@ -6951,6 +7014,10 @@ function DocumentsPage({isMobile}:any){
                         <a href={doc.url} target="_blank" rel="noreferrer"
                           style={{background:C.blueL,color:C.blueDk,borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,textDecoration:"none",display:"flex",alignItems:"center",gap:4}}>
                           <i className="ti ti-external-link" style={{fontSize:12}} aria-hidden="true"/> Ouvrir
+                        </a>
+                        <a href={doc.url} download={doc.name}
+                          style={{background:"#F0FDF4",color:"#15803D",border:"1px solid #86EFAC",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:700,textDecoration:"none",display:"flex",alignItems:"center",gap:4}}>
+                          <i className="ti ti-download" style={{fontSize:12}} aria-hidden="true"/> Télécharger
                         </a>
                         <button onClick={()=>deleteDoc(doc)}
                           style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
