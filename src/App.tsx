@@ -7253,7 +7253,28 @@ const emptyProject=()=>({
   processingDate:todayStr(), expectedOrderDate:"", expectedInvoiceDate:"",
   createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(),
   comments:"",
+  history:[] as any[],
 });
+
+// Builds audit-trail entries by diffing tracked fields between the previous
+// and the new version of a project. Used to keep a lightweight change log
+// (who/what changed and when) without a full external audit system.
+const HISTORY_FIELDS:[string,string][]=[
+  ['phase','Phase'],['status','Status'],['offerAmount','Amount'],['chanceOfSuccess','Chance'],
+  ['expectedOrderDate','Expected order date'],['expectedInvoiceDate','Expected invoice date'],
+];
+function buildHistoryDiff(oldP:any,newP:any){
+  const entries:any[]=[];
+  const now=new Date().toISOString();
+  HISTORY_FIELDS.forEach(([key,label])=>{
+    const from=oldP[key],to=newP[key];
+    if(String(from??'')!==String(to??''))entries.push({date:now,label,from,to});
+  });
+  if(!!oldP.ongoing!==!!newP.ongoing){
+    entries.push({date:now,label:'State',from:oldP.ongoing?'Ongoing':'Closed',to:newP.ongoing?'Ongoing':'Closed'});
+  }
+  return entries;
+}
 
 const loadProjectsLocal=():any[]|null=>{
   try{const d=localStorage.getItem(PROJECTS_LS);return d?JSON.parse(d):null;}catch{return null;}
@@ -7270,14 +7291,8 @@ const saveProjects=async(projects:any[],setSyncMsgFn?:any)=>{
 };
 
 const daysSince=(iso:string)=>Math.floor((Date.now()-new Date(iso).getTime())/86400000);
-const durationLabel=(iso:string)=>{
-  const d=daysSince(iso);
-  if(d<1)return "Aujourd'hui";
-  if(d<31)return d+" jour"+(d>1?"s":"");
-  const months=Math.floor(d/30.44);
-  const days=Math.round(d-months*30.44);
-  return months+" mois"+(days>0?" "+days+"j":"");
-};
+const durationDaysFr=(iso:string)=>{const d=Math.max(0,daysSince(iso));return d+" jour"+(d>1?"s":"");};
+const durationDaysEn=(iso:string)=>{const d=Math.max(0,daysSince(iso));return d+" day"+(d>1?"s":"");};
 const MONTH_NAMES_SHORT=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTH_NAMES_SHORT_FR=["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct","Nov","Déc"];
 
@@ -7340,6 +7355,53 @@ function projectHealth(p:any){
   return correct
     ?{color:C.green,blink:false,label:"En cours — à jour"}
     :{color:C.red,blink:true,label:"En cours — action requise"+(overdueOrder?" (commande en retard)":overdueInvoice?" (facturation en retard)":stale?" (sans mise à jour)":inactive?" (inactif)":"")};
+}
+
+// ── Phase velocity: average number of days opportunities spend in each phase ──
+// Reconstructed from the audit trail (history of "Phase" changes). Projects
+// with no recorded phase change yet simply contribute one open-ended segment
+// (from their processing date to now / closing date), so the metric is
+// meaningful from day one and gets more precise as history accumulates.
+function computePhaseVelocity(projects:any[]){
+  const totals:Record<string,{sumDays:number,count:number}>={};
+  PHASES.forEach(ph=>totals[ph]={sumDays:0,count:0});
+  projects.forEach((p:any)=>{
+    const events=(p.history||[]).filter((h:any)=>h.label==="Phase").sort((a:any,b:any)=>a.date.localeCompare(b.date));
+    const start=new Date(p.processingDate||p.createdAt).getTime();
+    const end=p.ongoing?Date.now():new Date(p.updatedAt||p.createdAt).getTime();
+    if(events.length===0){
+      const days=Math.max(0,Math.round((end-start)/86400000));
+      if(totals[p.phase]){totals[p.phase].sumDays+=days;totals[p.phase].count+=1;}
+      return;
+    }
+    let curPhase=events[0].from||p.phase;
+    let curStart=start;
+    events.forEach((ev:any)=>{
+      const t=new Date(ev.date).getTime();
+      const days=Math.max(0,Math.round((t-curStart)/86400000));
+      if(totals[curPhase]){totals[curPhase].sumDays+=days;totals[curPhase].count+=1;}
+      curPhase=ev.to;
+      curStart=t;
+    });
+    const days=Math.max(0,Math.round((end-curStart)/86400000));
+    if(totals[curPhase]){totals[curPhase].sumDays+=days;totals[curPhase].count+=1;}
+  });
+  return PHASES.map(ph=>({phase:ph,avgDays:totals[ph].count?Math.round(totals[ph].sumDays/totals[ph].count):0,count:totals[ph].count}));
+}
+
+// ── Point-in-time reconstruction: what was a tracked field's value at a given
+// past moment, based on the audit trail. Falls back to the current value when
+// no history is available yet (new feature — accuracy improves over time). ──
+function fieldValueAsOf(p:any,label:string,cutoffMs:number,currentVal:any){
+  const events=(p.history||[]).filter((h:any)=>h.label===label).sort((a:any,b:any)=>a.date.localeCompare(b.date));
+  if(events.length===0)return currentVal;
+  let val=events[0].from;
+  let found=false;
+  for(const ev of events){
+    if(new Date(ev.date).getTime()<=cutoffMs){val=ev.to;found=true;}
+    else break;
+  }
+  return found?val:events[0].from;
 }
 
 function ProjectModal({project,onSave,onClose}:any){
@@ -7442,7 +7504,7 @@ function ProjectModal({project,onSave,onClose}:any){
 
             {isEdit&&(
               <div style={{gridColumn:"span 2",fontSize:11,color:C.t3,display:"flex",justifyContent:"space-between",paddingTop:4,borderTop:`1px dashed ${C.b}`}}>
-                <span>Enregistré le {new Date(f.createdAt).toLocaleDateString("fr-FR")} · Durée : {durationLabel(f.processingDate||f.createdAt)}</span>
+                <span>Enregistré le {new Date(f.createdAt).toLocaleDateString("fr-FR")} · Durée : {durationDaysFr(f.processingDate||f.createdAt)}</span>
                 <span>Dernière modification : {new Date(f.updatedAt).toLocaleString("fr-FR")}</span>
               </div>
             )}
@@ -7493,8 +7555,14 @@ function ProjectsPage({isMobile}:any){
   };
 
   const handleSave=(p:any)=>{
-    const exists=projects.some((x:any)=>x.id===p.id);
-    const next=exists?projects.map((x:any)=>x.id===p.id?p:x):[p,...projects];
+    const old=projects.find((x:any)=>x.id===p.id);
+    let finalP=p;
+    if(old){
+      finalP={...p,history:[...(old.history||[]),...buildHistoryDiff(old,p)].slice(-50)};
+    } else {
+      finalP={...p,history:[{date:new Date().toISOString(),label:"Created",from:undefined,to:undefined}]};
+    }
+    const next=old?projects.map((x:any)=>x.id===p.id?finalP:x):[finalP,...projects];
     persist(next);
     setModal(null);
   };
@@ -7505,7 +7573,8 @@ function ProjectsPage({isMobile}:any){
   const toggleOngoing=(p:any)=>persist(projects.map((x:any)=>{
     if(x.id!==p.id)return x;
     const nextOngoing=!x.ongoing;
-    return{...x,ongoing:nextOngoing,reason:nextOngoing?"":x.reason,updatedAt:new Date().toISOString()};
+    const histEntry={date:new Date().toISOString(),label:"State",from:x.ongoing?"Ongoing":"Closed",to:nextOngoing?"Ongoing":"Closed"};
+    return{...x,ongoing:nextOngoing,reason:nextOngoing?"":x.reason,updatedAt:new Date().toISOString(),history:[...(x.history||[]),histEntry].slice(-50)};
   }));
 
   // ── KPIs ──
@@ -7517,6 +7586,24 @@ function ProjectsPage({isMobile}:any){
   const pipelineWeighted=ongoingP.reduce((s:number,p:any)=>s+(+p.offerAmount||0)*(+p.chanceOfSuccess||0)/100,0);
   const avgChance=ongoingP.length?ongoingP.reduce((s:number,p:any)=>s+(+p.chanceOfSuccess||0),0)/ongoingP.length:0;
   const winRate=closedP.length?Math.round(wonP.length/closedP.length*100):0;
+
+  // ── vs 30 days ago (reconstructed from the audit trail) ──
+  const cutoff30=Date.now()-30*86400000;
+  let prevPipelineTotal=0,prevWeighted=0,prevWonCount=0,prevClosedCount=0;
+  projects.forEach((p:any)=>{
+    if(new Date(p.createdAt).getTime()>cutoff30)return; // didn't exist yet 30 days ago
+    const ongoingAt=fieldValueAsOf(p,"State",cutoff30,p.ongoing?"Ongoing":"Closed")==="Ongoing";
+    const amountAt=+fieldValueAsOf(p,"Amount",cutoff30,p.offerAmount)||0;
+    const chanceAt=+fieldValueAsOf(p,"Chance",cutoff30,p.chanceOfSuccess)||0;
+    const statusAt=fieldValueAsOf(p,"Status",cutoff30,p.status);
+    if(ongoingAt){prevPipelineTotal+=amountAt;prevWeighted+=amountAt*chanceAt/100;}
+    else{prevClosedCount++;if(WON_STATUSES.includes(statusAt))prevWonCount++;}
+  });
+  const prevWinRate=prevClosedCount?Math.round(prevWonCount/prevClosedCount*100):0;
+  const pctDelta=(cur:number,prev:number)=>prev===0?(cur===0?0:100):Math.round((cur-prev)/Math.abs(prev)*100);
+  const pipelineDelta=pctDelta(pipelineTotal,prevPipelineTotal);
+  const weightedDelta=pctDelta(pipelineWeighted,prevWeighted);
+  const winRateDeltaPts=winRate-prevWinRate;
 
   // PO / invoices to come, counted from the dates entered on each opportunity
   const upcomingOrders=ongoingP.filter((p:any)=>p.expectedOrderDate);
@@ -7547,6 +7634,10 @@ function ProjectsPage({isMobile}:any){
   // phase distribution (count, all)
   const phaseDist=PHASES.map(ph=>({phase:ph,count:projects.filter((p:any)=>p.phase===ph).length}));
   const maxPhaseCount=Math.max(1,...phaseDist.map(d=>d.count));
+
+  // average time spent per phase (velocity), reconstructed from the audit trail
+  const phaseVelocity=computePhaseVelocity(projects);
+  const maxPhaseVelocity=Math.max(1,...phaseVelocity.map(d=>d.avgDays));
 
   // status distribution (count, all)
   const statusDist=PROJECT_STATUS.map(st=>({status:st,count:projects.filter((p:any)=>p.status===st).length}));
@@ -7602,7 +7693,7 @@ function ProjectsPage({isMobile}:any){
     return new Date(b.updatedAt||b.createdAt).getTime()-new Date(a.updatedAt||a.createdAt).getTime();
   });
 
-  const ProjectKpi=({icon,label,value,color,sub}:any)=>(
+  const ProjectKpi=({icon,label,value,color,sub,delta,deltaUnit}:any)=>(
     <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px",display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <div style={{width:28,height:28,borderRadius:8,background:color+"1A",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
@@ -7610,8 +7701,17 @@ function ProjectsPage({isMobile}:any){
         </div>
         <span style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".03em"}}>{label}</span>
       </div>
-      <div style={{fontSize:20,fontWeight:800,color:C.t1,lineHeight:1}}>{value}</div>
+      <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+        <div style={{fontSize:20,fontWeight:800,color:C.t1,lineHeight:1}}>{value}</div>
+        {delta!==undefined&&(
+          <span style={{display:"flex",alignItems:"center",gap:2,fontSize:10.5,fontWeight:700,color:delta>0?C.greenDk:delta<0?C.redDk:C.t3}}>
+            <i className={`ti ${delta>0?"ti-arrow-up-right":delta<0?"ti-arrow-down-right":"ti-minus"}`} style={{fontSize:11}} aria-hidden="true"/>
+            {delta===0?"stable":`${Math.abs(delta)}${deltaUnit||"%"}`}
+          </span>
+        )}
+      </div>
       {sub&&<div style={{fontSize:11,color:C.t3}}>{sub}</div>}
+      {delta!==undefined&&<div style={{fontSize:10,color:C.t3}}>vs 30 jours</div>}
     </div>
   );
 
@@ -7680,9 +7780,9 @@ function ProjectsPage({isMobile}:any){
       {/* KPI row */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10}}>
         <ProjectKpi icon="ti-briefcase" label="En cours" value={ongoingP.length} color={C.blue}/>
-        <ProjectKpi icon="ti-currency-euro" label="Pipeline total" value={fmtK(pipelineTotal)+" €"} color={C.teal}/>
-        <ProjectKpi icon="ti-chart-donut" label="Pipeline pondéré" value={fmtK(pipelineWeighted)+" €"} color={C.purple} sub={`chance moy. ${Math.round(avgChance)}%`}/>
-        <ProjectKpi icon="ti-trophy" label="Taux de réussite" value={winRate+"%"} color={C.green} sub={`${wonP.length} gagné · ${lostP.length} perdu`}/>
+        <ProjectKpi icon="ti-currency-euro" label="Pipeline total" value={fmtK(pipelineTotal)+" €"} color={C.teal} delta={pipelineDelta}/>
+        <ProjectKpi icon="ti-chart-donut" label="Pipeline pondéré" value={fmtK(pipelineWeighted)+" €"} color={C.purple} sub={`chance moy. ${Math.round(avgChance)}%`} delta={weightedDelta}/>
+        <ProjectKpi icon="ti-trophy" label="Taux de réussite" value={winRate+"%"} color={C.green} sub={`${wonP.length} gagné · ${lostP.length} perdu`} delta={winRateDeltaPts} deltaUnit=" pts"/>
         <ProjectKpi icon="ti-shopping-cart" label="PO à venir" value={upcomingOrders.length} color={C.blue} sub={`${fmtK(upcomingOrdersAmount)} €`}/>
         <ProjectKpi icon="ti-receipt" label="Facturation à venir" value={upcomingInvoices.length} color={C.teal} sub={`${fmtK(upcomingInvoicesAmount)} €`}/>
         <ProjectKpi icon="ti-rotate-clockwise" label="Suivi à jour" value={upToDateP.length} color={C.green} sub={`sur ${ongoingP.length} en cours`}/>
@@ -7819,6 +7919,28 @@ function ProjectsPage({isMobile}:any){
             ))}
           </div>
         </div>
+
+        {/* Phase velocity: average time spent per phase */}
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:4}}>⏱️ Vélocité par phase (jours en moyenne)</div>
+          <div style={{fontSize:10,color:C.t3,marginBottom:10}}>Basé sur l'historique des changements de phase</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {phaseVelocity.map(d=>{
+              const meta=PHASE_META[d.phase];
+              return(
+                <div key={d.phase}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,marginBottom:3}}>
+                    <span style={{color:C.t2,fontWeight:600}}>{d.phase}</span>
+                    <span style={{color:C.t3}}>{d.count>0?`${d.avgDays}j (${d.count})`:"—"}</span>
+                  </div>
+                  <div style={{height:6,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                    <div style={{width:`${d.avgDays/maxPhaseVelocity*100}%`,height:"100%",background:meta.color,borderRadius:99}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {topParties.length>0&&(
@@ -7898,7 +8020,7 @@ function ProjectsPage({isMobile}:any){
                     </div>
                     <div style={{fontSize:11.5,color:C.t3,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
                       {p.partyName&&<span><i className="ti ti-building" style={{fontSize:11}} aria-hidden="true"/> {p.partyType} — {p.partyName}</span>}
-                      <span>{durationLabel(p.processingDate||p.createdAt)}</span>
+                      <span>{durationDaysFr(p.processingDate||p.createdAt)}</span>
                     </div>
                   </div>
                   <div style={{textAlign:"right",minWidth:90}}>
@@ -7925,7 +8047,7 @@ function ProjectsPage({isMobile}:any){
                       <div><div style={{color:C.t3}}>Date de traitement</div><div style={{fontWeight:700,color:C.t1}}>{fmtD(p.processingDate)}</div></div>
                       <div><div style={{color:C.t3}}>Enregistré le</div><div style={{fontWeight:700,color:C.t1}}>{new Date(p.createdAt).toLocaleDateString("fr-FR")}</div></div>
                       <div><div style={{color:C.t3}}>Dernière modification</div><div style={{fontWeight:700,color:C.t1}}>{new Date(p.updatedAt).toLocaleDateString("fr-FR")}</div></div>
-                      <div><div style={{color:C.t3}}>Durée</div><div style={{fontWeight:700,color:C.t1}}>{durationLabel(p.processingDate||p.createdAt)}</div></div>
+                      <div><div style={{color:C.t3}}>Durée</div><div style={{fontWeight:700,color:C.t1}}>{durationDaysFr(p.processingDate||p.createdAt)}</div></div>
                     </div>
                     {p.pumpTypes?.length>0&&(
                       <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10,fontSize:11.5,color:C.t3}}>
@@ -7936,6 +8058,30 @@ function ProjectsPage({isMobile}:any){
                     )}
                     {p.reason&&(!p.ongoing||p.status==="Inactive")&&<div style={{background:C.redL,border:`1px solid ${C.red}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.redDk,marginBottom:12}}><strong>Raison :</strong> {p.reason}</div>}
                     {p.comments&&<div style={{background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.t2,marginBottom:12,whiteSpace:"pre-wrap"}}>{p.comments}</div>}
+                    {p.history&&p.history.length>0&&(
+                      <div style={{marginBottom:12}}>
+                        <div style={{fontSize:10.5,fontWeight:700,color:C.t3,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6,display:"flex",alignItems:"center",gap:5}}>
+                          <i className="ti ti-history" style={{fontSize:12}} aria-hidden="true"/> Historique
+                        </div>
+                        <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:140,overflowY:"auto",fontSize:11,background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"8px 10px"}}>
+                          {[...p.history].reverse().map((h:any,i:number)=>{
+                            const fmtVal=(v:any)=>{
+                              if(v===undefined||v===null||v==="")return"—";
+                              if(h.label==="Amount")return fmtK(+v||0)+" €";
+                              if(h.label==="Chance")return v+"%";
+                              if(h.label==="Expected order date"||h.label==="Expected invoice date")return fmtD(v);
+                              return String(v);
+                            };
+                            return(
+                              <div key={i} style={{display:"flex",gap:8,color:C.t2}}>
+                                <span style={{color:C.t3,minWidth:78,flexShrink:0}}>{new Date(h.date).toLocaleDateString("fr-FR")}</span>
+                                <span>{h.label==="Created"?"Projet créé":<><strong>{h.label}</strong> : {fmtVal(h.from)} → {fmtVal(h.to)}</>}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       <button onClick={()=>setModal(p)} style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:6,padding:"7px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
                         <i className="ti ti-edit" style={{fontSize:12}} aria-hidden="true"/> Modifier
@@ -7995,7 +8141,7 @@ h1{font-size:20px;margin-bottom:4px}
   <span class="badge" style="background:${statusMeta.bg};color:${statusMeta.color}">${p.status}</span>
   <span class="badge" style="background:${health.color}1A;color:${health.color}">${healthText}</span>
 </h1>
-<div style="color:#8FA0B3;font-size:12px">${p.ongoing?"Ongoing":"Closed"} · Registered on ${new Date(p.createdAt).toLocaleDateString("en-GB")} · Duration ${durationLabel(p.processingDate||p.createdAt)}</div>
+<div style="color:#8FA0B3;font-size:12px">${p.ongoing?"Ongoing":"Closed"} · Registered on ${new Date(p.createdAt).toLocaleDateString("en-GB")} · Duration ${durationDaysEn(p.processingDate||p.createdAt)}</div>
 
 <div class="row">
   <div class="field full"><div class="l">Description</div><div class="v" style="font-weight:400">${p.description||"—"}</div></div>
@@ -8004,7 +8150,7 @@ h1{font-size:20px;margin-bottom:4px}
   <div class="field"><div class="l">Offer amount</div><div class="v" style="color:#1D4ED8">${fmt(+p.offerAmount||0)} €</div></div>
   <div class="field"><div class="l">Chance of success</div><div class="v">${p.chanceOfSuccess}%</div></div>
   <div class="field full"><div class="l">Pump types (info only)</div><div class="v">${pumpLabels}</div></div>
-  <div class="field"><div class="l">Duration (life of opportunity)</div><div class="v">${durationLabel(p.processingDate||p.createdAt)}</div></div>
+  <div class="field"><div class="l">Duration (life of opportunity)</div><div class="v">${durationDaysEn(p.processingDate||p.createdAt)}</div></div>
   <div class="field"><div class="l">Processing date</div><div class="v">${fmtD(p.processingDate)}</div></div>
   <div class="field"><div class="l">Last modification</div><div class="v">${new Date(p.updatedAt).toLocaleDateString("en-GB")}</div></div>
   <div class="field"><div class="l">Expected order date</div><div class="v">${fmtD(p.expectedOrderDate)}</div></div>
@@ -8047,7 +8193,7 @@ function printProjectsReport(projects:any[],kpi:any){
       <td><span style="background:${statusMeta.bg};color:${statusMeta.color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${p.status}</span></td>
       <td style="text-align:center">${healthLabel(p)}</td>
       <td>${new Date(p.createdAt).toLocaleDateString("en-GB")}</td>
-      <td>${durationLabel(p.processingDate||p.createdAt)}</td>
+      <td>${durationDaysEn(p.processingDate||p.createdAt)}</td>
       <td>${fmtD(p.expectedOrderDate)}</td>
       <td>${fmtD(p.expectedInvoiceDate)}</td>
       <td style="max-width:220px;font-size:10.5px;color:#4A5568">${commentsShort}</td>
@@ -8262,7 +8408,7 @@ async function exportProjectsExcel(projects:any[],kpi:any){
         p.status||'—',
         healthText,
         new Date(p.createdAt).toLocaleDateString('en-GB'),
-        durationLabel(p.processingDate||p.createdAt),
+        durationDaysEn(p.processingDate||p.createdAt),
         p.expectedOrderDate?fmtD(p.expectedOrderDate):'—',
         p.expectedInvoiceDate?fmtD(p.expectedInvoiceDate):'—',
         p.comments||'—',
