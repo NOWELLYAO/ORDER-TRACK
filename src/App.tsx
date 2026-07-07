@@ -7192,6 +7192,7 @@ function DocumentsPage({isMobile}:any){
 // ─── TRÉSORERIE PAGE ──────────────────────────────────────────────────────────
 // ─── PROJECTS PAGE ────────────────────────────────────────────────────────
 // ─── PROJECTS PAGE ────────────────────────────────────────────────────────
+// ─── PROJECTS PAGE ────────────────────────────────────────────────────────
 const PROJECTS_KEY="ordertrack-projects";
 const PROJECTS_LS="ordertrack_projects_cache";
 
@@ -7240,9 +7241,11 @@ const LOST_STATUSES=["Competitor gets the order-lost"];
 const INACTIVE_STATUSES=["Inactive"];
 const TERMINAL_STATUSES=[...WON_STATUSES,...LOST_STATUSES,...INACTIVE_STATUSES];
 
+const FOLLOWUP_DAYS=30; // an ongoing opportunity is considered "up to date" if modified within this window
+
 const emptyProject=()=>({
   id:Date.now().toString()+Math.random().toString(36).slice(2,7),
-  name:"", description:"",
+  oppId:"", name:"", description:"",
   partyType:PARTY_TYPES[0], partyName:"",
   pumpTypes:[] as string[], pumpTypeOther:"",
   chanceOfSuccess:50, offerAmount:"",
@@ -7275,6 +7278,8 @@ const durationLabel=(iso:string)=>{
   const days=Math.round(d-months*30.44);
   return months+" mois"+(days>0?" "+days+"j":"");
 };
+const MONTH_NAMES_SHORT=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTH_NAMES_SHORT_FR=["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct","Nov","Déc"];
 
 function projectAlerts(projects:any[]){
   const alerts:any[]=[];
@@ -7298,11 +7303,24 @@ function projectAlerts(projects:any[]){
         msgEn:`Invoice expected ${fmtD(p.expectedInvoiceDate)} — in ${d}d`});
     }
     const staleDays=daysSince(p.updatedAt||p.createdAt);
-    if(staleDays>30)alerts.push({sev:"amber",kind:"Sans nouvelle",kindEn:"No update",project:p,days:staleDays,
-      msg:`Aucune mise à jour depuis ${staleDays}j`,
-      msgEn:`No update for ${staleDays}d`});
+    if(staleDays>FOLLOWUP_DAYS)alerts.push({sev:"amber",kind:"Relance nécessaire",kindEn:"Follow-up needed",project:p,days:staleDays,
+      msg:`Aucune mise à jour depuis ${staleDays}j — à relancer`,
+      msgEn:`No update for ${staleDays}d — follow up needed`});
   });
   return alerts.sort((a,b)=>(a.sev===b.sev?0:a.sev==="red"?-1:1)||(a.days-b.days));
+}
+
+// Chronological follow-up calendar: order dates, invoice dates and suggested next
+// follow-up (updatedAt + FOLLOWUP_DAYS) for every ongoing opportunity.
+function buildFollowUpCalendar(projects:any[]){
+  const events:any[]=[];
+  projects.filter((p:any)=>p.ongoing).forEach((p:any)=>{
+    if(p.expectedOrderDate)events.push({date:p.expectedOrderDate,type:"order",label:"Commande prévue",icon:"ti-shopping-cart",color:C.blue,project:p});
+    if(p.expectedInvoiceDate)events.push({date:p.expectedInvoiceDate,type:"invoice",label:"Facturation prévue",icon:"ti-receipt",color:C.teal,project:p});
+    const nextFollowUp=addDays((p.updatedAt||p.createdAt).split("T")[0],FOLLOWUP_DAYS);
+    events.push({date:nextFollowUp,type:"followup",label:"Relance recommandée",icon:"ti-phone-outgoing",color:C.purple,project:p});
+  });
+  return events.sort((a,b)=>a.date.localeCompare(b.date));
 }
 
 function ProjectModal({project,onSave,onClose}:any){
@@ -7335,14 +7353,15 @@ function ProjectModal({project,onSave,onClose}:any){
             </button>
           </>}>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
-            <Fld label="Nom / Référence du projet" value={f.name} onChange={(v:any)=>s("name",v)} placeholder="ex: Station de pompage Abidjan Port" span={2}/>
+            <Fld label="ID opportunity" value={f.oppId} onChange={(v:any)=>s("oppId",v)} placeholder="ex: OPP-2026-0142"/>
+            <Fld label="Nom / Référence du projet" value={f.name} onChange={(v:any)=>s("name",v)} placeholder="ex: Station de pompage Abidjan Port"/>
             <Fld label="Description" value={f.description} onChange={(v:any)=>s("description",v)} placeholder="Contexte, périmètre, spécificités…" rows={3} span={2}/>
 
             <Sel label="Intervenant — type" value={f.partyType} onChange={(v:any)=>s("partyType",v)} options={PARTY_TYPES}/>
             <Fld label="Intervenant — nom" value={f.partyName} onChange={(v:any)=>s("partyName",v)} placeholder="Nom de la société"/>
 
             <div style={{gridColumn:"span 2"}}>
-              <Label t="Type de pompes"/>
+              <Label t="Type de pompes (informatif)"/>
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
                 {PUMP_TYPES.map(pt=>(
                   <button key={pt.id} type="button" onClick={()=>togglePump(pt.id)}
@@ -7403,9 +7422,9 @@ function ProjectsPage({isMobile}:any){
   const[ongoingFilter,setOngoingFilter]=useState("all"); // all | ongoing | closed
   const[phaseFilter,setPhaseFilter]=useState("all");
   const[projStatusFilter,setProjStatusFilter]=useState("all");
-  const[pumpFilter,setPumpFilter]=useState("all");
   const[sortBy,setSortBy]=useState("deadline"); // deadline | amount | chance | recent
   const[showAlerts,setShowAlerts]=useState(true);
+  const[showCalendar,setShowCalendar]=useState(true);
   const[expandedId,setExpandedId]=useState<string|null>(null);
 
   const loadFromCloud=async(silent=false)=>{
@@ -7452,19 +7471,21 @@ function ProjectsPage({isMobile}:any){
   const pipelineTotal=ongoingP.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0);
   const pipelineWeighted=ongoingP.reduce((s:number,p:any)=>s+(+p.offerAmount||0)*(+p.chanceOfSuccess||0)/100,0);
   const avgChance=ongoingP.length?ongoingP.reduce((s:number,p:any)=>s+(+p.chanceOfSuccess||0),0)/ongoingP.length:0;
-  const avgAmount=ongoingP.length?pipelineTotal/ongoingP.length:0;
   const winRate=closedP.length?Math.round(wonP.length/closedP.length*100):0;
+
+  // PO / invoices to come, counted from the dates entered on each opportunity
+  const upcomingOrders=ongoingP.filter((p:any)=>p.expectedOrderDate);
+  const upcomingOrdersAmount=upcomingOrders.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0);
+  const upcomingInvoices=ongoingP.filter((p:any)=>p.expectedInvoiceDate);
+  const upcomingInvoicesAmount=upcomingInvoices.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0);
+
+  // update tracking: which ongoing opportunities were touched recently vs need a follow-up
+  const upToDateP=ongoingP.filter((p:any)=>daysSince(p.updatedAt||p.createdAt)<=FOLLOWUP_DAYS);
+  const staleP=ongoingP.filter((p:any)=>daysSince(p.updatedAt||p.createdAt)>FOLLOWUP_DAYS);
 
   const alerts=projectAlerts(projects);
   const redAlerts=alerts.filter((a:any)=>a.sev==="red").length;
-
-  // pump type distribution (amount, ongoing)
-  const pumpDist=PUMP_TYPES.map(pt=>({
-    ...pt,
-    amount:ongoingP.filter((p:any)=>p.pumpTypes?.includes(pt.id)).reduce((s:number,p:any)=>s+(+p.offerAmount||0),0),
-    count:ongoingP.filter((p:any)=>p.pumpTypes?.includes(pt.id)).length,
-  }));
-  const maxPumpAmount=Math.max(1,...pumpDist.map(d=>d.amount));
+  const calendarEvents=buildFollowUpCalendar(projects);
 
   // phase distribution (count, all)
   const phaseDist=PHASES.map(ph=>({phase:ph,count:projects.filter((p:any)=>p.phase===ph).length}));
@@ -7474,12 +7495,25 @@ function ProjectsPage({isMobile}:any){
   const statusDist=PROJECT_STATUS.map(st=>({status:st,count:projects.filter((p:any)=>p.status===st).length}));
   const maxStatusCount=Math.max(1,...statusDist.map(d=>d.count));
 
-  // monthly trend last 6 months (created vs closed)
+  // 6-month forecast: expected order / invoice amounts per month, from the dates entered
   const monthBuckets=Array.from({length:6},(_,i)=>{
-    const d=new Date();d.setMonth(d.getMonth()-(5-i));
-    return{key:`${d.getFullYear()}-${d.getMonth()}`,label:MONTH_NAMES_SHORT[d.getMonth()],year:d.getFullYear(),month:d.getMonth()};
+    const d=new Date();d.setDate(1);d.setMonth(d.getMonth()+i);
+    return{key:`${d.getFullYear()}-${d.getMonth()}`,label:MONTH_NAMES_SHORT_FR[d.getMonth()],year:d.getFullYear(),month:d.getMonth()};
   });
-  const trend=monthBuckets.map(b=>({
+  const inMonth=(dateStr:string,b:any)=>{if(!dateStr)return false;const d=new Date(dateStr+"T00:00:00");return d.getFullYear()===b.year&&d.getMonth()===b.month;};
+  const forecast=monthBuckets.map(b=>({
+    ...b,
+    orders:ongoingP.filter((p:any)=>inMonth(p.expectedOrderDate,b)).reduce((s:number,p:any)=>s+(+p.offerAmount||0),0),
+    invoices:ongoingP.filter((p:any)=>inMonth(p.expectedInvoiceDate,b)).reduce((s:number,p:any)=>s+(+p.offerAmount||0),0),
+  }));
+  const maxForecast=Math.max(1,...forecast.flatMap(f=>[f.orders,f.invoices]));
+
+  // creation/closing trend last 6 months
+  const trendBuckets=Array.from({length:6},(_,i)=>{
+    const d=new Date();d.setMonth(d.getMonth()-(5-i));
+    return{key:`${d.getFullYear()}-${d.getMonth()}`,label:MONTH_NAMES_SHORT_FR[d.getMonth()],year:d.getFullYear(),month:d.getMonth()};
+  });
+  const trend=trendBuckets.map(b=>({
     ...b,
     created:projects.filter((p:any)=>{const d=new Date(p.createdAt);return d.getFullYear()===b.year&&d.getMonth()===b.month;}).length,
     closed:projects.filter((p:any)=>!p.ongoing&&p.updatedAt&&(()=>{const d=new Date(p.updatedAt);return d.getFullYear()===b.year&&d.getMonth()===b.month;})()).length,
@@ -7497,9 +7531,8 @@ function ProjectsPage({isMobile}:any){
     const matchOngoing=ongoingFilter==="all"||(ongoingFilter==="ongoing"?p.ongoing:!p.ongoing);
     const matchPhase=phaseFilter==="all"||p.phase===phaseFilter;
     const matchStatus=projStatusFilter==="all"||p.status===projStatusFilter;
-    const matchPump=pumpFilter==="all"||p.pumpTypes?.includes(pumpFilter);
-    const matchSearch=!sq||[p.name,p.description,p.partyName,p.partyType,p.status,p.phase,p.reason,p.comments].some((v:any)=>String(v||"").toLowerCase().includes(sq));
-    return matchOngoing&&matchPhase&&matchStatus&&matchPump&&matchSearch;
+    const matchSearch=!sq||[p.oppId,p.name,p.description,p.partyName,p.partyType,p.status,p.phase,p.reason,p.comments].some((v:any)=>String(v||"").toLowerCase().includes(sq));
+    return matchOngoing&&matchPhase&&matchStatus&&matchSearch;
   });
   const deadlineScore=(p:any)=>{
     const dates=[p.expectedOrderDate,p.expectedInvoiceDate].filter(Boolean).map(diffD);
@@ -7546,7 +7579,7 @@ function ProjectsPage({isMobile}:any){
           <p style={{margin:0,color:C.t3,fontSize:13}}>{projects.length} projet{projects.length>1?"s":""} · {ongoingP.length} en cours · {closedP.length} clôturé{closedP.length>1?"s":""}</p>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>printProjectsReport(projects,{pipelineTotal,pipelineWeighted,winRate,alerts,pumpDist})}
+          <button onClick={()=>printProjectsReport(projects,{pipelineTotal,pipelineWeighted,winRate,alerts})}
             style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-file-report" style={{fontSize:14}} aria-hidden="true"/> Rapport PDF
           </button>
@@ -7573,7 +7606,7 @@ function ProjectsPage({isMobile}:any){
               {alerts.map((a:any,i:number)=>(
                 <div key={i} onClick={()=>setModal(a.project)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 16px",borderTop:`1px solid ${C.b}`,cursor:"pointer",fontSize:12}}>
                   <span style={{width:7,height:7,borderRadius:99,background:a.sev==="red"?C.red:C.amber,flexShrink:0}}/>
-                  <span style={{fontWeight:700,color:C.t1,minWidth:140}}>{a.project.name||a.project.description?.slice(0,30)||"Sans nom"}</span>
+                  <span style={{fontWeight:700,color:C.t1,minWidth:140}}>{a.project.oppId?`[${a.project.oppId}] `:""}{a.project.name||a.project.description?.slice(0,30)||"Sans nom"}</span>
                   <span style={{color:C.t2}}>{a.msg}</span>
                 </div>
               ))}
@@ -7583,30 +7616,63 @@ function ProjectsPage({isMobile}:any){
       )}
 
       {/* KPI row */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(6,1fr)",gap:10}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10}}>
         <ProjectKpi icon="ti-briefcase" label="En cours" value={ongoingP.length} color={C.blue}/>
         <ProjectKpi icon="ti-currency-euro" label="Pipeline total" value={fmtK(pipelineTotal)+" €"} color={C.teal}/>
         <ProjectKpi icon="ti-chart-donut" label="Pipeline pondéré" value={fmtK(pipelineWeighted)+" €"} color={C.purple} sub={`chance moy. ${Math.round(avgChance)}%`}/>
         <ProjectKpi icon="ti-trophy" label="Taux de réussite" value={winRate+"%"} color={C.green} sub={`${wonP.length} gagné · ${lostP.length} perdu`}/>
-        <ProjectKpi icon="ti-receipt-2" label="Montant moyen" value={fmtK(avgAmount)+" €"} color={C.amber}/>
-        <ProjectKpi icon="ti-alert-triangle" label="Alertes" value={alerts.length} color={redAlerts>0?C.red:C.amber}/>
+        <ProjectKpi icon="ti-shopping-cart" label="PO à venir" value={upcomingOrders.length} color={C.blue} sub={`${fmtK(upcomingOrdersAmount)} €`}/>
+        <ProjectKpi icon="ti-receipt" label="Facturation à venir" value={upcomingInvoices.length} color={C.teal} sub={`${fmtK(upcomingInvoicesAmount)} €`}/>
+        <ProjectKpi icon="ti-rotate-clockwise" label="Suivi à jour" value={upToDateP.length} color={C.green} sub={`sur ${ongoingP.length} en cours`}/>
+        <ProjectKpi icon="ti-alarm" label="À relancer" value={staleP.length} color={staleP.length>0?C.amber:C.t3} sub={`+${FOLLOWUP_DAYS}j sans MAJ`}/>
       </div>
+
+      {/* Follow-up calendar */}
+      {calendarEvents.length>0&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+          <button onClick={()=>setShowCalendar(!showCalendar)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",background:"#F8FAFC",border:"none",cursor:"pointer",borderBottom:showCalendar?`1px solid ${C.b}`:"none"}}>
+            <span style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700,color:C.t1}}>
+              <i className="ti ti-calendar-event" style={{fontSize:15,color:C.purple}} aria-hidden="true"/> Calendrier de suivi
+            </span>
+            <i className={`ti ${showCalendar?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:14,color:C.t3}} aria-hidden="true"/>
+          </button>
+          {showCalendar&&(
+            <div style={{maxHeight:280,overflowY:"auto"}}>
+              {calendarEvents.map((e:any,i:number)=>{
+                const d=diffD(e.date);
+                const overdue=d<0;
+                return(
+                  <div key={i} onClick={()=>setModal(e.project)} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 16px",borderTop:`1px solid ${C.b}`,cursor:"pointer",fontSize:12}}>
+                    <span style={{width:80,flexShrink:0,fontWeight:700,color:overdue?C.redDk:C.t2}}>{fmtD(e.date)}</span>
+                    <i className={`ti ${e.icon}`} style={{fontSize:13,color:e.color,flexShrink:0}} aria-hidden="true"/>
+                    <span style={{color:e.color,fontWeight:600,minWidth:130}}>{e.label}</span>
+                    <span style={{fontWeight:700,color:C.t1}}>{e.project.oppId?`[${e.project.oppId}] `:""}{e.project.name||e.project.description?.slice(0,30)||"Sans nom"}</span>
+                    <span style={{marginLeft:"auto",fontSize:10.5,color:overdue?C.redDk:C.t3,fontWeight:overdue?700:400}}>{overdue?`${Math.abs(d)}j de retard`:d===0?"aujourd'hui":`dans ${d}j`}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Charts row */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
-        {/* Pump type distribution */}
+        {/* Forecast: PO & invoices to come */}
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:12}}>🔧 Pipeline par type de pompe</div>
-          <div style={{display:"flex",flexDirection:"column",gap:9}}>
-            {pumpDist.map(d=>(
-              <div key={d.id}>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
-                  <span style={{color:C.t2,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><i className={`ti ${d.icon}`} style={{fontSize:12,color:d.color}} aria-hidden="true"/>{d.label}</span>
-                  <span style={{color:C.t3}}>{fmtK(d.amount)} € · {d.count}</span>
+          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:4}}>📅 Prévisionnel commandes & facturation</div>
+          <div style={{display:"flex",gap:10,fontSize:10,color:C.t3,marginBottom:10}}>
+            <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:C.blue}}/>Commandes</span>
+            <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:C.teal}}/>Facturation</span>
+          </div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:8,height:110}}>
+            {forecast.map((fMonth,i)=>(
+              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                <div style={{display:"flex",alignItems:"flex-end",gap:2,height:88}}>
+                  <div title={fmtK(fMonth.orders)+" €"} style={{width:11,height:`${fMonth.orders/maxForecast*100}%`,minHeight:fMonth.orders>0?3:0,background:C.blue,borderRadius:"2px 2px 0 0"}}/>
+                  <div title={fmtK(fMonth.invoices)+" €"} style={{width:11,height:`${fMonth.invoices/maxForecast*100}%`,minHeight:fMonth.invoices>0?3:0,background:C.teal,borderRadius:"2px 2px 0 0"}}/>
                 </div>
-                <div style={{height:7,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
-                  <div style={{width:`${d.amount/maxPumpAmount*100}%`,height:"100%",background:d.color,borderRadius:99,transition:"width .3s"}}/>
-                </div>
+                <span style={{fontSize:9,color:C.t3}}>{fMonth.label}</span>
               </div>
             ))}
           </div>
@@ -7695,7 +7761,7 @@ function ProjectsPage({isMobile}:any){
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"7px 12px",boxShadow:C.sh,flex:1,minWidth:180,maxWidth:280}}>
           <i className="ti ti-search" style={{fontSize:14,color:C.t3,flexShrink:0}} aria-hidden="true"/>
-          <input value={search} onChange={(e:any)=>setSearch(e.target.value)} placeholder="Rechercher un projet…"
+          <input value={search} onChange={(e:any)=>setSearch(e.target.value)} placeholder="Rechercher (nom, ID opportunity…)"
             style={{border:"none",outline:"none",fontSize:12,color:C.t1,background:"transparent",width:"100%",fontFamily:"inherit"}}/>
           {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.t3,cursor:"pointer"}}>✕</button>}
         </div>
@@ -7711,10 +7777,6 @@ function ProjectsPage({isMobile}:any){
         <select value={projStatusFilter} onChange={(e:any)=>setProjStatusFilter(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
           <option value="all">Tous statuts</option>
           {PROJECT_STATUS.map(st=><option key={st} value={st}>{st}</option>)}
-        </select>
-        <select value={pumpFilter} onChange={(e:any)=>setPumpFilter(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
-          <option value="all">Tous types de pompes</option>
-          {PUMP_TYPES.map(pt=><option key={pt.id} value={pt.id}>{pt.label}</option>)}
         </select>
         <select value={sortBy} onChange={(e:any)=>setSortBy(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
           <option value="deadline">Trier : échéance</option>
@@ -7737,6 +7799,7 @@ function ProjectsPage({isMobile}:any){
             const statusMeta=STATUS_META[p.status]||{color:C.t3,bg:"#F1F5F9"};
             const phaseMeta=PHASE_META[p.phase]||{color:C.t3,bg:"#F1F5F9"};
             const expanded=expandedId===p.id;
+            const upToDate=daysSince(p.updatedAt||p.createdAt)<=FOLLOWUP_DAYS;
             const orderD=p.expectedOrderDate?diffD(p.expectedOrderDate):null;
             const invD=p.expectedInvoiceDate?diffD(p.expectedInvoiceDate):null;
             const dateColor=(d:number|null)=>d===null?C.t3:d<0?C.redDk:d<=14?C.amberDk:C.t2;
@@ -7746,18 +7809,17 @@ function ProjectsPage({isMobile}:any){
                 <div onClick={()=>setExpandedId(expanded?null:p.id)} style={{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,flexWrap:isMobile?"wrap":"nowrap"}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      {p.oppId&&<span style={{fontSize:10.5,fontFamily:"monospace",color:C.t3,background:"#F1F5F9",padding:"2px 7px",borderRadius:5}}>{p.oppId}</span>}
                       <span style={{fontWeight:700,fontSize:13.5,color:C.t1}}>{p.name||p.description?.slice(0,40)||"Sans nom"}</span>
                       <span style={{fontSize:10,fontWeight:700,color:phaseMeta.color,background:phaseMeta.bg,padding:"2px 8px",borderRadius:99}}>{p.phase}</span>
                       <span style={{fontSize:10,fontWeight:700,color:statusMeta.color,background:statusMeta.bg,padding:"2px 8px",borderRadius:99}}>{p.status}</span>
                       {!p.ongoing&&<span style={{fontSize:10,fontWeight:700,color:C.t3,background:"#F1F5F9",padding:"2px 8px",borderRadius:99}}>CLÔTURÉ</span>}
+                      {p.ongoing&&!upToDate&&<span title="Sans mise à jour récente" style={{fontSize:10,fontWeight:700,color:C.amberDk,background:C.amberL,padding:"2px 8px",borderRadius:99}}><i className="ti ti-alarm" style={{fontSize:10}} aria-hidden="true"/> à relancer</span>}
                     </div>
                     <div style={{fontSize:11.5,color:C.t3,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
                       {p.partyName&&<span><i className="ti ti-building" style={{fontSize:11}} aria-hidden="true"/> {p.partyType} — {p.partyName}</span>}
                       <span>{durationLabel(p.createdAt)}</span>
                     </div>
-                  </div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                    {p.pumpTypes?.map((id:string)=>{const pt=PUMP_TYPES.find(x=>x.id===id);return pt?<i key={id} className={`ti ${pt.icon}`} title={pt.label} style={{fontSize:14,color:pt.color}} aria-hidden="true"/>:null;})}
                   </div>
                   <div style={{textAlign:"right",minWidth:90}}>
                     <div style={{fontSize:14,fontWeight:800,color:C.t1}}>{fmtK(+p.offerAmount||0)} €</div>
@@ -7785,7 +7847,13 @@ function ProjectsPage({isMobile}:any){
                       <div><div style={{color:C.t3}}>Dernière modification</div><div style={{fontWeight:700,color:C.t1}}>{new Date(p.updatedAt).toLocaleDateString("fr-FR")}</div></div>
                       <div><div style={{color:C.t3}}>Durée</div><div style={{fontWeight:700,color:C.t1}}>{durationLabel(p.createdAt)}</div></div>
                     </div>
-                    {p.pumpTypes?.includes("others")&&p.pumpTypeOther&&<p style={{fontSize:11.5,color:C.t2,margin:"0 0 10px"}}><strong>Autre type :</strong> {p.pumpTypeOther}</p>}
+                    {p.pumpTypes?.length>0&&(
+                      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10,fontSize:11.5,color:C.t3}}>
+                        <span>Type de pompes (info) :</span>
+                        {p.pumpTypes.map((id:string)=>{const pt=PUMP_TYPES.find((x:any)=>x.id===id);return pt?<span key={id} style={{display:"flex",alignItems:"center",gap:4,color:pt.color,fontWeight:600}}><i className={`ti ${pt.icon}`} style={{fontSize:12}} aria-hidden="true"/>{pt.label}</span>:null;})}
+                        {p.pumpTypes.includes("others")&&p.pumpTypeOther&&<span>({p.pumpTypeOther})</span>}
+                      </div>
+                    )}
                     {p.reason&&<div style={{background:C.redL,border:`1px solid ${C.red}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.redDk,marginBottom:12}}><strong>Raison :</strong> {p.reason}</div>}
                     {p.comments&&<div style={{background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.t2,marginBottom:12,whiteSpace:"pre-wrap"}}>{p.comments}</div>}
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -7812,8 +7880,6 @@ function ProjectsPage({isMobile}:any){
     </div>
   );
 }
-
-const MONTH_NAMES_SHORT=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 // ── PDF (English): single project sheet ──
 function printOneProject(p:any){
@@ -7842,7 +7908,7 @@ h1{font-size:20px;margin-bottom:4px}
 .reason{white-space:pre-wrap;background:#FEE2E2;border:1px solid #DC2626;color:#B91C1C;border-radius:8px;padding:12px;font-size:12.5px}
 @media print{.no-print{display:none!important}}
 </style></head><body>
-<h1>${p.name||p.description?.slice(0,50)||"Project"}
+<h1>${p.oppId?`[${p.oppId}] `:""}${p.name||p.description?.slice(0,50)||"Project"}
   <span class="badge" style="background:${phaseMeta.bg};color:${phaseMeta.color}">${p.phase}</span>
   <span class="badge" style="background:${statusMeta.bg};color:${statusMeta.color}">${p.status}</span>
 </h1>
@@ -7852,7 +7918,7 @@ h1{font-size:20px;margin-bottom:4px}
   <div class="field full"><div class="l">Description</div><div class="v" style="font-weight:400">${p.description||"—"}</div></div>
   <div class="field"><div class="l">Party type</div><div class="v">${p.partyType||"—"}</div></div>
   <div class="field"><div class="l">Party name</div><div class="v">${p.partyName||"—"}</div></div>
-  <div class="field full"><div class="l">Pump types</div><div class="v">${pumpLabels}</div></div>
+  <div class="field full"><div class="l">Pump types (info only)</div><div class="v">${pumpLabels}</div></div>
   <div class="field"><div class="l">Offer amount</div><div class="v" style="color:#1D4ED8">${fmt(+p.offerAmount||0)} €</div></div>
   <div class="field"><div class="l">Chance of success</div><div class="v">${p.chanceOfSuccess}%</div></div>
   <div class="field"><div class="l">Processing date</div><div class="v">${fmtD(p.processingDate)}</div></div>
@@ -7882,6 +7948,7 @@ function printProjectsReport(projects:any[],kpi:any){
   const rows=(list:any[],withReason?:boolean)=>list.map((p:any)=>{
     const statusMeta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
     return `<tr>
+      <td style="font-family:monospace;font-size:10.5px">${p.oppId||"—"}</td>
       <td style="font-weight:600">${p.name||p.description?.slice(0,30)||"—"}</td>
       <td>${partyLabel(p)}</td>
       <td>${p.phase||"—"}</td>
@@ -7894,11 +7961,12 @@ function printProjectsReport(projects:any[],kpi:any){
     </tr>`;
   }).join("");
   const alertRows=kpi.alerts.slice(0,20).map((a:any)=>`<tr>
-      <td style="font-weight:600">${a.project.name||a.project.description?.slice(0,30)||"—"}</td>
+      <td style="font-weight:600">${a.project.oppId?`[${a.project.oppId}] `:""}${a.project.name||a.project.description?.slice(0,30)||"—"}</td>
       <td>${a.kindEn||a.kind}</td>
       <td style="color:${a.sev==="red"?"#B91C1C":"#B45309"}">${a.msgEn||a.msg}</td>
     </tr>`).join("");
-  const pumpRows=kpi.pumpDist.map((d:any)=>`<tr><td>${d.label}</td><td style="text-align:right">${fmt(d.amount)} €</td><td style="text-align:center">${d.count}</td></tr>`).join("");
+  const upcomingOrders=ongoingP.filter((p:any)=>p.expectedOrderDate);
+  const upcomingInvoices=ongoingP.filter((p:any)=>p.expectedInvoiceDate);
 
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>Projects Report — ${new Date().toLocaleDateString("en-GB")}</title>
@@ -7925,19 +7993,20 @@ td{padding:6px 9px;border-bottom:1px solid #E5EAF0}
   <div class="kpi"><div class="l">Win rate</div><div class="v" style="color:#059669">${kpi.winRate}%</div></div>
   <div class="kpi"><div class="l">Active alerts</div><div class="v" style="color:${kpi.alerts.some((a:any)=>a.sev==="red")?"#DC2626":"#D97706"}">${kpi.alerts.length}</div></div>
 </div>
+<div class="kpis">
+  <div class="kpi"><div class="l">POs to come</div><div class="v" style="color:#2563EB">${upcomingOrders.length} · ${fmt(upcomingOrders.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0))} €</div></div>
+  <div class="kpi"><div class="l">Invoices to come</div><div class="v" style="color:#0D9488">${upcomingInvoices.length} · ${fmt(upcomingInvoices.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0))} €</div></div>
+</div>
 
 ${alertRows?`<h2>⚠️ Alerts</h2><table><thead><tr><th>Project</th><th>Type</th><th>Detail</th></tr></thead><tbody>${alertRows}</tbody></table>`:""}
 
-<h2>🔧 Pipeline by pump type</h2>
-<table><thead><tr><th>Type</th><th style="text-align:right">Amount</th><th style="text-align:center">Nb projects</th></tr></thead><tbody>${pumpRows}</tbody></table>
-
 <h2>📁 Ongoing projects (${ongoingP.length})</h2>
-<table><thead><tr><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th></tr></thead>
-<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="8" style="text-align:center;color:#8FA0B3;padding:16px">No ongoing project</td></tr>'}</tbody></table>
+<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th></tr></thead>
+<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="9" style="text-align:center;color:#8FA0B3;padding:16px">No ongoing project</td></tr>'}</tbody></table>
 
 <h2>✅ Closed projects (${closedP.length})</h2>
-<table><thead><tr><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th><th>Reason</th></tr></thead>
-<tbody>${rows(closedP,true)||'<tr><td colspan="9" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
+<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th><th>Reason</th></tr></thead>
+<tbody>${rows(closedP,true)||'<tr><td colspan="10" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
 
 <div class="no-print" style="position:fixed;top:14px;right:14px;display:flex;gap:8px">
 <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">🖨️ Print / PDF</button>
@@ -7946,7 +8015,6 @@ ${alertRows?`<h2>⚠️ Alerts</h2><table><thead><tr><th>Project</th><th>Type</t
 </body></html>`);
   w.document.close();
 }
-
 function TresoreriePage({getAllOrders,clients,lang,isMobile}:any){
   const today=new Date();today.setHours(0,0,0,0);
   const all=getAllOrders();
