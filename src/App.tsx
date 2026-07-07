@@ -3745,6 +3745,18 @@ tr:nth-child(even) td{background:#F8FAFC;}
     const priorityColor=(p:string)=>p==="HIGH"?"#DC2626":p==="MEDIUM"?"#D97706":"#059669";
     const priorityBg=(p:string)=>p==="HIGH"?"#FEE2E2":p==="MEDIUM"?"#FEF3C7":"#D1FAE5";
 
+    // Only keep planned invoices whose underlying order is still an open order
+    // (not fully invoiced / not cancelled). This prevents orders that were
+    // already shipped/invoiced after being selected from lingering in the
+    // "Expected Invoicing" print-out.
+    const openOrderKeys=new Set(
+      allOrders.filter((o:any)=>{
+        const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+        return inv<(+o.amount||0)*0.999&&o.status!=="annule";
+      }).map((o:any)=>o._client+"|"+o.id)
+    );
+    const validPlannedInvoices=plannedInvoices.filter((p:any)=>openOrderKeys.has(p.key));
+
     const w=window.open("","_blank","width=1200,height=900");
     if(!w)return;
     w.document.write(`<!DOCTYPE html><html><head>
@@ -3823,17 +3835,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
     .cover{min-height:277mm;}
   }
 </style>
-<script>
-// Afficher les instructions pour supprimer les en-têtes navigateur
-window.addEventListener('load', function(){
-  var msg = document.getElementById('print-tip');
-  if(msg) msg.style.display='flex';
-});
-</script>
 </head><body>
-<div id="print-tip" class="no-print" style="display:none;position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#1E3A5F;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-family:sans-serif;z-index:1000;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.3);max-width:500px">
-  ⚠️ Dans la fenêtre d'impression : décochez <strong>«&nbsp;En-têtes et pieds de page&nbsp;»</strong> pour supprimer l'URL
-</div>
 
 <!-- ══ PAGE 1: COVER ══ -->
 <div class="page cover">
@@ -4005,18 +4007,18 @@ window.addEventListener('load', function(){
       <table>
         <thead><tr><th>Customer</th><th>PO #</th><th>S/O #</th><th style="text-align:right">Planned amount (K€)</th></tr></thead>
         <tbody>
-          ${plannedInvoices.length===0
+          ${validPlannedInvoices.length===0
             ?'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">No planned invoices — select from the weekly report</td></tr>'
             :(()=>{
               // Group by client
               const byC3:Record<string,any[]>={};
-              plannedInvoices.forEach((p:any)=>{if(!byC3[p.client])byC3[p.client]=[];byC3[p.client].push(p);});
+              validPlannedInvoices.forEach((p:any)=>{if(!byC3[p.client])byC3[p.client]=[];byC3[p.client].push(p);});
               let r5=Object.keys(byC3).sort().map(c=>{
                 const cTot=byC3[c].reduce((s:number,p:any)=>s+(+p.amount||0),0);
                 const rows=byC3[c].map((p:any)=>`<tr><td style="padding-left:16px;color:#4A5568">${p.client}</td><td style="font-family:monospace;font-size:13px">${p.poNumber||"—"}</td><td style="font-family:monospace;font-size:13px">${p.soNumber||"—"}</td><td style="text-align:right;color:#D97706;font-weight:600">${fmtK(+p.amount||0)}</td></tr>`).join("");
                 return `<tr style="background:#FFF7ED"><td colspan="3" style="font-weight:700;color:#D97706;font-size:13px">📁 ${c}</td><td style="text-align:right;font-weight:700;color:#D97706">${fmtK(cTot)}</td></tr>${rows}`;
               }).join("");
-              const grand=plannedInvoices.reduce((s:number,p:any)=>s+(+p.amount||0),0);
+              const grand=validPlannedInvoices.reduce((s:number,p:any)=>s+(+p.amount||0),0);
               r5+=`<tr class="total-row"><td colspan="3">PLANNED TOTAL</td><td style="text-align:right">${fmtK(grand)}</td></tr>`;
               return r5;
             })()
@@ -4391,7 +4393,8 @@ window.addEventListener('load', function(){
           const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
           return inv<(+o.amount||0)*0.999&&o.status!=="annule";
         });
-        const totalPlanned=plannedInvoices.reduce((s:number,p:any)=>s+(+p.amount||0),0);
+        const openOrderKeysUI=new Set(openOrdersList.map((o:any)=>o._client+"|"+o.id));
+        const totalPlanned=plannedInvoices.filter((p:any)=>openOrderKeysUI.has(p.key)).reduce((s:number,p:any)=>s+(+p.amount||0),0);
         const toggleOrder=(o:any)=>{
           const key=o._client+"|"+o.id;
           const exists=plannedInvoices.find((p:any)=>p.key===key);
