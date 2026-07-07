@@ -7360,9 +7360,14 @@ function ProjectModal({project,onSave,onClose}:any){
     :(f.expectedInvoiceDate&&f.expectedOrderDate&&f.expectedInvoiceDate<f.expectedOrderDate)
       ?"La date de facturation prévue ne peut pas être antérieure à la date de commande prévue."
     :"";
+  const phaseStatusError=
+    (f.phase==="Completed/Closed"&&!TERMINAL_STATUSES.includes(f.status))
+      ?"La phase « Completed/Closed » n'est pas cohérente avec le statut « "+f.status+" ». Choisissez un statut de clôture (gagné, perdu ou inactif)."
+    :"";
+  const formError=dateError||phaseStatusError;
 
   const save=()=>{
-    if(!canSave||dateError)return;
+    if(!canSave||formError)return;
     const updated={...f,offerAmount:+f.offerAmount||0,chanceOfSuccess:Math.max(0,Math.min(100,+f.chanceOfSuccess||0)),updatedAt:new Date().toISOString()};
     onSave(updated);
   };
@@ -7373,7 +7378,7 @@ function ProjectModal({project,onSave,onClose}:any){
         <Modal title={isEdit?"Modifier le projet":"Nouveau projet"} sub={isEdit?f.name||f.description?.slice(0,40):"Renseignez les informations du projet"} width={660} onClose={onClose}
           footer={<>
             <button onClick={onClose} style={{background:"#F1F5F9",color:C.t2,border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Annuler</button>
-            <button onClick={save} disabled={!canSave||!!dateError} style={{background:canSave&&!dateError?C.blue:C.b,color:"#fff",border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:canSave&&!dateError?"pointer":"not-allowed"}}>
+            <button onClick={save} disabled={!canSave||!!formError} style={{background:canSave&&!formError?C.blue:C.b,color:"#fff",border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:canSave&&!formError?"pointer":"not-allowed"}}>
               <i className="ti ti-device-floppy" style={{fontSize:13,marginRight:6}} aria-hidden="true"/>{isEdit?"Enregistrer":"Créer le projet"}
             </button>
           </>}>
@@ -7411,6 +7416,11 @@ function ProjectModal({project,onSave,onClose}:any){
 
             <Sel label="Phase" value={f.phase} onChange={(v:any)=>s("phase",v)} options={PHASES}/>
             <Sel label="Statut" value={f.status} onChange={setStatus} options={PROJECT_STATUS}/>
+            {phaseStatusError&&(
+              <div style={{gridColumn:"span 2",display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:C.redDk,background:C.redL,border:`1px solid ${C.red}`,borderRadius:C.rSm,padding:"7px 10px"}}>
+                <i className="ti ti-alert-triangle" style={{fontSize:13}} aria-hidden="true"/> {phaseStatusError}
+              </div>
+            )}
 
             <Sel label="En cours ou clôturé" value={f.ongoing?"ongoing":"closed"} onChange={(v:any)=>s("ongoing",v==="ongoing")}
               options={[{value:"ongoing",label:"En cours"},{value:"closed",label:"Clôturé"}]}/>
@@ -7954,7 +7964,7 @@ function printOneProject(p:any){
   const statusMeta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
   const phaseMeta=PHASE_META[p.phase]||{color:"#4A5568",bg:"#F1F5F9"};
   const health=projectHealth(p);
-  const healthText=health.color===C.green?"OK":health.color===C.red?"NOT OK":"CLOSED";
+  const healthText=!p.ongoing?"CLOSED":(health.color===C.green?"OK":"NOT OK");
   const pumpLabels=(p.pumpTypes||[]).map((id:string)=>{
     const pt=PUMP_TYPES.find((x:any)=>x.id===id);
     return pt?(id==="others"&&p.pumpTypeOther?`${pt.label} (${p.pumpTypeOther})`:pt.label):id;
@@ -8016,8 +8026,9 @@ function printProjectsReport(projects:any[],kpi:any){
   const partyLabel=(p:any)=>p.partyName?`${p.partyType}: ${p.partyName}`:(p.partyType||"—");
   const healthLabel=(p:any)=>{
     const h=projectHealth(p);
-    const text=h.color===C.green?"OK":h.color===C.red?"NOT OK":"CLOSED";
-    return `<span style="background:${h.color}1A;color:${h.color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800">${text}</span>`;
+    const text=!p.ongoing?"CLOSED":(h.color===C.green?"OK":"NOT OK");
+    const color=!p.ongoing?C.t3:h.color;
+    return `<span style="background:${color}1A;color:${color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800">${text}</span>`;
   };
   const rows=(list:any[])=>list.map((p:any)=>{
     const statusMeta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
@@ -8031,6 +8042,7 @@ function printProjectsReport(projects:any[],kpi:any){
       <td>${p.phase||"—"}</td>
       <td><span style="background:${statusMeta.bg};color:${statusMeta.color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${p.status}</span></td>
       <td style="text-align:center">${healthLabel(p)}</td>
+      <td>${new Date(p.createdAt).toLocaleDateString("en-GB")}</td>
       <td>${durationLabel(p.createdAt)}</td>
       <td>${fmtD(p.expectedOrderDate)}</td>
       <td>${fmtD(p.expectedInvoiceDate)}</td>
@@ -8086,12 +8098,12 @@ td{padding:6px 9px;border-bottom:1px solid #E5EAF0}
 ${alertRows?`<h2>⚠️ Alerts</h2><table><thead><tr><th>Project</th><th>Type</th><th>Detail</th></tr></thead><tbody>${alertRows}</tbody></table>`:""}
 
 <h2>📁 Ongoing projects (${ongoingP.length})</h2>
-<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Phase</th><th>Status</th><th style="text-align:center">Health</th><th>Duration</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th></tr></thead>
-<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="12" style="text-align:center;color:#8FA0B3;padding:16px">No ongoing project</td></tr>'}</tbody></table>
+<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Phase</th><th>Status</th><th style="text-align:center">Health</th><th>Registered</th><th>Duration</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th></tr></thead>
+<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="13" style="text-align:center;color:#8FA0B3;padding:16px">No ongoing project</td></tr>'}</tbody></table>
 
 <h2>✅ Closed projects (${closedP.length})</h2>
-<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Phase</th><th>Status</th><th style="text-align:center">Health</th><th>Duration</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th></tr></thead>
-<tbody>${rows(closedP)||'<tr><td colspan="12" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
+<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Phase</th><th>Status</th><th style="text-align:center">Health</th><th>Registered</th><th>Duration</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th></tr></thead>
+<tbody>${rows(closedP)||'<tr><td colspan="13" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
 
 <div class="no-print" style="position:fixed;top:14px;right:14px;display:flex;gap:8px">
 <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">🖨️ Print / PDF</button>
@@ -8206,6 +8218,7 @@ async function exportProjectsExcel(projects:any[],kpi:any){
       {header:'Phase',width:18},
       {header:'Status',width:30},
       {header:'Health',width:11},
+      {header:'Registered',width:14},
       {header:'Duration',width:16},
       {header:'Expected order',width:15},
       {header:'Expected invoice',width:15},
@@ -8232,7 +8245,8 @@ async function exportProjectsExcel(projects:any[],kpi:any){
       const statusMeta=STATUS_META[p.status]||{color:'#4A5568',bg:'#F1F5F9'};
       const phaseMeta=PHASE_META[p.phase]||{color:'#4A5568',bg:'#F1F5F9'};
       const health=projectHealth(p);
-      const healthText=health.color===C.green?'OK':health.color===C.red?'NOT OK':'CLOSED';
+      const healthText=!p.ongoing?'CLOSED':(health.color===C.green?'OK':'NOT OK');
+      const healthColor=!p.ongoing?C.t3:health.color;
       const partyLabel=p.partyName?`${p.partyType}: ${p.partyName}`:(p.partyType||'—');
       const vals:any[]=[
         p.oppId||'—',
@@ -8243,6 +8257,7 @@ async function exportProjectsExcel(projects:any[],kpi:any){
         p.phase||'—',
         p.status||'—',
         healthText,
+        new Date(p.createdAt).toLocaleDateString('en-GB'),
         durationLabel(p.createdAt),
         p.expectedOrderDate?fmtD(p.expectedOrderDate):'—',
         p.expectedInvoiceDate?fmtD(p.expectedInvoiceDate):'—',
@@ -8253,7 +8268,7 @@ async function exportProjectsExcel(projects:any[],kpi:any){
         cell.value=v;
         cell.font={size:9,name:'Arial'};
         cell.border=bs;
-        cell.alignment={vertical:'middle',wrapText:i===11};
+        cell.alignment={vertical:'middle',wrapText:i===12};
         if(i===3){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right',vertical:'middle'};}
         if(i===4){cell.numFmt='0"%"';cell.alignment={horizontal:'center',vertical:'middle'};}
       });
@@ -8267,13 +8282,13 @@ async function exportProjectsExcel(projects:any[],kpi:any){
       statusCell.font={size:9,bold:true,color:{argb:argb(statusMeta.color)},name:'Arial'};
       // colored Health cell (OK=green, NOT OK=red, CLOSED=grey)
       const healthCell=row.getCell(8);
-      healthCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF'+(health.color===C.green?'D1FAE5':health.color===C.red?'FEE2E2':'F1F5F9')}};
-      healthCell.font={size:9,bold:true,color:{argb:argb(health.color)},name:'Arial'};
+      healthCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF'+(healthColor===C.green?'D1FAE5':healthColor===C.red?'FEE2E2':'F1F5F9')}};
+      healthCell.font={size:9,bold:true,color:{argb:argb(healthColor)},name:'Arial'};
       healthCell.alignment={horizontal:'center',vertical:'middle'};
     });
 
     if(list.length===0){
-      ws.mergeCells('A2:L2');
+      ws.mergeCells('A2:M2');
       const c=ws.getCell('A2');
       c.value='No project';
       c.font={size:10,italic:true,color:{argb:'FF8FA0B3'},name:'Arial'};
