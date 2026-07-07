@@ -7623,11 +7623,11 @@ function ProjectsPage({isMobile}:any){
           <p style={{margin:0,color:C.t3,fontSize:13}}>{projects.length} projet{projects.length>1?"s":""} · {ongoingP.length} en cours · {closedP.length} clôturé{closedP.length>1?"s":""}</p>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>printProjectsReport(projects,{pipelineTotal,pipelineWeighted,winRate,alerts})}
+          <button onClick={()=>printProjectsReport(projects,{pipelineTotal,pipelineWeighted,winRate,alerts,measurablePct,measurableAmount,staleAmount})}
             style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-file-report" style={{fontSize:14}} aria-hidden="true"/> Rapport PDF
           </button>
-          <button disabled={exportingXlsx} onClick={async()=>{setExportingXlsx(true);try{await exportProjectsExcel(projects,{pipelineTotal,pipelineWeighted,winRate,alerts});}catch(e){alert("Erreur lors de la génération du fichier Excel.");}setExportingXlsx(false);}}
+          <button disabled={exportingXlsx} onClick={async()=>{setExportingXlsx(true);try{await exportProjectsExcel(projects,{pipelineTotal,pipelineWeighted,winRate,alerts,measurablePct,measurableAmount,staleAmount});}catch(e){alert("Erreur lors de la génération du fichier Excel.");}setExportingXlsx(false);}}
             style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:exportingXlsx?"wait":"pointer",boxShadow:C.sh,opacity:exportingXlsx?.6:1}}>
             <i className={`ti ${exportingXlsx?"ti-loader-2":"ti-file-spreadsheet"}`} style={{fontSize:14}} aria-hidden="true"/> {exportingXlsx?"Génération…":"Export Excel"}
           </button>
@@ -7953,6 +7953,8 @@ function printOneProject(p:any){
   if(!w)return;
   const statusMeta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
   const phaseMeta=PHASE_META[p.phase]||{color:"#4A5568",bg:"#F1F5F9"};
+  const health=projectHealth(p);
+  const healthText=health.color===C.green?"OK":health.color===C.red?"NOT OK":"CLOSED";
   const pumpLabels=(p.pumpTypes||[]).map((id:string)=>{
     const pt=PUMP_TYPES.find((x:any)=>x.id===id);
     return pt?(id==="others"&&p.pumpTypeOther?`${pt.label} (${p.pumpTypeOther})`:pt.label):id;
@@ -7977,6 +7979,7 @@ h1{font-size:20px;margin-bottom:4px}
 <h1>${p.oppId?`[${p.oppId}] `:""}${p.name||p.description?.slice(0,50)||"Project"}
   <span class="badge" style="background:${phaseMeta.bg};color:${phaseMeta.color}">${p.phase}</span>
   <span class="badge" style="background:${statusMeta.bg};color:${statusMeta.color}">${p.status}</span>
+  <span class="badge" style="background:${health.color}1A;color:${health.color}">${healthText}</span>
 </h1>
 <div style="color:#8FA0B3;font-size:12px">${p.ongoing?"Ongoing":"Closed"} · Registered on ${new Date(p.createdAt).toLocaleDateString("en-GB")} · Duration ${durationLabel(p.createdAt)}</div>
 
@@ -7984,9 +7987,10 @@ h1{font-size:20px;margin-bottom:4px}
   <div class="field full"><div class="l">Description</div><div class="v" style="font-weight:400">${p.description||"—"}</div></div>
   <div class="field"><div class="l">Party type</div><div class="v">${p.partyType||"—"}</div></div>
   <div class="field"><div class="l">Party name</div><div class="v">${p.partyName||"—"}</div></div>
-  <div class="field full"><div class="l">Pump types (info only)</div><div class="v">${pumpLabels}</div></div>
   <div class="field"><div class="l">Offer amount</div><div class="v" style="color:#1D4ED8">${fmt(+p.offerAmount||0)} €</div></div>
   <div class="field"><div class="l">Chance of success</div><div class="v">${p.chanceOfSuccess}%</div></div>
+  <div class="field full"><div class="l">Pump types (info only)</div><div class="v">${pumpLabels}</div></div>
+  <div class="field"><div class="l">Duration (life of opportunity)</div><div class="v">${durationLabel(p.createdAt)}</div></div>
   <div class="field"><div class="l">Processing date</div><div class="v">${fmtD(p.processingDate)}</div></div>
   <div class="field"><div class="l">Last modification</div><div class="v">${new Date(p.updatedAt).toLocaleDateString("en-GB")}</div></div>
   <div class="field"><div class="l">Expected order date</div><div class="v">${fmtD(p.expectedOrderDate)}</div></div>
@@ -8010,6 +8014,11 @@ function printProjectsReport(projects:any[],kpi:any){
   const ongoingP=projects.filter((p:any)=>p.ongoing);
   const closedP=projects.filter((p:any)=>!p.ongoing);
   const partyLabel=(p:any)=>p.partyName?`${p.partyType}: ${p.partyName}`:(p.partyType||"—");
+  const healthLabel=(p:any)=>{
+    const h=projectHealth(p);
+    const text=h.color===C.green?"OK":h.color===C.red?"NOT OK":"CLOSED";
+    return `<span style="background:${h.color}1A;color:${h.color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800">${text}</span>`;
+  };
   const rows=(list:any[])=>list.map((p:any)=>{
     const statusMeta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
     const commentsShort=p.comments?(p.comments.length>100?p.comments.slice(0,100)+"…":p.comments):"—";
@@ -8017,10 +8026,12 @@ function printProjectsReport(projects:any[],kpi:any){
       <td style="font-family:monospace;font-size:10.5px">${p.oppId||"—"}</td>
       <td style="font-weight:600">${p.name||p.description?.slice(0,30)||"—"}</td>
       <td>${partyLabel(p)}</td>
-      <td>${p.phase||"—"}</td>
-      <td><span style="background:${statusMeta.bg};color:${statusMeta.color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${p.status}</span></td>
       <td style="text-align:right">${fmt(+p.offerAmount||0)} €</td>
       <td style="text-align:center">${p.chanceOfSuccess}%</td>
+      <td>${p.phase||"—"}</td>
+      <td><span style="background:${statusMeta.bg};color:${statusMeta.color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${p.status}</span></td>
+      <td style="text-align:center">${healthLabel(p)}</td>
+      <td>${durationLabel(p.createdAt)}</td>
       <td>${fmtD(p.expectedOrderDate)}</td>
       <td>${fmtD(p.expectedInvoiceDate)}</td>
       <td style="max-width:220px;font-size:10.5px;color:#4A5568">${commentsShort}</td>
@@ -8033,6 +8044,7 @@ function printProjectsReport(projects:any[],kpi:any){
     </tr>`).join("");
   const upcomingOrders=ongoingP.filter((p:any)=>p.expectedOrderDate);
   const upcomingInvoices=ongoingP.filter((p:any)=>p.expectedInvoiceDate);
+  const measurablePct=kpi.measurablePct??0;
 
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>Projects Report — ${new Date().toLocaleDateString("en-GB")}</title>
@@ -8048,6 +8060,7 @@ td{padding:6px 9px;border-bottom:1px solid #E5EAF0}
 .kpi{border:1px solid #E5EAF0;border-radius:10px;padding:12px 14px}
 .kpi .l{font-size:10px;color:#8FA0B3;text-transform:uppercase;letter-spacing:.04em}
 .kpi .v{font-size:19px;font-weight:800;margin-top:3px}
+.kpi .bar{display:flex;height:6px;border-radius:99px;overflow:hidden;margin-top:6px;background:#F1F5F9}
 @media print{.no-print{display:none!important}}
 </style></head><body>
 <h1>📁 Projects — Portfolio Report</h1>
@@ -8062,17 +8075,23 @@ td{padding:6px 9px;border-bottom:1px solid #E5EAF0}
 <div class="kpis">
   <div class="kpi"><div class="l">POs to come</div><div class="v" style="color:#2563EB">${upcomingOrders.length} · ${fmt(upcomingOrders.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0))} €</div></div>
   <div class="kpi"><div class="l">Invoices to come</div><div class="v" style="color:#0D9488">${upcomingInvoices.length} · ${fmt(upcomingInvoices.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0))} €</div></div>
+  <div class="kpi" style="grid-column:span 2">
+    <div class="l">Measurable pipeline</div>
+    <div class="v" style="color:${measurablePct>=70?"#059669":measurablePct>=40?"#D97706":"#DC2626"}">${measurablePct}%</div>
+    <div class="bar"><div style="width:${measurablePct}%;background:#059669"></div><div style="width:${100-measurablePct}%;background:#DC2626"></div></div>
+    <div style="font-size:10px;color:#8FA0B3;margin-top:4px">${fmt(kpi.measurableAmount||0)} € on track · ${fmt(kpi.staleAmount||0)} € overdue forecast</div>
+  </div>
 </div>
 
 ${alertRows?`<h2>⚠️ Alerts</h2><table><thead><tr><th>Project</th><th>Type</th><th>Detail</th></tr></thead><tbody>${alertRows}</tbody></table>`:""}
 
 <h2>📁 Ongoing projects (${ongoingP.length})</h2>
-<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th></tr></thead>
-<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="10" style="text-align:center;color:#8FA0B3;padding:16px">No ongoing project</td></tr>'}</tbody></table>
+<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Phase</th><th>Status</th><th style="text-align:center">Health</th><th>Duration</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th></tr></thead>
+<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="12" style="text-align:center;color:#8FA0B3;padding:16px">No ongoing project</td></tr>'}</tbody></table>
 
 <h2>✅ Closed projects (${closedP.length})</h2>
-<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th></tr></thead>
-<tbody>${rows(closedP)||'<tr><td colspan="10" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
+<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Phase</th><th>Status</th><th style="text-align:center">Health</th><th>Duration</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th></tr></thead>
+<tbody>${rows(closedP)||'<tr><td colspan="12" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
 
 <div class="no-print" style="position:fixed;top:14px;right:14px;display:flex;gap:8px">
 <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">🖨️ Print / PDF</button>
@@ -8132,6 +8151,8 @@ async function exportProjectsExcel(projects:any[],kpi:any){
     ['Win rate',kpi.winRate+'%','Active alerts',String(kpi.alerts.length)],
     ['POs to come',`${upcomingOrders.length}  ·  ${fmt(upcomingOrders.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0))} €`,
      'Invoices to come',`${upcomingInvoices.length}  ·  ${fmt(upcomingInvoices.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0))} €`],
+    ['Measurable pipeline',`${kpi.measurablePct??0}%`,
+     'On track / Overdue forecast',`${fmt(kpi.measurableAmount||0)} € / ${fmt(kpi.staleAmount||0)} €`],
   ];
   let r=4;
   kpiPairs.forEach(([l1,v1,l2,v2])=>{
@@ -8180,10 +8201,12 @@ async function exportProjectsExcel(projects:any[],kpi:any){
       {header:'ID',width:14},
       {header:'Project',width:30},
       {header:'Party',width:28},
-      {header:'Phase',width:18},
-      {header:'Status',width:30},
       {header:'Amount (€)',width:14},
       {header:'Chance (%)',width:11},
+      {header:'Phase',width:18},
+      {header:'Status',width:30},
+      {header:'Health',width:11},
+      {header:'Duration',width:16},
       {header:'Expected order',width:15},
       {header:'Expected invoice',width:15},
       {header:'Comments',width:44},
@@ -8208,15 +8231,19 @@ async function exportProjectsExcel(projects:any[],kpi:any){
       row.height=20;
       const statusMeta=STATUS_META[p.status]||{color:'#4A5568',bg:'#F1F5F9'};
       const phaseMeta=PHASE_META[p.phase]||{color:'#4A5568',bg:'#F1F5F9'};
+      const health=projectHealth(p);
+      const healthText=health.color===C.green?'OK':health.color===C.red?'NOT OK':'CLOSED';
       const partyLabel=p.partyName?`${p.partyType}: ${p.partyName}`:(p.partyType||'—');
       const vals:any[]=[
         p.oppId||'—',
         p.name||p.description?.slice(0,30)||'—',
         partyLabel,
-        p.phase||'—',
-        p.status||'—',
         +p.offerAmount||0,
         p.chanceOfSuccess||0,
+        p.phase||'—',
+        p.status||'—',
+        healthText,
+        durationLabel(p.createdAt),
         p.expectedOrderDate?fmtD(p.expectedOrderDate):'—',
         p.expectedInvoiceDate?fmtD(p.expectedInvoiceDate):'—',
         p.comments||'—',
@@ -8226,22 +8253,27 @@ async function exportProjectsExcel(projects:any[],kpi:any){
         cell.value=v;
         cell.font={size:9,name:'Arial'};
         cell.border=bs;
-        cell.alignment={vertical:'middle',wrapText:i===9};
-        if(i===5){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right',vertical:'middle'};}
-        if(i===6){cell.numFmt='0"%"';cell.alignment={horizontal:'center',vertical:'middle'};}
+        cell.alignment={vertical:'middle',wrapText:i===11};
+        if(i===3){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right',vertical:'middle'};}
+        if(i===4){cell.numFmt='0"%"';cell.alignment={horizontal:'center',vertical:'middle'};}
       });
       // colored Phase cell
-      const phaseCell=row.getCell(4);
+      const phaseCell=row.getCell(6);
       phaseCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:argb(phaseMeta.bg)}};
       phaseCell.font={size:9,bold:true,color:{argb:argb(phaseMeta.color)},name:'Arial'};
       // colored Status cell
-      const statusCell=row.getCell(5);
+      const statusCell=row.getCell(7);
       statusCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:argb(statusMeta.bg)}};
       statusCell.font={size:9,bold:true,color:{argb:argb(statusMeta.color)},name:'Arial'};
+      // colored Health cell (OK=green, NOT OK=red, CLOSED=grey)
+      const healthCell=row.getCell(8);
+      healthCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF'+(health.color===C.green?'D1FAE5':health.color===C.red?'FEE2E2':'F1F5F9')}};
+      healthCell.font={size:9,bold:true,color:{argb:argb(health.color)},name:'Arial'};
+      healthCell.alignment={horizontal:'center',vertical:'middle'};
     });
 
     if(list.length===0){
-      ws.mergeCells('A2:J2');
+      ws.mergeCells('A2:L2');
       const c=ws.getCell('A2');
       c.value='No project';
       c.font={size:10,italic:true,color:{argb:'FF8FA0B3'},name:'Arial'};
