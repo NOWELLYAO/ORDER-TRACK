@@ -7323,6 +7323,25 @@ function buildFollowUpCalendar(projects:any[]){
   return events.sort((a,b)=>a.date.localeCompare(b.date));
 }
 
+// Health indicator: green = ongoing and on track (no overdue date, followed up
+// recently); red + blinking = needs attention (overdue, stale, or inactive).
+// Closed projects get a static (non-blinking) color reflecting the outcome.
+function projectHealth(p:any){
+  if(!p.ongoing){
+    if(WON_STATUSES.includes(p.status))return{color:C.green,blink:false,label:"Clôturé — gagné"};
+    if(LOST_STATUSES.includes(p.status))return{color:C.red,blink:false,label:"Clôturé — perdu"};
+    return{color:C.t3,blink:false,label:"Clôturé"};
+  }
+  const overdueOrder=!!p.expectedOrderDate&&diffD(p.expectedOrderDate)<0;
+  const overdueInvoice=!!p.expectedInvoiceDate&&diffD(p.expectedInvoiceDate)<0;
+  const stale=daysSince(p.updatedAt||p.createdAt)>FOLLOWUP_DAYS;
+  const inactive=p.status==="Inactive";
+  const correct=!overdueOrder&&!overdueInvoice&&!stale&&!inactive;
+  return correct
+    ?{color:C.green,blink:false,label:"En cours — à jour"}
+    :{color:C.red,blink:true,label:"En cours — action requise"+(overdueOrder?" (commande en retard)":overdueInvoice?" (facturation en retard)":stale?" (sans mise à jour)":inactive?" (inactif)":"")};
+}
+
 function ProjectModal({project,onSave,onClose}:any){
   const isEdit=!!project;
   const [f,setF]=useState<any>(project?{...project}:emptyProject());
@@ -7398,7 +7417,7 @@ function ProjectModal({project,onSave,onClose}:any){
             <Fld label="Date de commande prévue" type="date" value={f.expectedOrderDate} onChange={(v:any)=>s("expectedOrderDate",v)}/>
             <Fld label="Date de facturation prévue" type="date" value={f.expectedInvoiceDate} onChange={(v:any)=>s("expectedInvoiceDate",v)}/>
 
-            <Fld label="Commentaires" value={f.comments} onChange={(v:any)=>s("comments",v)} placeholder="Notes, historique, points de vigilance…" rows={3} span={2}/>
+            <Fld label="Commentaires (suivi / mise à jour)" value={f.comments} onChange={(v:any)=>s("comments",v)} placeholder="Notes de suivi, historique des échanges, points de vigilance…" rows={3} span={2}/>
 
             {isEdit&&(
               <div style={{gridColumn:"span 2",fontSize:11,color:C.t3,display:"flex",justifyContent:"space-between",paddingTop:4,borderTop:`1px dashed ${C.b}`}}>
@@ -7425,6 +7444,7 @@ function ProjectsPage({isMobile}:any){
   const[sortBy,setSortBy]=useState("deadline"); // deadline | amount | chance | recent
   const[showAlerts,setShowAlerts]=useState(true);
   const[showCalendar,setShowCalendar]=useState(true);
+  const[exportingXlsx,setExportingXlsx]=useState(false);
   const[expandedId,setExpandedId]=useState<string|null>(null);
 
   const loadFromCloud=async(silent=false)=>{
@@ -7482,6 +7502,18 @@ function ProjectsPage({isMobile}:any){
   // update tracking: which ongoing opportunities were touched recently vs need a follow-up
   const upToDateP=ongoingP.filter((p:any)=>daysSince(p.updatedAt||p.createdAt)<=FOLLOWUP_DAYS);
   const staleP=ongoingP.filter((p:any)=>daysSince(p.updatedAt||p.createdAt)>FOLLOWUP_DAYS);
+
+  // Measurable pipeline: share of the pipeline amount sitting in opportunities
+  // whose forecast dates (expected order / expected invoice) have NOT been
+  // exceeded. Once a forecast date is passed without the order/invoice
+  // materializing, that figure is no longer reliable ("not measurable")
+  // until the opportunity is reviewed and updated.
+  const isOverdueForecast=(p:any)=>(!!p.expectedOrderDate&&diffD(p.expectedOrderDate)<0)||(!!p.expectedInvoiceDate&&diffD(p.expectedInvoiceDate)<0);
+  const overdueForecastP=ongoingP.filter(isOverdueForecast);
+  const onTrackP=ongoingP.filter((p:any)=>!isOverdueForecast(p));
+  const measurableAmount=onTrackP.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0);
+  const staleAmount=overdueForecastP.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0);
+  const measurablePct=pipelineTotal>0?Math.round(measurableAmount/pipelineTotal*100):100;
 
   const alerts=projectAlerts(projects);
   const redAlerts=alerts.filter((a:any)=>a.sev==="red").length;
@@ -7567,6 +7599,7 @@ function ProjectsPage({isMobile}:any){
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <style>{`@keyframes projHealthBlink{0%,100%{opacity:1}50%{opacity:.2}}`}</style>
       {modal&&<ProjectModal project={modal===true?null:modal} onSave={handleSave} onClose={()=>setModal(null)}/>}
 
       {/* Header */}
@@ -7582,6 +7615,10 @@ function ProjectsPage({isMobile}:any){
           <button onClick={()=>printProjectsReport(projects,{pipelineTotal,pipelineWeighted,winRate,alerts})}
             style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-file-report" style={{fontSize:14}} aria-hidden="true"/> Rapport PDF
+          </button>
+          <button disabled={exportingXlsx} onClick={async()=>{setExportingXlsx(true);try{await exportProjectsExcel(projects,{pipelineTotal,pipelineWeighted,winRate,alerts});}catch(e){alert("Erreur lors de la génération du fichier Excel.");}setExportingXlsx(false);}}
+            style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:exportingXlsx?"wait":"pointer",boxShadow:C.sh,opacity:exportingXlsx?.6:1}}>
+            <i className={`ti ${exportingXlsx?"ti-loader-2":"ti-file-spreadsheet"}`} style={{fontSize:14}} aria-hidden="true"/> {exportingXlsx?"Génération…":"Export Excel"}
           </button>
           <button onClick={()=>setModal(true)}
             style={{display:"flex",alignItems:"center",gap:6,background:C.blue,border:"none",color:"#fff",borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:C.sh}}>
@@ -7616,7 +7653,7 @@ function ProjectsPage({isMobile}:any){
       )}
 
       {/* KPI row */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10}}>
         <ProjectKpi icon="ti-briefcase" label="En cours" value={ongoingP.length} color={C.blue}/>
         <ProjectKpi icon="ti-currency-euro" label="Pipeline total" value={fmtK(pipelineTotal)+" €"} color={C.teal}/>
         <ProjectKpi icon="ti-chart-donut" label="Pipeline pondéré" value={fmtK(pipelineWeighted)+" €"} color={C.purple} sub={`chance moy. ${Math.round(avgChance)}%`}/>
@@ -7625,7 +7662,23 @@ function ProjectsPage({isMobile}:any){
         <ProjectKpi icon="ti-receipt" label="Facturation à venir" value={upcomingInvoices.length} color={C.teal} sub={`${fmtK(upcomingInvoicesAmount)} €`}/>
         <ProjectKpi icon="ti-rotate-clockwise" label="Suivi à jour" value={upToDateP.length} color={C.green} sub={`sur ${ongoingP.length} en cours`}/>
         <ProjectKpi icon="ti-alarm" label="À relancer" value={staleP.length} color={staleP.length>0?C.amber:C.t3} sub={`+${FOLLOWUP_DAYS}j sans MAJ`}/>
+        {/* Measurable pipeline: share of pipeline value not affected by an overdue forecast date */}
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px",display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:28,height:28,borderRadius:8,background:(measurablePct>=70?C.green:measurablePct>=40?C.amber:C.red)+"1A",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <i className="ti ti-gauge" style={{fontSize:14,color:measurablePct>=70?C.green:measurablePct>=40?C.amber:C.red}} aria-hidden="true"/>
+            </div>
+            <span style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".03em"}}>Measurable pipeline</span>
+          </div>
+          <div style={{fontSize:20,fontWeight:800,color:C.t1,lineHeight:1}}>{measurablePct}%</div>
+          <div style={{display:"flex",height:6,borderRadius:99,overflow:"hidden",background:"#F1F5F9"}}>
+            <div style={{width:`${measurablePct}%`,background:C.green}}/>
+            <div style={{width:`${100-measurablePct}%`,background:C.red}}/>
+          </div>
+          <div style={{fontSize:11,color:C.t3}}>{fmtK(measurableAmount)} € dans les délais · {fmtK(staleAmount)} € date dépassée</div>
+        </div>
       </div>
+
 
       {/* Follow-up calendar */}
       {calendarEvents.length>0&&(
@@ -7798,6 +7851,7 @@ function ProjectsPage({isMobile}:any){
           {filtered.map((p:any)=>{
             const statusMeta=STATUS_META[p.status]||{color:C.t3,bg:"#F1F5F9"};
             const phaseMeta=PHASE_META[p.phase]||{color:C.t3,bg:"#F1F5F9"};
+            const health=projectHealth(p);
             const expanded=expandedId===p.id;
             const upToDate=daysSince(p.updatedAt||p.createdAt)<=FOLLOWUP_DAYS;
             const orderD=p.expectedOrderDate?diffD(p.expectedOrderDate):null;
@@ -7805,10 +7859,11 @@ function ProjectsPage({isMobile}:any){
             const dateColor=(d:number|null)=>d===null?C.t3:d<0?C.redDk:d<=14?C.amberDk:C.t2;
             const dateBg=(d:number|null)=>d===null?"transparent":d<0?C.redL:d<=14?C.amberL:"transparent";
             return(
-              <div key={p.id} style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+              <div key={p.id} style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,borderLeft:`4px solid ${health.color}`,boxShadow:C.sh,overflow:"hidden"}}>
                 <div onClick={()=>setExpandedId(expanded?null:p.id)} style={{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,flexWrap:isMobile?"wrap":"nowrap"}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <span title={health.label} style={{width:9,height:9,borderRadius:99,background:health.color,flexShrink:0,animation:health.blink?"projHealthBlink 1.1s ease-in-out infinite":"none"}}/>
                       {p.oppId&&<span style={{fontSize:10.5,fontFamily:"monospace",color:C.t3,background:"#F1F5F9",padding:"2px 7px",borderRadius:5}}>{p.oppId}</span>}
                       <span style={{fontWeight:700,fontSize:13.5,color:C.t1}}>{p.name||p.description?.slice(0,40)||"Sans nom"}</span>
                       <span style={{fontSize:10,fontWeight:700,color:phaseMeta.color,background:phaseMeta.bg,padding:"2px 8px",borderRadius:99}}>{p.phase}</span>
@@ -7947,6 +8002,7 @@ function printProjectsReport(projects:any[],kpi:any){
   const partyLabel=(p:any)=>p.partyName?`${p.partyType}: ${p.partyName}`:(p.partyType||"—");
   const rows=(list:any[],withReason?:boolean)=>list.map((p:any)=>{
     const statusMeta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
+    const commentsShort=p.comments?(p.comments.length>100?p.comments.slice(0,100)+"…":p.comments):"—";
     return `<tr>
       <td style="font-family:monospace;font-size:10.5px">${p.oppId||"—"}</td>
       <td style="font-weight:600">${p.name||p.description?.slice(0,30)||"—"}</td>
@@ -7957,6 +8013,7 @@ function printProjectsReport(projects:any[],kpi:any){
       <td style="text-align:center">${p.chanceOfSuccess}%</td>
       <td>${fmtD(p.expectedOrderDate)}</td>
       <td>${fmtD(p.expectedInvoiceDate)}</td>
+      <td style="max-width:220px;font-size:10.5px;color:#4A5568">${commentsShort}</td>
       ${withReason?`<td>${p.reason||"—"}</td>`:""}
     </tr>`;
   }).join("");
@@ -8001,12 +8058,12 @@ td{padding:6px 9px;border-bottom:1px solid #E5EAF0}
 ${alertRows?`<h2>⚠️ Alerts</h2><table><thead><tr><th>Project</th><th>Type</th><th>Detail</th></tr></thead><tbody>${alertRows}</tbody></table>`:""}
 
 <h2>📁 Ongoing projects (${ongoingP.length})</h2>
-<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th></tr></thead>
-<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="9" style="text-align:center;color:#8FA0B3;padding:16px">No ongoing project</td></tr>'}</tbody></table>
+<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th></tr></thead>
+<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="10" style="text-align:center;color:#8FA0B3;padding:16px">No ongoing project</td></tr>'}</tbody></table>
 
 <h2>✅ Closed projects (${closedP.length})</h2>
-<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th><th>Reason</th></tr></thead>
-<tbody>${rows(closedP,true)||'<tr><td colspan="10" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
+<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th><th>Reason</th></tr></thead>
+<tbody>${rows(closedP,true)||'<tr><td colspan="11" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
 
 <div class="no-print" style="position:fixed;top:14px;right:14px;display:flex;gap:8px">
 <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">🖨️ Print / PDF</button>
@@ -8015,6 +8072,191 @@ ${alertRows?`<h2>⚠️ Alerts</h2><table><thead><tr><th>Project</th><th>Type</t
 </body></html>`);
   w.document.close();
 }
+// ── Excel (English, styled with ExcelJS — same approach as the draft quotation export) ──
+async function exportProjectsExcel(projects:any[],kpi:any){
+  const loadExcelJS=():Promise<any>=>new Promise((resolve,reject)=>{
+    if((window as any).ExcelJS){resolve((window as any).ExcelJS);return;}
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    s.crossOrigin='anonymous';
+    s.onload=()=>resolve((window as any).ExcelJS);
+    s.onerror=()=>reject(new Error('ExcelJS load failed'));
+    document.head.appendChild(s);
+  });
+  let ExcelJS:any;
+  try{ExcelJS=await loadExcelJS();}
+  catch{alert('Impossible de charger ExcelJS. Vérifiez votre connexion internet.');return;}
+
+  const argb=(hex:string)=>'FF'+String(hex).replace('#','').toUpperCase();
+  const thin={style:'thin',color:{argb:'FFE5EAF0'}};
+  const bs={top:thin,bottom:thin,left:thin,right:thin};
+
+  const ongoingP=projects.filter((p:any)=>p.ongoing);
+  const closedP=projects.filter((p:any)=>!p.ongoing);
+  const upcomingOrders=ongoingP.filter((p:any)=>p.expectedOrderDate);
+  const upcomingInvoices=ongoingP.filter((p:any)=>p.expectedInvoiceDate);
+
+  const wb=new ExcelJS.Workbook();
+  wb.created=new Date();
+
+  // ── Summary sheet ────────────────────────────────────────────────────────
+  const wsS=wb.addWorksheet('Summary',{properties:{defaultColWidth:16}});
+  wsS.columns=[{width:22},{width:20},{width:4},{width:22},{width:20},{width:4}];
+
+  wsS.mergeCells('A1:F1');
+  const title=wsS.getCell('A1');
+  title.value='PROJECTS — PORTFOLIO REPORT';
+  title.font={bold:true,size:15,color:{argb:argb(C.blue)},name:'Arial'};
+  title.alignment={vertical:'middle'};
+  wsS.getRow(1).height=30;
+
+  wsS.mergeCells('A2:F2');
+  const sub=wsS.getCell('A2');
+  sub.value=`Generated on ${new Date().toLocaleDateString('en-GB')}   |   ${projects.length} projects (${ongoingP.length} ongoing, ${closedP.length} closed)`;
+  sub.font={size:9,color:{argb:'FF6B7280'},name:'Arial'};
+  sub.border={bottom:thin};
+  wsS.getRow(2).height=20;
+  wsS.getRow(3).height=10;
+
+  const kpiPairs:[string,string,string,string][]=[
+    ['Total pipeline',fmt(kpi.pipelineTotal)+' €','Weighted pipeline',fmt(kpi.pipelineWeighted)+' €'],
+    ['Win rate',kpi.winRate+'%','Active alerts',String(kpi.alerts.length)],
+    ['POs to come',`${upcomingOrders.length}  ·  ${fmt(upcomingOrders.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0))} €`,
+     'Invoices to come',`${upcomingInvoices.length}  ·  ${fmt(upcomingInvoices.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0))} €`],
+  ];
+  let r=4;
+  kpiPairs.forEach(([l1,v1,l2,v2])=>{
+    wsS.getRow(r).height=24;
+    const c1=wsS.getCell(`A${r}`); c1.value=l1; c1.font={bold:true,size:9,color:{argb:'FF6B7280'},name:'Arial'}; c1.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF8FAFC'}}; c1.alignment={vertical:'middle'};
+    const c2=wsS.getCell(`B${r}`); c2.value=v1; c2.font={bold:true,size:11,color:{argb:argb(C.t1)},name:'Arial'}; c2.alignment={vertical:'middle'};
+    const c4=wsS.getCell(`D${r}`); c4.value=l2; c4.font={bold:true,size:9,color:{argb:'FF6B7280'},name:'Arial'}; c4.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF8FAFC'}}; c4.alignment={vertical:'middle'};
+    const c5=wsS.getCell(`E${r}`); c5.value=v2; c5.font={bold:true,size:11,color:{argb:argb(C.t1)},name:'Arial'}; c5.alignment={vertical:'middle'};
+    r++;
+  });
+  r+=2;
+
+  if(kpi.alerts.length>0){
+    wsS.mergeCells(`A${r}:F${r}`);
+    const aTitle=wsS.getCell(`A${r}`);
+    aTitle.value='⚠ ALERTS';
+    aTitle.font={bold:true,size:11,color:{argb:argb(C.redDk)},name:'Arial'};
+    wsS.getRow(r).height=22;
+    r++;
+    const hdrRow=wsS.getRow(r);
+    hdrRow.height=20;
+    ['Project','Type','Detail'].forEach((h,i)=>{
+      const c=wsS.getCell(r,i+1);
+      c.value=h;
+      c.font={bold:true,size:9,color:{argb:'FFFFFFFF'},name:'Arial'};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF0D1B2A'}};
+      c.alignment={vertical:'middle'};
+    });
+    wsS.mergeCells(`C${r}:F${r}`);
+    r++;
+    kpi.alerts.slice(0,30).forEach((a:any)=>{
+      const row=wsS.getRow(r);
+      row.height=18;
+      const c1=row.getCell(1); c1.value=(a.project.oppId?`[${a.project.oppId}] `:'')+(a.project.name||a.project.description?.slice(0,30)||'—'); c1.font={size:9,name:'Arial'}; c1.border={bottom:thin};
+      const c2=row.getCell(2); c2.value=a.kindEn||a.kind; c2.font={size:9,name:'Arial'}; c2.border={bottom:thin};
+      const c3=row.getCell(3); c3.value=a.msgEn||a.msg; c3.font={size:9,name:'Arial',color:{argb:argb(a.sev==='red'?C.redDk:C.amberDk)}}; c3.border={bottom:thin};
+      wsS.mergeCells(`C${r}:F${r}`);
+      r++;
+    });
+  }
+
+  // ── Ongoing / Closed sheets ─────────────────────────────────────────────
+  const buildSheet=(name:string,list:any[],withReason:boolean)=>{
+    const ws=wb.addWorksheet(name,{properties:{defaultColWidth:14}});
+    const cols=[
+      {header:'ID',width:14},
+      {header:'Project',width:30},
+      {header:'Party',width:28},
+      {header:'Phase',width:18},
+      {header:'Status',width:30},
+      {header:'Amount (€)',width:14},
+      {header:'Chance (%)',width:11},
+      {header:'Expected order',width:15},
+      {header:'Expected invoice',width:15},
+      {header:'Comments',width:44},
+    ];
+    if(withReason)cols.push({header:'Reason',width:32});
+    ws.columns=cols.map(c=>({width:c.width}));
+
+    const hdrRow=ws.getRow(1);
+    hdrRow.height=24;
+    cols.forEach((c,i)=>{
+      const cell=hdrRow.getCell(i+1);
+      cell.value=c.header;
+      cell.font={bold:true,size:9,color:{argb:'FF1E3A5F'},name:'Arial'};
+      cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFBFDBFE'}};
+      cell.alignment={horizontal:'center',vertical:'middle'};
+      cell.border={top:{style:'thin',color:{argb:'FF93C5FD'}},bottom:{style:'thin',color:{argb:'FF93C5FD'}},left:{style:'thin',color:{argb:'FF93C5FD'}},right:{style:'thin',color:{argb:'FF93C5FD'}}};
+    });
+    ws.views=[{state:'frozen',ySplit:1}];
+
+    list.forEach((p:any,idx:number)=>{
+      const rowNum=idx+2;
+      const row=ws.getRow(rowNum);
+      row.height=20;
+      const statusMeta=STATUS_META[p.status]||{color:'#4A5568',bg:'#F1F5F9'};
+      const phaseMeta=PHASE_META[p.phase]||{color:'#4A5568',bg:'#F1F5F9'};
+      const partyLabel=p.partyName?`${p.partyType}: ${p.partyName}`:(p.partyType||'—');
+      const vals:any[]=[
+        p.oppId||'—',
+        p.name||p.description?.slice(0,30)||'—',
+        partyLabel,
+        p.phase||'—',
+        p.status||'—',
+        +p.offerAmount||0,
+        p.chanceOfSuccess||0,
+        p.expectedOrderDate?fmtD(p.expectedOrderDate):'—',
+        p.expectedInvoiceDate?fmtD(p.expectedInvoiceDate):'—',
+        p.comments||'—',
+      ];
+      if(withReason)vals.push(p.reason||'—');
+      vals.forEach((v,i)=>{
+        const cell=row.getCell(i+1);
+        cell.value=v;
+        cell.font={size:9,name:'Arial'};
+        cell.border=bs;
+        cell.alignment={vertical:'middle',wrapText:i===9||i===10};
+        if(i===5){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right',vertical:'middle'};}
+        if(i===6){cell.numFmt='0"%"';cell.alignment={horizontal:'center',vertical:'middle'};}
+      });
+      // colored Phase cell
+      const phaseCell=row.getCell(4);
+      phaseCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:argb(phaseMeta.bg)}};
+      phaseCell.font={size:9,bold:true,color:{argb:argb(phaseMeta.color)},name:'Arial'};
+      // colored Status cell
+      const statusCell=row.getCell(5);
+      statusCell.fill={type:'pattern',pattern:'solid',fgColor:{argb:argb(statusMeta.bg)}};
+      statusCell.font={size:9,bold:true,color:{argb:argb(statusMeta.color)},name:'Arial'};
+    });
+
+    if(list.length===0){
+      const lastCol=withReason?'K':'J';
+      ws.mergeCells(`A2:${lastCol}2`);
+      const c=ws.getCell('A2');
+      c.value='No project';
+      c.font={size:10,italic:true,color:{argb:'FF8FA0B3'},name:'Arial'};
+      c.alignment={horizontal:'center'};
+    }
+    return ws;
+  };
+
+  buildSheet('Ongoing',[...ongoingP].sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)),false);
+  buildSheet('Closed',closedP,true);
+
+  const buf:ArrayBuffer=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`Projects_Portfolio_${new Date().toISOString().slice(0,10)}.xlsx`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function TresoreriePage({getAllOrders,clients,lang,isMobile}:any){
   const today=new Date();today.setHours(0,0,0,0);
   const all=getAllOrders();
