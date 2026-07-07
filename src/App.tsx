@@ -2148,13 +2148,13 @@ function Modal({title,sub,width,children,footer,onClose}:any){
   );
 }
 
-function Fld({label,type="text",value,onChange,placeholder,span,rows}:any){
+function Fld({label,type="text",value,onChange,placeholder,span,rows,min,max}:any){
   return(
     <div style={{gridColumn:span?`span ${span}`:undefined}}>
       <Label t={label}/>
       {rows
         ?<textarea value={value} onChange={(e:any)=>onChange(e.target.value)} placeholder={placeholder} rows={rows} style={{width:"100%",resize:"vertical",boxSizing:"border-box",fontFamily:"inherit",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,color:C.t1,outline:"none"}}/>
-        :<input type={type} value={value} onChange={(e:any)=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",boxSizing:"border-box"}}/>
+        :<input type={type} value={value} onChange={(e:any)=>onChange(e.target.value)} placeholder={placeholder} min={min} max={max} style={{width:"100%",boxSizing:"border-box"}}/>
       }
     </div>
   );
@@ -7354,9 +7354,15 @@ function ProjectModal({project,onSave,onClose}:any){
   const isMobile=window.innerWidth<768;
   const canSave=f.name.trim()||f.description.trim();
   const needsReason=!f.ongoing||f.status==="Inactive";
+  const dateError=
+    (f.expectedOrderDate&&f.processingDate&&f.expectedOrderDate<f.processingDate)
+      ?"La date de commande prévue ne peut pas être antérieure à la date de traitement du projet."
+    :(f.expectedInvoiceDate&&f.expectedOrderDate&&f.expectedInvoiceDate<f.expectedOrderDate)
+      ?"La date de facturation prévue ne peut pas être antérieure à la date de commande prévue."
+    :"";
 
   const save=()=>{
-    if(!canSave)return;
+    if(!canSave||dateError)return;
     const updated={...f,offerAmount:+f.offerAmount||0,chanceOfSuccess:Math.max(0,Math.min(100,+f.chanceOfSuccess||0)),updatedAt:new Date().toISOString()};
     onSave(updated);
   };
@@ -7367,7 +7373,7 @@ function ProjectModal({project,onSave,onClose}:any){
         <Modal title={isEdit?"Modifier le projet":"Nouveau projet"} sub={isEdit?f.name||f.description?.slice(0,40):"Renseignez les informations du projet"} width={660} onClose={onClose}
           footer={<>
             <button onClick={onClose} style={{background:"#F1F5F9",color:C.t2,border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Annuler</button>
-            <button onClick={save} disabled={!canSave} style={{background:canSave?C.blue:C.b,color:"#fff",border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>
+            <button onClick={save} disabled={!canSave||!!dateError} style={{background:canSave&&!dateError?C.blue:C.b,color:"#fff",border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:canSave&&!dateError?"pointer":"not-allowed"}}>
               <i className="ti ti-device-floppy" style={{fontSize:13,marginRight:6}} aria-hidden="true"/>{isEdit?"Enregistrer":"Créer le projet"}
             </button>
           </>}>
@@ -7414,8 +7420,13 @@ function ProjectModal({project,onSave,onClose}:any){
 
             <Fld label="Date de traitement du projet" type="date" value={f.processingDate} onChange={(v:any)=>s("processingDate",v)}/>
             <div/>
-            <Fld label="Date de commande prévue" type="date" value={f.expectedOrderDate} onChange={(v:any)=>s("expectedOrderDate",v)}/>
-            <Fld label="Date de facturation prévue" type="date" value={f.expectedInvoiceDate} onChange={(v:any)=>s("expectedInvoiceDate",v)}/>
+            <Fld label="Date de commande prévue" type="date" value={f.expectedOrderDate} onChange={(v:any)=>s("expectedOrderDate",v)} min={f.processingDate||undefined}/>
+            <Fld label="Date de facturation prévue" type="date" value={f.expectedInvoiceDate} onChange={(v:any)=>s("expectedInvoiceDate",v)} min={f.expectedOrderDate||f.processingDate||undefined}/>
+            {dateError&&(
+              <div style={{gridColumn:"span 2",display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:C.redDk,background:C.redL,border:`1px solid ${C.red}`,borderRadius:C.rSm,padding:"7px 10px"}}>
+                <i className="ti ti-alert-triangle" style={{fontSize:13}} aria-hidden="true"/> {dateError}
+              </div>
+            )}
 
             <Fld label="Commentaires (suivi / mise à jour)" value={f.comments} onChange={(v:any)=>s("comments",v)} placeholder="Notes de suivi, historique des échanges, points de vigilance…" rows={3} span={2}/>
 
@@ -7982,7 +7993,6 @@ h1{font-size:20px;margin-bottom:4px}
   <div class="field"><div class="l">Expected invoice date</div><div class="v">${fmtD(p.expectedInvoiceDate)}</div></div>
 </div>
 
-${p.reason?`<div class="section">Reason</div><div class="reason">${p.reason}</div>`:""}
 ${p.comments?`<div class="section">Comments</div><div class="comments">${p.comments}</div>`:""}
 
 <div class="no-print" style="position:fixed;top:14px;right:14px;display:flex;gap:8px">
@@ -8000,7 +8010,7 @@ function printProjectsReport(projects:any[],kpi:any){
   const ongoingP=projects.filter((p:any)=>p.ongoing);
   const closedP=projects.filter((p:any)=>!p.ongoing);
   const partyLabel=(p:any)=>p.partyName?`${p.partyType}: ${p.partyName}`:(p.partyType||"—");
-  const rows=(list:any[],withReason?:boolean)=>list.map((p:any)=>{
+  const rows=(list:any[])=>list.map((p:any)=>{
     const statusMeta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
     const commentsShort=p.comments?(p.comments.length>100?p.comments.slice(0,100)+"…":p.comments):"—";
     return `<tr>
@@ -8014,7 +8024,6 @@ function printProjectsReport(projects:any[],kpi:any){
       <td>${fmtD(p.expectedOrderDate)}</td>
       <td>${fmtD(p.expectedInvoiceDate)}</td>
       <td style="max-width:220px;font-size:10.5px;color:#4A5568">${commentsShort}</td>
-      ${withReason?`<td>${p.reason||"—"}</td>`:""}
     </tr>`;
   }).join("");
   const alertRows=kpi.alerts.slice(0,20).map((a:any)=>`<tr>
@@ -8062,8 +8071,8 @@ ${alertRows?`<h2>⚠️ Alerts</h2><table><thead><tr><th>Project</th><th>Type</t
 <tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="10" style="text-align:center;color:#8FA0B3;padding:16px">No ongoing project</td></tr>'}</tbody></table>
 
 <h2>✅ Closed projects (${closedP.length})</h2>
-<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th><th>Reason</th></tr></thead>
-<tbody>${rows(closedP,true)||'<tr><td colspan="11" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
+<table><thead><tr><th>ID</th><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th><th>Comments</th></tr></thead>
+<tbody>${rows(closedP)||'<tr><td colspan="10" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
 
 <div class="no-print" style="position:fixed;top:14px;right:14px;display:flex;gap:8px">
 <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">🖨️ Print / PDF</button>
@@ -8165,7 +8174,7 @@ async function exportProjectsExcel(projects:any[],kpi:any){
   }
 
   // ── Ongoing / Closed sheets ─────────────────────────────────────────────
-  const buildSheet=(name:string,list:any[],withReason:boolean)=>{
+  const buildSheet=(name:string,list:any[])=>{
     const ws=wb.addWorksheet(name,{properties:{defaultColWidth:14}});
     const cols=[
       {header:'ID',width:14},
@@ -8179,7 +8188,6 @@ async function exportProjectsExcel(projects:any[],kpi:any){
       {header:'Expected invoice',width:15},
       {header:'Comments',width:44},
     ];
-    if(withReason)cols.push({header:'Reason',width:32});
     ws.columns=cols.map(c=>({width:c.width}));
 
     const hdrRow=ws.getRow(1);
@@ -8213,13 +8221,12 @@ async function exportProjectsExcel(projects:any[],kpi:any){
         p.expectedInvoiceDate?fmtD(p.expectedInvoiceDate):'—',
         p.comments||'—',
       ];
-      if(withReason)vals.push(p.reason||'—');
       vals.forEach((v,i)=>{
         const cell=row.getCell(i+1);
         cell.value=v;
         cell.font={size:9,name:'Arial'};
         cell.border=bs;
-        cell.alignment={vertical:'middle',wrapText:i===9||i===10};
+        cell.alignment={vertical:'middle',wrapText:i===9};
         if(i===5){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right',vertical:'middle'};}
         if(i===6){cell.numFmt='0"%"';cell.alignment={horizontal:'center',vertical:'middle'};}
       });
@@ -8234,8 +8241,7 @@ async function exportProjectsExcel(projects:any[],kpi:any){
     });
 
     if(list.length===0){
-      const lastCol=withReason?'K':'J';
-      ws.mergeCells(`A2:${lastCol}2`);
+      ws.mergeCells('A2:J2');
       const c=ws.getCell('A2');
       c.value='No project';
       c.font={size:10,italic:true,color:{argb:'FF8FA0B3'},name:'Arial'};
@@ -8244,8 +8250,8 @@ async function exportProjectsExcel(projects:any[],kpi:any){
     return ws;
   };
 
-  buildSheet('Ongoing',[...ongoingP].sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)),false);
-  buildSheet('Closed',closedP,true);
+  buildSheet('Ongoing',[...ongoingP].sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)));
+  buildSheet('Closed',closedP);
 
   const buf:ArrayBuffer=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
