@@ -7191,6 +7191,7 @@ function DocumentsPage({isMobile}:any){
 
 // ─── TRÉSORERIE PAGE ──────────────────────────────────────────────────────────
 // ─── PROJECTS PAGE ────────────────────────────────────────────────────────
+// ─── PROJECTS PAGE ────────────────────────────────────────────────────────
 const PROJECTS_KEY="ordertrack-projects";
 const PROJECTS_LS="ordertrack_projects_cache";
 
@@ -7202,27 +7203,50 @@ const PUMP_TYPES=[
   {id:"others",     label:"Others",     icon:"ti-dots",              color:"#7C3AED"},
 ];
 
+// Party involved in the project (replaces separate "Contractor" / "End customer" fields)
+const PARTY_TYPES=[
+  "Wholesaler","Distributor","Purchase office","Contractor / EPC","End customer","Consultant","Installer","OEM","Other"
+];
+
+// Sales funnel phase
+const PHASES=["Identification","Initiation","Offer/Quotation","Negotiation","Completed/Closed","After-sales"];
+const PHASE_META:Record<string,{color:string,bg:string}>={
+  "Identification":     {color:"#4A5568",bg:"#F1F5F9"},
+  "Initiation":         {color:C.blue,   bg:C.blueL},
+  "Offer/Quotation":    {color:C.purple, bg:C.purpleL},
+  "Negotiation":        {color:C.amber,  bg:C.amberL},
+  "Completed/Closed":   {color:C.teal,   bg:C.tealL},
+  "After-sales":        {color:C.green,  bg:C.greenL},
+};
+
+// Detailed project status
 const PROJECT_STATUS=[
-  "Qualification","Devis envoyé","En négociation","Commande reçue / Gagné","Livré / Terminé","Perdu","Annulé"
+  "Open","In process","Planning","Customer gets the order-open","Wholesaler gets the order-open",
+  "Grundfos gets the order-won","Competitor gets the order-lost","Inactive","Grundfos gets part order-won"
 ];
 const STATUS_META:Record<string,{color:string,bg:string}>={
-  "Qualification":            {color:"#4A5568",bg:"#F1F5F9"},
-  "Devis envoyé":             {color:C.blue,   bg:C.blueL},
-  "En négociation":           {color:C.amber,  bg:C.amberL},
-  "Commande reçue / Gagné":   {color:C.green,  bg:C.greenL},
-  "Livré / Terminé":          {color:C.teal,   bg:C.tealL},
-  "Perdu":                    {color:C.red,    bg:C.redL},
-  "Annulé":                   {color:"#4A5568",bg:"#F1F5F9"},
+  "Open":                            {color:"#4A5568",bg:"#F1F5F9"},
+  "In process":                      {color:C.blue,   bg:C.blueL},
+  "Planning":                        {color:C.purple, bg:C.purpleL},
+  "Customer gets the order-open":    {color:C.amber,  bg:C.amberL},
+  "Wholesaler gets the order-open":  {color:C.amber,  bg:C.amberL},
+  "Grundfos gets the order-won":     {color:C.green,  bg:C.greenL},
+  "Competitor gets the order-lost":  {color:C.red,    bg:C.redL},
+  "Inactive":                        {color:"#4A5568",bg:"#F1F5F9"},
+  "Grundfos gets part order-won":    {color:C.teal,   bg:C.tealL},
 };
-const WON_STATUSES=["Commande reçue / Gagné","Livré / Terminé"];
-const LOST_STATUSES=["Perdu","Annulé"];
+const WON_STATUSES=["Grundfos gets the order-won","Grundfos gets part order-won"];
+const LOST_STATUSES=["Competitor gets the order-lost"];
+const INACTIVE_STATUSES=["Inactive"];
+const TERMINAL_STATUSES=[...WON_STATUSES,...LOST_STATUSES,...INACTIVE_STATUSES];
 
 const emptyProject=()=>({
   id:Date.now().toString()+Math.random().toString(36).slice(2,7),
-  name:"", description:"", contractors:"", endCustomer:"",
+  name:"", description:"",
+  partyType:PARTY_TYPES[0], partyName:"",
   pumpTypes:[] as string[], pumpTypeOther:"",
   chanceOfSuccess:50, offerAmount:"",
-  ongoing:true, status:PROJECT_STATUS[0],
+  ongoing:true, phase:PHASES[0], status:PROJECT_STATUS[0], reason:"",
   processingDate:todayStr(), expectedOrderDate:"", expectedInvoiceDate:"",
   createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(),
   comments:"",
@@ -7257,16 +7281,26 @@ function projectAlerts(projects:any[]){
   projects.filter((p:any)=>p.ongoing).forEach((p:any)=>{
     if(p.expectedOrderDate){
       const d=diffD(p.expectedOrderDate);
-      if(d<0)alerts.push({sev:"red",kind:"Commande en retard",project:p,days:d,msg:`Commande prévue le ${fmtD(p.expectedOrderDate)} — ${Math.abs(d)}j de retard`});
-      else if(d<=14)alerts.push({sev:"amber",kind:"Commande proche",project:p,days:d,msg:`Commande prévue le ${fmtD(p.expectedOrderDate)} — dans ${d}j`});
+      if(d<0)alerts.push({sev:"red",kind:"Commande en retard",kindEn:"Order overdue",project:p,days:d,
+        msg:`Commande prévue le ${fmtD(p.expectedOrderDate)} — ${Math.abs(d)}j de retard`,
+        msgEn:`Order expected ${fmtD(p.expectedOrderDate)} — ${Math.abs(d)}d overdue`});
+      else if(d<=14)alerts.push({sev:"amber",kind:"Commande proche",kindEn:"Order approaching",project:p,days:d,
+        msg:`Commande prévue le ${fmtD(p.expectedOrderDate)} — dans ${d}j`,
+        msgEn:`Order expected ${fmtD(p.expectedOrderDate)} — in ${d}d`});
     }
     if(p.expectedInvoiceDate){
       const d=diffD(p.expectedInvoiceDate);
-      if(d<0)alerts.push({sev:"red",kind:"Facturation en retard",project:p,days:d,msg:`Facturation prévue le ${fmtD(p.expectedInvoiceDate)} — ${Math.abs(d)}j de retard`});
-      else if(d<=14)alerts.push({sev:"amber",kind:"Facturation proche",project:p,days:d,msg:`Facturation prévue le ${fmtD(p.expectedInvoiceDate)} — dans ${d}j`});
+      if(d<0)alerts.push({sev:"red",kind:"Facturation en retard",kindEn:"Invoice overdue",project:p,days:d,
+        msg:`Facturation prévue le ${fmtD(p.expectedInvoiceDate)} — ${Math.abs(d)}j de retard`,
+        msgEn:`Invoice expected ${fmtD(p.expectedInvoiceDate)} — ${Math.abs(d)}d overdue`});
+      else if(d<=14)alerts.push({sev:"amber",kind:"Facturation proche",kindEn:"Invoice approaching",project:p,days:d,
+        msg:`Facturation prévue le ${fmtD(p.expectedInvoiceDate)} — dans ${d}j`,
+        msgEn:`Invoice expected ${fmtD(p.expectedInvoiceDate)} — in ${d}d`});
     }
     const staleDays=daysSince(p.updatedAt||p.createdAt);
-    if(staleDays>30)alerts.push({sev:"amber",kind:"Sans nouvelle",project:p,days:staleDays,msg:`Aucune mise à jour depuis ${staleDays}j`});
+    if(staleDays>30)alerts.push({sev:"amber",kind:"Sans nouvelle",kindEn:"No update",project:p,days:staleDays,
+      msg:`Aucune mise à jour depuis ${staleDays}j`,
+      msgEn:`No update for ${staleDays}d`});
   });
   return alerts.sort((a,b)=>(a.sev===b.sev?0:a.sev==="red"?-1:1)||(a.days-b.days));
 }
@@ -7275,9 +7309,14 @@ function ProjectModal({project,onSave,onClose}:any){
   const isEdit=!!project;
   const [f,setF]=useState<any>(project?{...project}:emptyProject());
   const s=(k:string,v:any)=>setF((p:any)=>({...p,[k]:v}));
+  const setStatus=(v:string)=>{
+    const terminal=TERMINAL_STATUSES.includes(v);
+    setF((p:any)=>({...p,status:v,ongoing:!terminal}));
+  };
   const togglePump=(id:string)=>setF((p:any)=>({...p,pumpTypes:p.pumpTypes.includes(id)?p.pumpTypes.filter((x:string)=>x!==id):[...p.pumpTypes,id]}));
   const isMobile=window.innerWidth<768;
   const canSave=f.name.trim()||f.description.trim();
+  const needsReason=!f.ongoing||f.status==="Inactive";
 
   const save=()=>{
     if(!canSave)return;
@@ -7288,7 +7327,7 @@ function ProjectModal({project,onSave,onClose}:any){
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.5)",display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(2px)"}} onClick={onClose}>
       <div onClick={(e:any)=>e.stopPropagation()}>
-        <Modal title={isEdit?"Modifier le projet":"Nouveau projet"} sub={isEdit?f.name||f.description?.slice(0,40):"Renseignez les informations du projet"} width={640} onClose={onClose}
+        <Modal title={isEdit?"Modifier le projet":"Nouveau projet"} sub={isEdit?f.name||f.description?.slice(0,40):"Renseignez les informations du projet"} width={660} onClose={onClose}
           footer={<>
             <button onClick={onClose} style={{background:"#F1F5F9",color:C.t2,border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Annuler</button>
             <button onClick={save} disabled={!canSave} style={{background:canSave?C.blue:C.b,color:"#fff",border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>
@@ -7298,8 +7337,9 @@ function ProjectModal({project,onSave,onClose}:any){
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
             <Fld label="Nom / Référence du projet" value={f.name} onChange={(v:any)=>s("name",v)} placeholder="ex: Station de pompage Abidjan Port" span={2}/>
             <Fld label="Description" value={f.description} onChange={(v:any)=>s("description",v)} placeholder="Contexte, périmètre, spécificités…" rows={3} span={2}/>
-            <Fld label="Contractors" value={f.contractors} onChange={(v:any)=>s("contractors",v)} placeholder="EPC / Installateur"/>
-            <Fld label="End customer (facultatif)" value={f.endCustomer} onChange={(v:any)=>s("endCustomer",v)} placeholder="Client final"/>
+
+            <Sel label="Intervenant — type" value={f.partyType} onChange={(v:any)=>s("partyType",v)} options={PARTY_TYPES}/>
+            <Fld label="Intervenant — nom" value={f.partyName} onChange={(v:any)=>s("partyName",v)} placeholder="Nom de la société"/>
 
             <div style={{gridColumn:"span 2"}}>
               <Label t="Type de pompes"/>
@@ -7320,14 +7360,19 @@ function ProjectModal({project,onSave,onClose}:any){
             </div>
 
             <div>
-              <Label t={`Chance of success — ${f.chanceOfSuccess}%`}/>
+              <Label t={`Chance de réussite — ${f.chanceOfSuccess}%`}/>
               <input type="range" min={0} max={100} step={5} value={f.chanceOfSuccess} onChange={(e:any)=>s("chanceOfSuccess",+e.target.value)} style={{width:"100%"}}/>
             </div>
             <Fld label="Montant de l'offre (EUR)" type="number" value={f.offerAmount} onChange={(v:any)=>s("offerAmount",v)} placeholder="0.00"/>
 
+            <Sel label="Phase" value={f.phase} onChange={(v:any)=>s("phase",v)} options={PHASES}/>
+            <Sel label="Statut" value={f.status} onChange={setStatus} options={PROJECT_STATUS}/>
+
             <Sel label="En cours ou clôturé" value={f.ongoing?"ongoing":"closed"} onChange={(v:any)=>s("ongoing",v==="ongoing")}
               options={[{value:"ongoing",label:"En cours"},{value:"closed",label:"Clôturé"}]}/>
-            <Sel label="Status actuel" value={f.status} onChange={(v:any)=>s("status",v)} options={PROJECT_STATUS}/>
+            {needsReason
+              ?<Fld label="Raison (clôture / inactivité)" value={f.reason} onChange={(v:any)=>s("reason",v)} placeholder="ex: Perdu face à un concurrent, budget annulé…"/>
+              :<div/>}
 
             <Fld label="Date de traitement du projet" type="date" value={f.processingDate} onChange={(v:any)=>s("processingDate",v)}/>
             <div/>
@@ -7355,7 +7400,9 @@ function ProjectsPage({isMobile}:any){
   const[syncMsg,setSyncMsg]=useState("");
   const[modal,setModal]=useState<any>(null); // null | true (new) | project (edit)
   const[search,setSearch]=useState("");
-  const[statusFilter,setStatusFilter]=useState("all"); // all | ongoing | closed
+  const[ongoingFilter,setOngoingFilter]=useState("all"); // all | ongoing | closed
+  const[phaseFilter,setPhaseFilter]=useState("all");
+  const[projStatusFilter,setProjStatusFilter]=useState("all");
   const[pumpFilter,setPumpFilter]=useState("all");
   const[sortBy,setSortBy]=useState("deadline"); // deadline | amount | chance | recent
   const[showAlerts,setShowAlerts]=useState(true);
@@ -7407,7 +7454,6 @@ function ProjectsPage({isMobile}:any){
   const avgChance=ongoingP.length?ongoingP.reduce((s:number,p:any)=>s+(+p.chanceOfSuccess||0),0)/ongoingP.length:0;
   const avgAmount=ongoingP.length?pipelineTotal/ongoingP.length:0;
   const winRate=closedP.length?Math.round(wonP.length/closedP.length*100):0;
-  const wonAmount=wonP.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0);
 
   const alerts=projectAlerts(projects);
   const redAlerts=alerts.filter((a:any)=>a.sev==="red").length;
@@ -7419,6 +7465,10 @@ function ProjectsPage({isMobile}:any){
     count:ongoingP.filter((p:any)=>p.pumpTypes?.includes(pt.id)).length,
   }));
   const maxPumpAmount=Math.max(1,...pumpDist.map(d=>d.amount));
+
+  // phase distribution (count, all)
+  const phaseDist=PHASES.map(ph=>({phase:ph,count:projects.filter((p:any)=>p.phase===ph).length}));
+  const maxPhaseCount=Math.max(1,...phaseDist.map(d=>d.count));
 
   // status distribution (count, all)
   const statusDist=PROJECT_STATUS.map(st=>({status:st,count:projects.filter((p:any)=>p.status===st).length}));
@@ -7432,22 +7482,24 @@ function ProjectsPage({isMobile}:any){
   const trend=monthBuckets.map(b=>({
     ...b,
     created:projects.filter((p:any)=>{const d=new Date(p.createdAt);return d.getFullYear()===b.year&&d.getMonth()===b.month;}).length,
-    closed:projects.filter((p:any)=>!p.ongoing&&{...p}.updatedAt&&(()=>{const d=new Date(p.updatedAt);return d.getFullYear()===b.year&&d.getMonth()===b.month;})()).length,
+    closed:projects.filter((p:any)=>!p.ongoing&&p.updatedAt&&(()=>{const d=new Date(p.updatedAt);return d.getFullYear()===b.year&&d.getMonth()===b.month;})()).length,
   }));
   const maxTrend=Math.max(1,...trend.flatMap(t=>[t.created,t.closed]));
 
-  // top contractors
-  const contractorMap:Record<string,number>={};
-  ongoingP.forEach((p:any)=>{const k=(p.contractors||"—").trim()||"—";contractorMap[k]=(contractorMap[k]||0)+(+p.offerAmount||0);});
-  const topContractors=Object.entries(contractorMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  // top parties (by pipeline amount, ongoing)
+  const partyMap:Record<string,number>={};
+  ongoingP.forEach((p:any)=>{const k=(p.partyName||"—").trim()||"—";partyMap[k]=(partyMap[k]||0)+(+p.offerAmount||0);});
+  const topParties=Object.entries(partyMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
   // ── filters + sort ──
   const sq=search.trim().toLowerCase();
   let filtered=projects.filter((p:any)=>{
-    const matchStatus=statusFilter==="all"||(statusFilter==="ongoing"?p.ongoing:!p.ongoing);
+    const matchOngoing=ongoingFilter==="all"||(ongoingFilter==="ongoing"?p.ongoing:!p.ongoing);
+    const matchPhase=phaseFilter==="all"||p.phase===phaseFilter;
+    const matchStatus=projStatusFilter==="all"||p.status===projStatusFilter;
     const matchPump=pumpFilter==="all"||p.pumpTypes?.includes(pumpFilter);
-    const matchSearch=!sq||[p.name,p.description,p.contractors,p.endCustomer,p.status,p.comments].some((v:any)=>String(v||"").toLowerCase().includes(sq));
-    return matchStatus&&matchPump&&matchSearch;
+    const matchSearch=!sq||[p.name,p.description,p.partyName,p.partyType,p.status,p.phase,p.reason,p.comments].some((v:any)=>String(v||"").toLowerCase().includes(sq));
+    return matchOngoing&&matchPhase&&matchStatus&&matchPump&&matchSearch;
   });
   const deadlineScore=(p:any)=>{
     const dates=[p.expectedOrderDate,p.expectedInvoiceDate].filter(Boolean).map(diffD);
@@ -7494,7 +7546,7 @@ function ProjectsPage({isMobile}:any){
           <p style={{margin:0,color:C.t3,fontSize:13}}>{projects.length} projet{projects.length>1?"s":""} · {ongoingP.length} en cours · {closedP.length} clôturé{closedP.length>1?"s":""}</p>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>printProjectsReport(projects,{pipelineTotal,pipelineWeighted,winRate,alerts,pumpDist,statusDist})}
+          <button onClick={()=>printProjectsReport(projects,{pipelineTotal,pipelineWeighted,winRate,alerts,pumpDist})}
             style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-file-report" style={{fontSize:14}} aria-hidden="true"/> Rapport PDF
           </button>
@@ -7541,7 +7593,7 @@ function ProjectsPage({isMobile}:any){
       </div>
 
       {/* Charts row */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.2fr 1fr 1fr",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
         {/* Pump type distribution */}
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
           <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:12}}>🔧 Pipeline par type de pompe</div>
@@ -7557,6 +7609,28 @@ function ProjectsPage({isMobile}:any){
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Phase distribution */}
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:12}}>🧭 Répartition par phase</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {phaseDist.filter(d=>d.count>0).map(d=>{
+              const meta=PHASE_META[d.phase];
+              return(
+                <div key={d.phase}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,marginBottom:3}}>
+                    <span style={{color:C.t2,fontWeight:600}}>{d.phase}</span>
+                    <span style={{color:C.t3}}>{d.count}</span>
+                  </div>
+                  <div style={{height:6,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                    <div style={{width:`${d.count/maxPhaseCount*100}%`,height:"100%",background:meta.color,borderRadius:99}}/>
+                  </div>
+                </div>
+              );
+            })}
+            {phaseDist.every(d=>d.count===0)&&<div style={{fontSize:11,color:C.t3}}>Aucune donnée</div>}
           </div>
         </div>
 
@@ -7603,11 +7677,11 @@ function ProjectsPage({isMobile}:any){
         </div>
       </div>
 
-      {topContractors.length>0&&(
+      {topParties.length>0&&(
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:10}}>🏗️ Top contractors (pipeline en cours)</div>
+          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:10}}>🏗️ Top intervenants (pipeline en cours)</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {topContractors.map(([name,amount])=>(
+            {topParties.map(([name,amount])=>(
               <div key={name} style={{display:"flex",alignItems:"center",gap:8,background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:99,padding:"6px 12px",fontSize:11.5}}>
                 <span style={{fontWeight:700,color:C.t1}}>{name}</span>
                 <span style={{color:C.blue,fontWeight:700}}>{fmtK(amount)} €</span>
@@ -7619,16 +7693,24 @@ function ProjectsPage({isMobile}:any){
 
       {/* Filters */}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"7px 12px",boxShadow:C.sh,flex:1,minWidth:180,maxWidth:320}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"7px 12px",boxShadow:C.sh,flex:1,minWidth:180,maxWidth:280}}>
           <i className="ti ti-search" style={{fontSize:14,color:C.t3,flexShrink:0}} aria-hidden="true"/>
           <input value={search} onChange={(e:any)=>setSearch(e.target.value)} placeholder="Rechercher un projet…"
             style={{border:"none",outline:"none",fontSize:12,color:C.t1,background:"transparent",width:"100%",fontFamily:"inherit"}}/>
           {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.t3,cursor:"pointer"}}>✕</button>}
         </div>
-        <select value={statusFilter} onChange={(e:any)=>setStatusFilter(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
-          <option value="all">Tous statuts</option>
+        <select value={ongoingFilter} onChange={(e:any)=>setOngoingFilter(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
+          <option value="all">Tous — état</option>
           <option value="ongoing">En cours</option>
           <option value="closed">Clôturé</option>
+        </select>
+        <select value={phaseFilter} onChange={(e:any)=>setPhaseFilter(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
+          <option value="all">Toutes phases</option>
+          {PHASES.map(ph=><option key={ph} value={ph}>{ph}</option>)}
+        </select>
+        <select value={projStatusFilter} onChange={(e:any)=>setProjStatusFilter(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
+          <option value="all">Tous statuts</option>
+          {PROJECT_STATUS.map(st=><option key={st} value={st}>{st}</option>)}
         </select>
         <select value={pumpFilter} onChange={(e:any)=>setPumpFilter(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
           <option value="all">Tous types de pompes</option>
@@ -7637,7 +7719,7 @@ function ProjectsPage({isMobile}:any){
         <select value={sortBy} onChange={(e:any)=>setSortBy(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
           <option value="deadline">Trier : échéance</option>
           <option value="amount">Trier : montant</option>
-          <option value="chance">Trier : chance de succès</option>
+          <option value="chance">Trier : chance de réussite</option>
           <option value="recent">Trier : récemment modifié</option>
         </select>
         <span style={{fontSize:11,color:C.t3,marginLeft:"auto"}}>{filtered.length} résultat{filtered.length>1?"s":""}</span>
@@ -7652,7 +7734,8 @@ function ProjectsPage({isMobile}:any){
       ):(
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           {filtered.map((p:any)=>{
-            const meta=STATUS_META[p.status]||{color:C.t3,bg:"#F1F5F9"};
+            const statusMeta=STATUS_META[p.status]||{color:C.t3,bg:"#F1F5F9"};
+            const phaseMeta=PHASE_META[p.phase]||{color:C.t3,bg:"#F1F5F9"};
             const expanded=expandedId===p.id;
             const orderD=p.expectedOrderDate?diffD(p.expectedOrderDate):null;
             const invD=p.expectedInvoiceDate?diffD(p.expectedInvoiceDate):null;
@@ -7664,12 +7747,12 @@ function ProjectsPage({isMobile}:any){
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                       <span style={{fontWeight:700,fontSize:13.5,color:C.t1}}>{p.name||p.description?.slice(0,40)||"Sans nom"}</span>
-                      <span style={{fontSize:10,fontWeight:700,color:meta.color,background:meta.bg,padding:"2px 8px",borderRadius:99}}>{p.status}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:phaseMeta.color,background:phaseMeta.bg,padding:"2px 8px",borderRadius:99}}>{p.phase}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:statusMeta.color,background:statusMeta.bg,padding:"2px 8px",borderRadius:99}}>{p.status}</span>
                       {!p.ongoing&&<span style={{fontSize:10,fontWeight:700,color:C.t3,background:"#F1F5F9",padding:"2px 8px",borderRadius:99}}>CLÔTURÉ</span>}
                     </div>
                     <div style={{fontSize:11.5,color:C.t3,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
-                      {p.contractors&&<span><i className="ti ti-building" style={{fontSize:11}} aria-hidden="true"/> {p.contractors}</span>}
-                      {p.endCustomer&&<span><i className="ti ti-user" style={{fontSize:11}} aria-hidden="true"/> {p.endCustomer}</span>}
+                      {p.partyName&&<span><i className="ti ti-building" style={{fontSize:11}} aria-hidden="true"/> {p.partyType} — {p.partyName}</span>}
                       <span>{durationLabel(p.createdAt)}</span>
                     </div>
                   </div>
@@ -7703,6 +7786,7 @@ function ProjectsPage({isMobile}:any){
                       <div><div style={{color:C.t3}}>Durée</div><div style={{fontWeight:700,color:C.t1}}>{durationLabel(p.createdAt)}</div></div>
                     </div>
                     {p.pumpTypes?.includes("others")&&p.pumpTypeOther&&<p style={{fontSize:11.5,color:C.t2,margin:"0 0 10px"}}><strong>Autre type :</strong> {p.pumpTypeOther}</p>}
+                    {p.reason&&<div style={{background:C.redL,border:`1px solid ${C.red}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.redDk,marginBottom:12}}><strong>Raison :</strong> {p.reason}</div>}
                     {p.comments&&<div style={{background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.t2,marginBottom:12,whiteSpace:"pre-wrap"}}>{p.comments}</div>}
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       <button onClick={()=>setModal(p)} style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:6,padding:"7px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
@@ -7729,19 +7813,20 @@ function ProjectsPage({isMobile}:any){
   );
 }
 
-const MONTH_NAMES_SHORT=["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct","Nov","Déc"];
+const MONTH_NAMES_SHORT=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-// ── PDF: single project sheet ──
+// ── PDF (English): single project sheet ──
 function printOneProject(p:any){
   const w=window.open("","_blank","width=900,height=1000");
   if(!w)return;
-  const meta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
+  const statusMeta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
+  const phaseMeta=PHASE_META[p.phase]||{color:"#4A5568",bg:"#F1F5F9"};
   const pumpLabels=(p.pumpTypes||[]).map((id:string)=>{
     const pt=PUMP_TYPES.find((x:any)=>x.id===id);
     return pt?(id==="others"&&p.pumpTypeOther?`${pt.label} (${p.pumpTypeOther})`:pt.label):id;
   }).join(", ")||"—";
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>${p.name||"Projet"} — Fiche projet</title>
+<title>${p.name||"Project"} — Project sheet</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#0D1B2A;padding:28px 34px}
@@ -7754,25 +7839,30 @@ h1{font-size:20px;margin-bottom:4px}
 .full{grid-column:span 2}
 .section{margin-top:20px;font-size:13px;font-weight:700;border-bottom:2px solid #0D1B2A;padding-bottom:4px;margin-bottom:10px}
 .comments{white-space:pre-wrap;background:#F8FAFC;border:1px solid #E5EAF0;border-radius:8px;padding:12px;font-size:12.5px}
+.reason{white-space:pre-wrap;background:#FEE2E2;border:1px solid #DC2626;color:#B91C1C;border-radius:8px;padding:12px;font-size:12.5px}
 @media print{.no-print{display:none!important}}
 </style></head><body>
-<h1>${p.name||p.description?.slice(0,50)||"Projet"} <span class="badge" style="background:${meta.bg};color:${meta.color}">${p.status}</span></h1>
-<div style="color:#8FA0B3;font-size:12px">${p.ongoing?"En cours":"Clôturé"} · Enregistré le ${new Date(p.createdAt).toLocaleDateString("fr-FR")} · Durée ${durationLabel(p.createdAt)}</div>
+<h1>${p.name||p.description?.slice(0,50)||"Project"}
+  <span class="badge" style="background:${phaseMeta.bg};color:${phaseMeta.color}">${p.phase}</span>
+  <span class="badge" style="background:${statusMeta.bg};color:${statusMeta.color}">${p.status}</span>
+</h1>
+<div style="color:#8FA0B3;font-size:12px">${p.ongoing?"Ongoing":"Closed"} · Registered on ${new Date(p.createdAt).toLocaleDateString("en-GB")} · Duration ${durationLabel(p.createdAt)}</div>
 
 <div class="row">
   <div class="field full"><div class="l">Description</div><div class="v" style="font-weight:400">${p.description||"—"}</div></div>
-  <div class="field"><div class="l">Contractors</div><div class="v">${p.contractors||"—"}</div></div>
-  <div class="field"><div class="l">End customer</div><div class="v">${p.endCustomer||"—"}</div></div>
-  <div class="field full"><div class="l">Type de pompes</div><div class="v">${pumpLabels}</div></div>
-  <div class="field"><div class="l">Montant de l'offre</div><div class="v" style="color:#1D4ED8">${fmt(+p.offerAmount||0)} €</div></div>
+  <div class="field"><div class="l">Party type</div><div class="v">${p.partyType||"—"}</div></div>
+  <div class="field"><div class="l">Party name</div><div class="v">${p.partyName||"—"}</div></div>
+  <div class="field full"><div class="l">Pump types</div><div class="v">${pumpLabels}</div></div>
+  <div class="field"><div class="l">Offer amount</div><div class="v" style="color:#1D4ED8">${fmt(+p.offerAmount||0)} €</div></div>
   <div class="field"><div class="l">Chance of success</div><div class="v">${p.chanceOfSuccess}%</div></div>
-  <div class="field"><div class="l">Date de traitement</div><div class="v">${fmtD(p.processingDate)}</div></div>
-  <div class="field"><div class="l">Dernière modification</div><div class="v">${new Date(p.updatedAt).toLocaleDateString("fr-FR")}</div></div>
-  <div class="field"><div class="l">Date de commande prévue</div><div class="v">${fmtD(p.expectedOrderDate)}</div></div>
-  <div class="field"><div class="l">Date de facturation prévue</div><div class="v">${fmtD(p.expectedInvoiceDate)}</div></div>
+  <div class="field"><div class="l">Processing date</div><div class="v">${fmtD(p.processingDate)}</div></div>
+  <div class="field"><div class="l">Last modification</div><div class="v">${new Date(p.updatedAt).toLocaleDateString("en-GB")}</div></div>
+  <div class="field"><div class="l">Expected order date</div><div class="v">${fmtD(p.expectedOrderDate)}</div></div>
+  <div class="field"><div class="l">Expected invoice date</div><div class="v">${fmtD(p.expectedInvoiceDate)}</div></div>
 </div>
 
-${p.comments?`<div class="section">Commentaires</div><div class="comments">${p.comments}</div>`:""}
+${p.reason?`<div class="section">Reason</div><div class="reason">${p.reason}</div>`:""}
+${p.comments?`<div class="section">Comments</div><div class="comments">${p.comments}</div>`:""}
 
 <div class="no-print" style="position:fixed;top:14px;right:14px;display:flex;gap:8px">
 <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">🖨️ Print / PDF</button>
@@ -7782,33 +7872,36 @@ ${p.comments?`<div class="section">Commentaires</div><div class="comments">${p.c
   w.document.close();
 }
 
-// ── PDF: full portfolio report ──
+// ── PDF (English): full portfolio report ──
 function printProjectsReport(projects:any[],kpi:any){
   const w=window.open("","_blank","width=1200,height=900");
   if(!w)return;
   const ongoingP=projects.filter((p:any)=>p.ongoing);
   const closedP=projects.filter((p:any)=>!p.ongoing);
-  const rows=(list:any[])=>list.map((p:any)=>{
-    const meta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
+  const partyLabel=(p:any)=>p.partyName?`${p.partyType}: ${p.partyName}`:(p.partyType||"—");
+  const rows=(list:any[],withReason?:boolean)=>list.map((p:any)=>{
+    const statusMeta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
     return `<tr>
       <td style="font-weight:600">${p.name||p.description?.slice(0,30)||"—"}</td>
-      <td>${p.contractors||"—"}</td>
-      <td><span style="background:${meta.bg};color:${meta.color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${p.status}</span></td>
+      <td>${partyLabel(p)}</td>
+      <td>${p.phase||"—"}</td>
+      <td><span style="background:${statusMeta.bg};color:${statusMeta.color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${p.status}</span></td>
       <td style="text-align:right">${fmt(+p.offerAmount||0)} €</td>
       <td style="text-align:center">${p.chanceOfSuccess}%</td>
       <td>${fmtD(p.expectedOrderDate)}</td>
       <td>${fmtD(p.expectedInvoiceDate)}</td>
+      ${withReason?`<td>${p.reason||"—"}</td>`:""}
     </tr>`;
   }).join("");
   const alertRows=kpi.alerts.slice(0,20).map((a:any)=>`<tr>
       <td style="font-weight:600">${a.project.name||a.project.description?.slice(0,30)||"—"}</td>
-      <td>${a.kind}</td>
-      <td style="color:${a.sev==="red"?"#B91C1C":"#B45309"}">${a.msg}</td>
+      <td>${a.kindEn||a.kind}</td>
+      <td style="color:${a.sev==="red"?"#B91C1C":"#B45309"}">${a.msgEn||a.msg}</td>
     </tr>`).join("");
   const pumpRows=kpi.pumpDist.map((d:any)=>`<tr><td>${d.label}</td><td style="text-align:right">${fmt(d.amount)} €</td><td style="text-align:center">${d.count}</td></tr>`).join("");
 
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Projects Report — ${new Date().toLocaleDateString("fr-FR")}</title>
+<title>Projects Report — ${new Date().toLocaleDateString("en-GB")}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:28px 34px}
@@ -7823,28 +7916,28 @@ td{padding:6px 9px;border-bottom:1px solid #E5EAF0}
 .kpi .v{font-size:19px;font-weight:800;margin-top:3px}
 @media print{.no-print{display:none!important}}
 </style></head><body>
-<h1>📁 Projects — Rapport de portefeuille</h1>
-<div style="color:#8FA0B3">Généré le ${new Date().toLocaleDateString("fr-FR")} · ${projects.length} projets (${ongoingP.length} en cours, ${closedP.length} clôturés)</div>
+<h1>📁 Projects — Portfolio Report</h1>
+<div style="color:#8FA0B3">Generated on ${new Date().toLocaleDateString("en-GB")} · ${projects.length} projects (${ongoingP.length} ongoing, ${closedP.length} closed)</div>
 
 <div class="kpis">
-  <div class="kpi"><div class="l">Pipeline total</div><div class="v" style="color:#0D9488">${fmt(kpi.pipelineTotal)} €</div></div>
-  <div class="kpi"><div class="l">Pipeline pondéré</div><div class="v" style="color:#7C3AED">${fmt(kpi.pipelineWeighted)} €</div></div>
-  <div class="kpi"><div class="l">Taux de réussite</div><div class="v" style="color:#059669">${kpi.winRate}%</div></div>
-  <div class="kpi"><div class="l">Alertes actives</div><div class="v" style="color:${kpi.alerts.some((a:any)=>a.sev==="red")?"#DC2626":"#D97706"}">${kpi.alerts.length}</div></div>
+  <div class="kpi"><div class="l">Total pipeline</div><div class="v" style="color:#0D9488">${fmt(kpi.pipelineTotal)} €</div></div>
+  <div class="kpi"><div class="l">Weighted pipeline</div><div class="v" style="color:#7C3AED">${fmt(kpi.pipelineWeighted)} €</div></div>
+  <div class="kpi"><div class="l">Win rate</div><div class="v" style="color:#059669">${kpi.winRate}%</div></div>
+  <div class="kpi"><div class="l">Active alerts</div><div class="v" style="color:${kpi.alerts.some((a:any)=>a.sev==="red")?"#DC2626":"#D97706"}">${kpi.alerts.length}</div></div>
 </div>
 
-${alertRows?`<h2>⚠️ Alertes</h2><table><thead><tr><th>Projet</th><th>Type</th><th>Détail</th></tr></thead><tbody>${alertRows}</tbody></table>`:""}
+${alertRows?`<h2>⚠️ Alerts</h2><table><thead><tr><th>Project</th><th>Type</th><th>Detail</th></tr></thead><tbody>${alertRows}</tbody></table>`:""}
 
-<h2>🔧 Pipeline par type de pompe</h2>
-<table><thead><tr><th>Type</th><th style="text-align:right">Montant</th><th style="text-align:center">Nb projets</th></tr></thead><tbody>${pumpRows}</tbody></table>
+<h2>🔧 Pipeline by pump type</h2>
+<table><thead><tr><th>Type</th><th style="text-align:right">Amount</th><th style="text-align:center">Nb projects</th></tr></thead><tbody>${pumpRows}</tbody></table>
 
-<h2>📁 Projets en cours (${ongoingP.length})</h2>
-<table><thead><tr><th>Projet</th><th>Contractors</th><th>Statut</th><th style="text-align:right">Montant</th><th style="text-align:center">Chance</th><th>Commande prévue</th><th>Facturation prévue</th></tr></thead>
-<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucun projet en cours</td></tr>'}</tbody></table>
+<h2>📁 Ongoing projects (${ongoingP.length})</h2>
+<table><thead><tr><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th></tr></thead>
+<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="8" style="text-align:center;color:#8FA0B3;padding:16px">No ongoing project</td></tr>'}</tbody></table>
 
-<h2>✅ Projets clôturés (${closedP.length})</h2>
-<table><thead><tr><th>Projet</th><th>Contractors</th><th>Statut</th><th style="text-align:right">Montant</th><th style="text-align:center">Chance</th><th>Commande prévue</th><th>Facturation prévue</th></tr></thead>
-<tbody>${rows(closedP)||'<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucun projet clôturé</td></tr>'}</tbody></table>
+<h2>✅ Closed projects (${closedP.length})</h2>
+<table><thead><tr><th>Project</th><th>Party</th><th>Phase</th><th>Status</th><th style="text-align:right">Amount</th><th style="text-align:center">Chance</th><th>Expected order</th><th>Expected invoice</th><th>Reason</th></tr></thead>
+<tbody>${rows(closedP,true)||'<tr><td colspan="9" style="text-align:center;color:#8FA0B3;padding:16px">No closed project</td></tr>'}</tbody></table>
 
 <div class="no-print" style="position:fixed;top:14px;right:14px;display:flex;gap:8px">
 <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">🖨️ Print / PDF</button>
