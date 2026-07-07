@@ -7686,11 +7686,18 @@ function ProjectsPage({isMobile}:any){
     const dates=[p.expectedOrderDate,p.expectedInvoiceDate].filter(Boolean).map(diffD);
     return dates.length?Math.min(...dates):9999;
   };
-  filtered=[...filtered].sort((a:any,b:any)=>{
+  const sortWithin=(a:any,b:any)=>{
     if(sortBy==="deadline")return deadlineScore(a)-deadlineScore(b);
     if(sortBy==="amount")return (+b.offerAmount||0)-(+a.offerAmount||0);
     if(sortBy==="chance")return (+b.chanceOfSuccess||0)-(+a.chanceOfSuccess||0);
     return new Date(b.updatedAt||b.createdAt).getTime()-new Date(a.updatedAt||a.createdAt).getTime();
+  };
+  // Logical order: ongoing opportunities first (most urgent/relevant), closed
+  // ones always pushed to the bottom of the list; the chosen sort criteria
+  // (deadline/amount/chance/recent) applies as the tie-breaker within each group.
+  filtered=[...filtered].sort((a:any,b:any)=>{
+    if(a.ongoing!==b.ongoing)return a.ongoing?-1:1;
+    return sortWithin(a,b);
   });
 
   const ProjectKpi=({icon,label,value,color,sub,delta,deltaUnit}:any)=>(
@@ -7995,7 +8002,7 @@ function ProjectsPage({isMobile}:any){
         </div>
       ):(
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {filtered.map((p:any)=>{
+          {filtered.map((p:any,idx:number)=>{
             const statusMeta=STATUS_META[p.status]||{color:C.t3,bg:"#F1F5F9"};
             const phaseMeta=PHASE_META[p.phase]||{color:C.t3,bg:"#F1F5F9"};
             const health=projectHealth(p);
@@ -8005,8 +8012,16 @@ function ProjectsPage({isMobile}:any){
             const invD=p.expectedInvoiceDate?diffD(p.expectedInvoiceDate):null;
             const dateColor=(d:number|null)=>d===null?C.t3:d<0?C.redDk:d<=14?C.amberDk:C.t2;
             const dateBg=(d:number|null)=>d===null?"transparent":d<0?C.redL:d<=14?C.amberL:"transparent";
+            const showClosedDivider=!p.ongoing&&(idx===0||filtered[idx-1].ongoing);
             return(
-              <div key={p.id} style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,borderLeft:`4px solid ${health.color}`,boxShadow:C.sh,overflow:"hidden"}}>
+              <React.Fragment key={p.id}>
+              {showClosedDivider&&(
+                <div style={{display:"flex",alignItems:"center",gap:10,margin:"6px 0 2px"}}>
+                  <span style={{fontSize:10.5,fontWeight:700,color:C.t3,textTransform:"uppercase",letterSpacing:".06em",whiteSpace:"nowrap"}}>Clôturés</span>
+                  <div style={{flex:1,height:1,background:C.b}}/>
+                </div>
+              )}
+              <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,borderLeft:`4px solid ${health.color}`,boxShadow:C.sh,overflow:"hidden"}}>
                 <div onClick={()=>setExpandedId(expanded?null:p.id)} style={{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,flexWrap:isMobile?"wrap":"nowrap"}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -8099,6 +8114,7 @@ function ProjectsPage({isMobile}:any){
                   </div>
                 )}
               </div>
+              </React.Fragment>
             );
           })}
         </div>
