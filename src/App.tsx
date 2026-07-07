@@ -1075,6 +1075,7 @@ export default function App(){
           <SBtn icon="ti-file-report" label="Weekly Report" active={page==="rapport"} open={sideOpen} onClick={()=>{setPage("rapport");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-receipt" label="Catalogue & Devis" active={page==="catalogue"} open={sideOpen} onClick={()=>{setPage("catalogue");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-files" label="Documents" active={page==="documents"} open={sideOpen} onClick={()=>{setPage("documents");if(isMobile)setMobileMenuOpen(false);}}/>
+          <SBtn icon="ti-briefcase" label="Projects" active={page==="projects"} open={sideOpen} onClick={()=>{setPage("projects");if(isMobile)setMobileMenuOpen(false);}}/>
 
           {sideOpen&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 6px 4px",marginTop:4}}>
@@ -1181,6 +1182,7 @@ export default function App(){
         {page==="rapport"&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
         {page==="catalogue"&&<CataloguePage clients={clients} lang={lang} isMobile={isMobile}/>}
         {page==="documents"&&<DocumentsPage isMobile={isMobile}/>}
+        {page==="projects"&&<ProjectsPage isMobile={isMobile}/>}
         {page==="logs"&&<ActivityLogsPage session={session}/>}
         {!special.includes(page)&&(
           <CustomerPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
@@ -7188,6 +7190,670 @@ function DocumentsPage({isMobile}:any){
 }
 
 // ─── TRÉSORERIE PAGE ──────────────────────────────────────────────────────────
+// ─── PROJECTS PAGE ────────────────────────────────────────────────────────
+const PROJECTS_KEY="ordertrack-projects";
+const PROJECTS_LS="ordertrack_projects_cache";
+
+const PUMP_TYPES=[
+  {id:"boosters",   label:"Boosters",   icon:"ti-arrow-big-up-line", color:"#2563EB"},
+  {id:"fire",       label:"Fire",       icon:"ti-flame",             color:"#DC2626"},
+  {id:"wastewater", label:"Wastewater", icon:"ti-droplet",           color:"#0D9488"},
+  {id:"surface",    label:"Surface",    icon:"ti-anchor",            color:"#D97706"},
+  {id:"others",     label:"Others",     icon:"ti-dots",              color:"#7C3AED"},
+];
+
+const PROJECT_STATUS=[
+  "Qualification","Devis envoyé","En négociation","Commande reçue / Gagné","Livré / Terminé","Perdu","Annulé"
+];
+const STATUS_META:Record<string,{color:string,bg:string}>={
+  "Qualification":            {color:"#4A5568",bg:"#F1F5F9"},
+  "Devis envoyé":             {color:C.blue,   bg:C.blueL},
+  "En négociation":           {color:C.amber,  bg:C.amberL},
+  "Commande reçue / Gagné":   {color:C.green,  bg:C.greenL},
+  "Livré / Terminé":          {color:C.teal,   bg:C.tealL},
+  "Perdu":                    {color:C.red,    bg:C.redL},
+  "Annulé":                   {color:"#4A5568",bg:"#F1F5F9"},
+};
+const WON_STATUSES=["Commande reçue / Gagné","Livré / Terminé"];
+const LOST_STATUSES=["Perdu","Annulé"];
+
+const emptyProject=()=>({
+  id:Date.now().toString()+Math.random().toString(36).slice(2,7),
+  name:"", description:"", contractors:"", endCustomer:"",
+  pumpTypes:[] as string[], pumpTypeOther:"",
+  chanceOfSuccess:50, offerAmount:"",
+  ongoing:true, status:PROJECT_STATUS[0],
+  processingDate:todayStr(), expectedOrderDate:"", expectedInvoiceDate:"",
+  createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(),
+  comments:"",
+});
+
+const loadProjectsLocal=():any[]|null=>{
+  try{const d=localStorage.getItem(PROJECTS_LS);return d?JSON.parse(d):null;}catch{return null;}
+};
+const saveProjectsCloud=async(projects:any[]):Promise<boolean>=>{
+  try{return await sbSet(PROJECTS_KEY,{projects,ts:new Date().toISOString()});}
+  catch(e){console.warn("[saveProjectsCloud]",e);return false;}
+};
+const saveProjects=async(projects:any[],setSyncMsgFn?:any)=>{
+  try{localStorage.setItem(PROJECTS_LS,JSON.stringify(projects));}catch{}
+  const ok=await saveProjectsCloud(projects);
+  if(setSyncMsgFn)setSyncMsgFn(ok?"✓ Synchronisé":"⚠️ Sauvegarde locale uniquement — cloud indisponible");
+  return ok;
+};
+
+const daysSince=(iso:string)=>Math.floor((Date.now()-new Date(iso).getTime())/86400000);
+const durationLabel=(iso:string)=>{
+  const d=daysSince(iso);
+  if(d<1)return "Aujourd'hui";
+  if(d<31)return d+" jour"+(d>1?"s":"");
+  const months=Math.floor(d/30.44);
+  const days=Math.round(d-months*30.44);
+  return months+" mois"+(days>0?" "+days+"j":"");
+};
+
+function projectAlerts(projects:any[]){
+  const alerts:any[]=[];
+  projects.filter((p:any)=>p.ongoing).forEach((p:any)=>{
+    if(p.expectedOrderDate){
+      const d=diffD(p.expectedOrderDate);
+      if(d<0)alerts.push({sev:"red",kind:"Commande en retard",project:p,days:d,msg:`Commande prévue le ${fmtD(p.expectedOrderDate)} — ${Math.abs(d)}j de retard`});
+      else if(d<=14)alerts.push({sev:"amber",kind:"Commande proche",project:p,days:d,msg:`Commande prévue le ${fmtD(p.expectedOrderDate)} — dans ${d}j`});
+    }
+    if(p.expectedInvoiceDate){
+      const d=diffD(p.expectedInvoiceDate);
+      if(d<0)alerts.push({sev:"red",kind:"Facturation en retard",project:p,days:d,msg:`Facturation prévue le ${fmtD(p.expectedInvoiceDate)} — ${Math.abs(d)}j de retard`});
+      else if(d<=14)alerts.push({sev:"amber",kind:"Facturation proche",project:p,days:d,msg:`Facturation prévue le ${fmtD(p.expectedInvoiceDate)} — dans ${d}j`});
+    }
+    const staleDays=daysSince(p.updatedAt||p.createdAt);
+    if(staleDays>30)alerts.push({sev:"amber",kind:"Sans nouvelle",project:p,days:staleDays,msg:`Aucune mise à jour depuis ${staleDays}j`});
+  });
+  return alerts.sort((a,b)=>(a.sev===b.sev?0:a.sev==="red"?-1:1)||(a.days-b.days));
+}
+
+function ProjectModal({project,onSave,onClose}:any){
+  const isEdit=!!project;
+  const [f,setF]=useState<any>(project?{...project}:emptyProject());
+  const s=(k:string,v:any)=>setF((p:any)=>({...p,[k]:v}));
+  const togglePump=(id:string)=>setF((p:any)=>({...p,pumpTypes:p.pumpTypes.includes(id)?p.pumpTypes.filter((x:string)=>x!==id):[...p.pumpTypes,id]}));
+  const isMobile=window.innerWidth<768;
+  const canSave=f.name.trim()||f.description.trim();
+
+  const save=()=>{
+    if(!canSave)return;
+    const updated={...f,offerAmount:+f.offerAmount||0,chanceOfSuccess:Math.max(0,Math.min(100,+f.chanceOfSuccess||0)),updatedAt:new Date().toISOString()};
+    onSave(updated);
+  };
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.5)",display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(2px)"}} onClick={onClose}>
+      <div onClick={(e:any)=>e.stopPropagation()}>
+        <Modal title={isEdit?"Modifier le projet":"Nouveau projet"} sub={isEdit?f.name||f.description?.slice(0,40):"Renseignez les informations du projet"} width={640} onClose={onClose}
+          footer={<>
+            <button onClick={onClose} style={{background:"#F1F5F9",color:C.t2,border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Annuler</button>
+            <button onClick={save} disabled={!canSave} style={{background:canSave?C.blue:C.b,color:"#fff",border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>
+              <i className="ti ti-device-floppy" style={{fontSize:13,marginRight:6}} aria-hidden="true"/>{isEdit?"Enregistrer":"Créer le projet"}
+            </button>
+          </>}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
+            <Fld label="Nom / Référence du projet" value={f.name} onChange={(v:any)=>s("name",v)} placeholder="ex: Station de pompage Abidjan Port" span={2}/>
+            <Fld label="Description" value={f.description} onChange={(v:any)=>s("description",v)} placeholder="Contexte, périmètre, spécificités…" rows={3} span={2}/>
+            <Fld label="Contractors" value={f.contractors} onChange={(v:any)=>s("contractors",v)} placeholder="EPC / Installateur"/>
+            <Fld label="End customer (facultatif)" value={f.endCustomer} onChange={(v:any)=>s("endCustomer",v)} placeholder="Client final"/>
+
+            <div style={{gridColumn:"span 2"}}>
+              <Label t="Type de pompes"/>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                {PUMP_TYPES.map(pt=>(
+                  <button key={pt.id} type="button" onClick={()=>togglePump(pt.id)}
+                    style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:99,cursor:"pointer",fontSize:12,fontWeight:600,
+                      border:`1.5px solid ${f.pumpTypes.includes(pt.id)?pt.color:C.b}`,
+                      background:f.pumpTypes.includes(pt.id)?pt.color+"1A":"#fff",
+                      color:f.pumpTypes.includes(pt.id)?pt.color:C.t2}}>
+                    <i className={`ti ${pt.icon}`} style={{fontSize:13}} aria-hidden="true"/>{pt.label}
+                  </button>
+                ))}
+              </div>
+              {f.pumpTypes.includes("others")&&
+                <input value={f.pumpTypeOther} onChange={(e:any)=>s("pumpTypeOther",e.target.value)} placeholder="Préciser le type…"
+                  style={{marginTop:8,width:"100%",boxSizing:"border-box"}}/>}
+            </div>
+
+            <div>
+              <Label t={`Chance of success — ${f.chanceOfSuccess}%`}/>
+              <input type="range" min={0} max={100} step={5} value={f.chanceOfSuccess} onChange={(e:any)=>s("chanceOfSuccess",+e.target.value)} style={{width:"100%"}}/>
+            </div>
+            <Fld label="Montant de l'offre (EUR)" type="number" value={f.offerAmount} onChange={(v:any)=>s("offerAmount",v)} placeholder="0.00"/>
+
+            <Sel label="En cours ou clôturé" value={f.ongoing?"ongoing":"closed"} onChange={(v:any)=>s("ongoing",v==="ongoing")}
+              options={[{value:"ongoing",label:"En cours"},{value:"closed",label:"Clôturé"}]}/>
+            <Sel label="Status actuel" value={f.status} onChange={(v:any)=>s("status",v)} options={PROJECT_STATUS}/>
+
+            <Fld label="Date de traitement du projet" type="date" value={f.processingDate} onChange={(v:any)=>s("processingDate",v)}/>
+            <div/>
+            <Fld label="Date de commande prévue" type="date" value={f.expectedOrderDate} onChange={(v:any)=>s("expectedOrderDate",v)}/>
+            <Fld label="Date de facturation prévue" type="date" value={f.expectedInvoiceDate} onChange={(v:any)=>s("expectedInvoiceDate",v)}/>
+
+            <Fld label="Commentaires" value={f.comments} onChange={(v:any)=>s("comments",v)} placeholder="Notes, historique, points de vigilance…" rows={3} span={2}/>
+
+            {isEdit&&(
+              <div style={{gridColumn:"span 2",fontSize:11,color:C.t3,display:"flex",justifyContent:"space-between",paddingTop:4,borderTop:`1px dashed ${C.b}`}}>
+                <span>Enregistré le {new Date(f.createdAt).toLocaleDateString("fr-FR")} · Durée : {durationLabel(f.createdAt)}</span>
+                <span>Dernière modification : {new Date(f.updatedAt).toLocaleString("fr-FR")}</span>
+              </div>
+            )}
+          </div>
+        </Modal>
+      </div>
+    </div>
+  );
+}
+
+function ProjectsPage({isMobile}:any){
+  const[projects,setProjects]=useState<any[]>(()=>loadProjectsLocal()||[]);
+  const[loading,setLoading]=useState(true);
+  const[syncMsg,setSyncMsg]=useState("");
+  const[modal,setModal]=useState<any>(null); // null | true (new) | project (edit)
+  const[search,setSearch]=useState("");
+  const[statusFilter,setStatusFilter]=useState("all"); // all | ongoing | closed
+  const[pumpFilter,setPumpFilter]=useState("all");
+  const[sortBy,setSortBy]=useState("deadline"); // deadline | amount | chance | recent
+  const[showAlerts,setShowAlerts]=useState(true);
+  const[expandedId,setExpandedId]=useState<string|null>(null);
+
+  const loadFromCloud=async(silent=false)=>{
+    if(!silent)setSyncMsg("Chargement…");
+    try{
+      const r=await sbGet(PROJECTS_KEY);
+      const cloud=r?.projects||[];
+      if(cloud.length>0){
+        setProjects(cloud);
+        try{localStorage.setItem(PROJECTS_LS,JSON.stringify(cloud));}catch{}
+        setSyncMsg("✓ "+cloud.length+" projet"+(cloud.length>1?"s":"")+" chargé"+(cloud.length>1?"s":""));
+      } else {
+        const local=loadProjectsLocal()||[];
+        if(local.length>0){await saveProjectsCloud(local);setSyncMsg("✓ Synchronisé vers le cloud");}
+        else setSyncMsg("Aucun projet enregistré");
+      }
+    }catch(e:any){setSyncMsg("⚠️ Erreur de connexion");}
+    setLoading(false);
+  };
+  useEffect(()=>{loadFromCloud(true);},[]);
+
+  const persist=async(next:any[])=>{
+    setProjects(next);
+    await saveProjects(next,setSyncMsg);
+  };
+
+  const handleSave=(p:any)=>{
+    const exists=projects.some((x:any)=>x.id===p.id);
+    const next=exists?projects.map((x:any)=>x.id===p.id?p:x):[p,...projects];
+    persist(next);
+    setModal(null);
+  };
+  const handleDelete=(p:any)=>{
+    if(!window.confirm(`Supprimer le projet "${p.name||p.description?.slice(0,30)}" ?`))return;
+    persist(projects.filter((x:any)=>x.id!==p.id));
+  };
+  const toggleOngoing=(p:any)=>persist(projects.map((x:any)=>x.id===p.id?{...x,ongoing:!x.ongoing,updatedAt:new Date().toISOString()}:x));
+
+  // ── KPIs ──
+  const ongoingP=projects.filter((p:any)=>p.ongoing);
+  const closedP=projects.filter((p:any)=>!p.ongoing);
+  const wonP=closedP.filter((p:any)=>WON_STATUSES.includes(p.status));
+  const lostP=closedP.filter((p:any)=>LOST_STATUSES.includes(p.status));
+  const pipelineTotal=ongoingP.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0);
+  const pipelineWeighted=ongoingP.reduce((s:number,p:any)=>s+(+p.offerAmount||0)*(+p.chanceOfSuccess||0)/100,0);
+  const avgChance=ongoingP.length?ongoingP.reduce((s:number,p:any)=>s+(+p.chanceOfSuccess||0),0)/ongoingP.length:0;
+  const avgAmount=ongoingP.length?pipelineTotal/ongoingP.length:0;
+  const winRate=closedP.length?Math.round(wonP.length/closedP.length*100):0;
+  const wonAmount=wonP.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0);
+
+  const alerts=projectAlerts(projects);
+  const redAlerts=alerts.filter((a:any)=>a.sev==="red").length;
+
+  // pump type distribution (amount, ongoing)
+  const pumpDist=PUMP_TYPES.map(pt=>({
+    ...pt,
+    amount:ongoingP.filter((p:any)=>p.pumpTypes?.includes(pt.id)).reduce((s:number,p:any)=>s+(+p.offerAmount||0),0),
+    count:ongoingP.filter((p:any)=>p.pumpTypes?.includes(pt.id)).length,
+  }));
+  const maxPumpAmount=Math.max(1,...pumpDist.map(d=>d.amount));
+
+  // status distribution (count, all)
+  const statusDist=PROJECT_STATUS.map(st=>({status:st,count:projects.filter((p:any)=>p.status===st).length}));
+  const maxStatusCount=Math.max(1,...statusDist.map(d=>d.count));
+
+  // monthly trend last 6 months (created vs closed)
+  const monthBuckets=Array.from({length:6},(_,i)=>{
+    const d=new Date();d.setMonth(d.getMonth()-(5-i));
+    return{key:`${d.getFullYear()}-${d.getMonth()}`,label:MONTH_NAMES_SHORT[d.getMonth()],year:d.getFullYear(),month:d.getMonth()};
+  });
+  const trend=monthBuckets.map(b=>({
+    ...b,
+    created:projects.filter((p:any)=>{const d=new Date(p.createdAt);return d.getFullYear()===b.year&&d.getMonth()===b.month;}).length,
+    closed:projects.filter((p:any)=>!p.ongoing&&{...p}.updatedAt&&(()=>{const d=new Date(p.updatedAt);return d.getFullYear()===b.year&&d.getMonth()===b.month;})()).length,
+  }));
+  const maxTrend=Math.max(1,...trend.flatMap(t=>[t.created,t.closed]));
+
+  // top contractors
+  const contractorMap:Record<string,number>={};
+  ongoingP.forEach((p:any)=>{const k=(p.contractors||"—").trim()||"—";contractorMap[k]=(contractorMap[k]||0)+(+p.offerAmount||0);});
+  const topContractors=Object.entries(contractorMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // ── filters + sort ──
+  const sq=search.trim().toLowerCase();
+  let filtered=projects.filter((p:any)=>{
+    const matchStatus=statusFilter==="all"||(statusFilter==="ongoing"?p.ongoing:!p.ongoing);
+    const matchPump=pumpFilter==="all"||p.pumpTypes?.includes(pumpFilter);
+    const matchSearch=!sq||[p.name,p.description,p.contractors,p.endCustomer,p.status,p.comments].some((v:any)=>String(v||"").toLowerCase().includes(sq));
+    return matchStatus&&matchPump&&matchSearch;
+  });
+  const deadlineScore=(p:any)=>{
+    const dates=[p.expectedOrderDate,p.expectedInvoiceDate].filter(Boolean).map(diffD);
+    return dates.length?Math.min(...dates):9999;
+  };
+  filtered=[...filtered].sort((a:any,b:any)=>{
+    if(sortBy==="deadline")return deadlineScore(a)-deadlineScore(b);
+    if(sortBy==="amount")return (+b.offerAmount||0)-(+a.offerAmount||0);
+    if(sortBy==="chance")return (+b.chanceOfSuccess||0)-(+a.chanceOfSuccess||0);
+    return new Date(b.updatedAt||b.createdAt).getTime()-new Date(a.updatedAt||a.createdAt).getTime();
+  });
+
+  const ProjectKpi=({icon,label,value,color,sub}:any)=>(
+    <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px",display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{width:28,height:28,borderRadius:8,background:color+"1A",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <i className={`ti ${icon}`} style={{fontSize:14,color}} aria-hidden="true"/>
+        </div>
+        <span style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".03em"}}>{label}</span>
+      </div>
+      <div style={{fontSize:20,fontWeight:800,color:C.t1,lineHeight:1}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:C.t3}}>{sub}</div>}
+    </div>
+  );
+
+  if(loading)return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <h1 style={{margin:0,fontSize:22,fontWeight:700,color:C.t1}}>Projects</h1>
+      <div style={{padding:40,textAlign:"center",color:C.t3,fontSize:13}}>Chargement des projets…</div>
+    </div>
+  );
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {modal&&<ProjectModal project={modal===true?null:modal} onSave={handleSave} onClose={()=>setModal(null)}/>}
+
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+        <div>
+          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1,display:"flex",alignItems:"center",gap:8}}>
+            Projects
+            {syncMsg&&<span style={{fontSize:11,fontWeight:500,color:C.t3}}>{syncMsg}</span>}
+          </h1>
+          <p style={{margin:0,color:C.t3,fontSize:13}}>{projects.length} projet{projects.length>1?"s":""} · {ongoingP.length} en cours · {closedP.length} clôturé{closedP.length>1?"s":""}</p>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>printProjectsReport(projects,{pipelineTotal,pipelineWeighted,winRate,alerts,pumpDist,statusDist})}
+            style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",boxShadow:C.sh}}>
+            <i className="ti ti-file-report" style={{fontSize:14}} aria-hidden="true"/> Rapport PDF
+          </button>
+          <button onClick={()=>setModal(true)}
+            style={{display:"flex",alignItems:"center",gap:6,background:C.blue,border:"none",color:"#fff",borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:C.sh}}>
+            <i className="ti ti-plus" style={{fontSize:14}} aria-hidden="true"/> Nouveau projet
+          </button>
+        </div>
+      </div>
+
+      {/* Alerts */}
+      {alerts.length>0&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${redAlerts>0?C.red:C.amber}`,boxShadow:C.sh,overflow:"hidden"}}>
+          <button onClick={()=>setShowAlerts(!showAlerts)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",background:redAlerts>0?C.redL:C.amberL,border:"none",cursor:"pointer"}}>
+            <span style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700,color:redAlerts>0?C.redDk:C.amberDk}}>
+              <i className="ti ti-alert-triangle" style={{fontSize:15}} aria-hidden="true"/>
+              {alerts.length} alerte{alerts.length>1?"s":""} active{alerts.length>1?"s":""}
+              {redAlerts>0&&<span style={{background:C.red,color:"#fff",fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99}}>{redAlerts} urgent{redAlerts>1?"es":"e"}</span>}
+            </span>
+            <i className={`ti ${showAlerts?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:14,color:redAlerts>0?C.redDk:C.amberDk}} aria-hidden="true"/>
+          </button>
+          {showAlerts&&(
+            <div style={{maxHeight:220,overflowY:"auto"}}>
+              {alerts.map((a:any,i:number)=>(
+                <div key={i} onClick={()=>setModal(a.project)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 16px",borderTop:`1px solid ${C.b}`,cursor:"pointer",fontSize:12}}>
+                  <span style={{width:7,height:7,borderRadius:99,background:a.sev==="red"?C.red:C.amber,flexShrink:0}}/>
+                  <span style={{fontWeight:700,color:C.t1,minWidth:140}}>{a.project.name||a.project.description?.slice(0,30)||"Sans nom"}</span>
+                  <span style={{color:C.t2}}>{a.msg}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* KPI row */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(6,1fr)",gap:10}}>
+        <ProjectKpi icon="ti-briefcase" label="En cours" value={ongoingP.length} color={C.blue}/>
+        <ProjectKpi icon="ti-currency-euro" label="Pipeline total" value={fmtK(pipelineTotal)+" €"} color={C.teal}/>
+        <ProjectKpi icon="ti-chart-donut" label="Pipeline pondéré" value={fmtK(pipelineWeighted)+" €"} color={C.purple} sub={`chance moy. ${Math.round(avgChance)}%`}/>
+        <ProjectKpi icon="ti-trophy" label="Taux de réussite" value={winRate+"%"} color={C.green} sub={`${wonP.length} gagné · ${lostP.length} perdu`}/>
+        <ProjectKpi icon="ti-receipt-2" label="Montant moyen" value={fmtK(avgAmount)+" €"} color={C.amber}/>
+        <ProjectKpi icon="ti-alert-triangle" label="Alertes" value={alerts.length} color={redAlerts>0?C.red:C.amber}/>
+      </div>
+
+      {/* Charts row */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.2fr 1fr 1fr",gap:12}}>
+        {/* Pump type distribution */}
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:12}}>🔧 Pipeline par type de pompe</div>
+          <div style={{display:"flex",flexDirection:"column",gap:9}}>
+            {pumpDist.map(d=>(
+              <div key={d.id}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                  <span style={{color:C.t2,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><i className={`ti ${d.icon}`} style={{fontSize:12,color:d.color}} aria-hidden="true"/>{d.label}</span>
+                  <span style={{color:C.t3}}>{fmtK(d.amount)} € · {d.count}</span>
+                </div>
+                <div style={{height:7,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                  <div style={{width:`${d.amount/maxPumpAmount*100}%`,height:"100%",background:d.color,borderRadius:99,transition:"width .3s"}}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Status distribution */}
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:12}}>📊 Répartition par statut</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {statusDist.filter(d=>d.count>0).map(d=>{
+              const meta=STATUS_META[d.status];
+              return(
+                <div key={d.status}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,marginBottom:3}}>
+                    <span style={{color:C.t2,fontWeight:600}}>{d.status}</span>
+                    <span style={{color:C.t3}}>{d.count}</span>
+                  </div>
+                  <div style={{height:6,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                    <div style={{width:`${d.count/maxStatusCount*100}%`,height:"100%",background:meta.color,borderRadius:99}}/>
+                  </div>
+                </div>
+              );
+            })}
+            {statusDist.every(d=>d.count===0)&&<div style={{fontSize:11,color:C.t3}}>Aucune donnée</div>}
+          </div>
+        </div>
+
+        {/* Monthly trend */}
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:4}}>📈 Tendance (6 mois)</div>
+          <div style={{display:"flex",gap:10,fontSize:10,color:C.t3,marginBottom:10}}>
+            <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:C.blue}}/>Créés</span>
+            <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:C.t3}}/>Clôturés</span>
+          </div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:8,height:90}}>
+            {trend.map((t,i)=>(
+              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                <div style={{display:"flex",alignItems:"flex-end",gap:2,height:70}}>
+                  <div style={{width:8,height:`${t.created/maxTrend*100}%`,minHeight:t.created>0?3:0,background:C.blue,borderRadius:"2px 2px 0 0"}}/>
+                  <div style={{width:8,height:`${t.closed/maxTrend*100}%`,minHeight:t.closed>0?3:0,background:C.t3,borderRadius:"2px 2px 0 0"}}/>
+                </div>
+                <span style={{fontSize:9,color:C.t3}}>{t.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {topContractors.length>0&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:10}}>🏗️ Top contractors (pipeline en cours)</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {topContractors.map(([name,amount])=>(
+              <div key={name} style={{display:"flex",alignItems:"center",gap:8,background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:99,padding:"6px 12px",fontSize:11.5}}>
+                <span style={{fontWeight:700,color:C.t1}}>{name}</span>
+                <span style={{color:C.blue,fontWeight:700}}>{fmtK(amount)} €</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"7px 12px",boxShadow:C.sh,flex:1,minWidth:180,maxWidth:320}}>
+          <i className="ti ti-search" style={{fontSize:14,color:C.t3,flexShrink:0}} aria-hidden="true"/>
+          <input value={search} onChange={(e:any)=>setSearch(e.target.value)} placeholder="Rechercher un projet…"
+            style={{border:"none",outline:"none",fontSize:12,color:C.t1,background:"transparent",width:"100%",fontFamily:"inherit"}}/>
+          {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.t3,cursor:"pointer"}}>✕</button>}
+        </div>
+        <select value={statusFilter} onChange={(e:any)=>setStatusFilter(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
+          <option value="all">Tous statuts</option>
+          <option value="ongoing">En cours</option>
+          <option value="closed">Clôturé</option>
+        </select>
+        <select value={pumpFilter} onChange={(e:any)=>setPumpFilter(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
+          <option value="all">Tous types de pompes</option>
+          {PUMP_TYPES.map(pt=><option key={pt.id} value={pt.id}>{pt.label}</option>)}
+        </select>
+        <select value={sortBy} onChange={(e:any)=>setSortBy(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
+          <option value="deadline">Trier : échéance</option>
+          <option value="amount">Trier : montant</option>
+          <option value="chance">Trier : chance de succès</option>
+          <option value="recent">Trier : récemment modifié</option>
+        </select>
+        <span style={{fontSize:11,color:C.t3,marginLeft:"auto"}}>{filtered.length} résultat{filtered.length>1?"s":""}</span>
+      </div>
+
+      {/* List */}
+      {filtered.length===0?(
+        <div style={{background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.rLg,padding:56,textAlign:"center"}}>
+          <i className="ti ti-briefcase-off" style={{fontSize:36,color:C.b,display:"block",marginBottom:12}} aria-hidden="true"/>
+          <p style={{color:C.t3,fontSize:14,margin:0}}>{projects.length===0?"Aucun projet — utilisez le bouton \"Nouveau projet\" pour commencer.":"Aucun résultat pour ces filtres."}</p>
+        </div>
+      ):(
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {filtered.map((p:any)=>{
+            const meta=STATUS_META[p.status]||{color:C.t3,bg:"#F1F5F9"};
+            const expanded=expandedId===p.id;
+            const orderD=p.expectedOrderDate?diffD(p.expectedOrderDate):null;
+            const invD=p.expectedInvoiceDate?diffD(p.expectedInvoiceDate):null;
+            const dateColor=(d:number|null)=>d===null?C.t3:d<0?C.redDk:d<=14?C.amberDk:C.t2;
+            const dateBg=(d:number|null)=>d===null?"transparent":d<0?C.redL:d<=14?C.amberL:"transparent";
+            return(
+              <div key={p.id} style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
+                <div onClick={()=>setExpandedId(expanded?null:p.id)} style={{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,flexWrap:isMobile?"wrap":"nowrap"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <span style={{fontWeight:700,fontSize:13.5,color:C.t1}}>{p.name||p.description?.slice(0,40)||"Sans nom"}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:meta.color,background:meta.bg,padding:"2px 8px",borderRadius:99}}>{p.status}</span>
+                      {!p.ongoing&&<span style={{fontSize:10,fontWeight:700,color:C.t3,background:"#F1F5F9",padding:"2px 8px",borderRadius:99}}>CLÔTURÉ</span>}
+                    </div>
+                    <div style={{fontSize:11.5,color:C.t3,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
+                      {p.contractors&&<span><i className="ti ti-building" style={{fontSize:11}} aria-hidden="true"/> {p.contractors}</span>}
+                      {p.endCustomer&&<span><i className="ti ti-user" style={{fontSize:11}} aria-hidden="true"/> {p.endCustomer}</span>}
+                      <span>{durationLabel(p.createdAt)}</span>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {p.pumpTypes?.map((id:string)=>{const pt=PUMP_TYPES.find(x=>x.id===id);return pt?<i key={id} className={`ti ${pt.icon}`} title={pt.label} style={{fontSize:14,color:pt.color}} aria-hidden="true"/>:null;})}
+                  </div>
+                  <div style={{textAlign:"right",minWidth:90}}>
+                    <div style={{fontSize:14,fontWeight:800,color:C.t1}}>{fmtK(+p.offerAmount||0)} €</div>
+                    <div style={{fontSize:10.5,color:C.t3}}>{p.chanceOfSuccess}% chance</div>
+                  </div>
+                  <div style={{display:"flex",gap:6,textAlign:"center"}}>
+                    <div style={{fontSize:9.5,color:C.t3,padding:"3px 7px",borderRadius:6,background:dateBg(orderD)}}>
+                      <div style={{fontWeight:700,color:dateColor(orderD)}}>{p.expectedOrderDate?fmtD(p.expectedOrderDate):"—"}</div>
+                      <div>Commande</div>
+                    </div>
+                    <div style={{fontSize:9.5,color:C.t3,padding:"3px 7px",borderRadius:6,background:dateBg(invD)}}>
+                      <div style={{fontWeight:700,color:dateColor(invD)}}>{p.expectedInvoiceDate?fmtD(p.expectedInvoiceDate):"—"}</div>
+                      <div>Facturation</div>
+                    </div>
+                  </div>
+                  <i className={`ti ${expanded?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:14,color:C.t3}} aria-hidden="true"/>
+                </div>
+
+                {expanded&&(
+                  <div style={{padding:"0 16px 16px",borderTop:`1px solid ${C.b}`}}>
+                    {p.description&&<p style={{fontSize:12.5,color:C.t2,margin:"12px 0"}}>{p.description}</p>}
+                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,fontSize:11.5,marginBottom:12}}>
+                      <div><div style={{color:C.t3}}>Date de traitement</div><div style={{fontWeight:700,color:C.t1}}>{fmtD(p.processingDate)}</div></div>
+                      <div><div style={{color:C.t3}}>Enregistré le</div><div style={{fontWeight:700,color:C.t1}}>{new Date(p.createdAt).toLocaleDateString("fr-FR")}</div></div>
+                      <div><div style={{color:C.t3}}>Dernière modification</div><div style={{fontWeight:700,color:C.t1}}>{new Date(p.updatedAt).toLocaleDateString("fr-FR")}</div></div>
+                      <div><div style={{color:C.t3}}>Durée</div><div style={{fontWeight:700,color:C.t1}}>{durationLabel(p.createdAt)}</div></div>
+                    </div>
+                    {p.pumpTypes?.includes("others")&&p.pumpTypeOther&&<p style={{fontSize:11.5,color:C.t2,margin:"0 0 10px"}}><strong>Autre type :</strong> {p.pumpTypeOther}</p>}
+                    {p.comments&&<div style={{background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.t2,marginBottom:12,whiteSpace:"pre-wrap"}}>{p.comments}</div>}
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      <button onClick={()=>setModal(p)} style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:6,padding:"7px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
+                        <i className="ti ti-edit" style={{fontSize:12}} aria-hidden="true"/> Modifier
+                      </button>
+                      <button onClick={()=>toggleOngoing(p)} style={{display:"flex",alignItems:"center",gap:5,background:"#F1F5F9",color:C.t2,border:"none",borderRadius:6,padding:"7px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
+                        <i className={`ti ${p.ongoing?"ti-check":"ti-refresh"}`} style={{fontSize:12}} aria-hidden="true"/> {p.ongoing?"Marquer clôturé":"Rouvrir"}
+                      </button>
+                      <button onClick={()=>printOneProject(p)} style={{display:"flex",alignItems:"center",gap:5,background:C.tealL,color:C.teal,border:"none",borderRadius:6,padding:"7px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
+                        <i className="ti ti-file-report" style={{fontSize:12}} aria-hidden="true"/> Rapport PDF
+                      </button>
+                      <button onClick={()=>handleDelete(p)} style={{display:"flex",alignItems:"center",gap:5,background:C.redL,color:C.redDk,border:"none",borderRadius:6,padding:"7px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer",marginLeft:"auto"}}>
+                        <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/> Supprimer
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const MONTH_NAMES_SHORT=["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct","Nov","Déc"];
+
+// ── PDF: single project sheet ──
+function printOneProject(p:any){
+  const w=window.open("","_blank","width=900,height=1000");
+  if(!w)return;
+  const meta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
+  const pumpLabels=(p.pumpTypes||[]).map((id:string)=>{
+    const pt=PUMP_TYPES.find((x:any)=>x.id===id);
+    return pt?(id==="others"&&p.pumpTypeOther?`${pt.label} (${p.pumpTypeOther})`:pt.label):id;
+  }).join(", ")||"—";
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${p.name||"Projet"} — Fiche projet</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#0D1B2A;padding:28px 34px}
+h1{font-size:20px;margin-bottom:4px}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:99px;margin-left:8px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+.field{border:1px solid #E5EAF0;border-radius:8px;padding:10px 12px}
+.field .l{font-size:10px;color:#8FA0B3;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.field .v{font-size:13px;font-weight:600}
+.full{grid-column:span 2}
+.section{margin-top:20px;font-size:13px;font-weight:700;border-bottom:2px solid #0D1B2A;padding-bottom:4px;margin-bottom:10px}
+.comments{white-space:pre-wrap;background:#F8FAFC;border:1px solid #E5EAF0;border-radius:8px;padding:12px;font-size:12.5px}
+@media print{.no-print{display:none!important}}
+</style></head><body>
+<h1>${p.name||p.description?.slice(0,50)||"Projet"} <span class="badge" style="background:${meta.bg};color:${meta.color}">${p.status}</span></h1>
+<div style="color:#8FA0B3;font-size:12px">${p.ongoing?"En cours":"Clôturé"} · Enregistré le ${new Date(p.createdAt).toLocaleDateString("fr-FR")} · Durée ${durationLabel(p.createdAt)}</div>
+
+<div class="row">
+  <div class="field full"><div class="l">Description</div><div class="v" style="font-weight:400">${p.description||"—"}</div></div>
+  <div class="field"><div class="l">Contractors</div><div class="v">${p.contractors||"—"}</div></div>
+  <div class="field"><div class="l">End customer</div><div class="v">${p.endCustomer||"—"}</div></div>
+  <div class="field full"><div class="l">Type de pompes</div><div class="v">${pumpLabels}</div></div>
+  <div class="field"><div class="l">Montant de l'offre</div><div class="v" style="color:#1D4ED8">${fmt(+p.offerAmount||0)} €</div></div>
+  <div class="field"><div class="l">Chance of success</div><div class="v">${p.chanceOfSuccess}%</div></div>
+  <div class="field"><div class="l">Date de traitement</div><div class="v">${fmtD(p.processingDate)}</div></div>
+  <div class="field"><div class="l">Dernière modification</div><div class="v">${new Date(p.updatedAt).toLocaleDateString("fr-FR")}</div></div>
+  <div class="field"><div class="l">Date de commande prévue</div><div class="v">${fmtD(p.expectedOrderDate)}</div></div>
+  <div class="field"><div class="l">Date de facturation prévue</div><div class="v">${fmtD(p.expectedInvoiceDate)}</div></div>
+</div>
+
+${p.comments?`<div class="section">Commentaires</div><div class="comments">${p.comments}</div>`:""}
+
+<div class="no-print" style="position:fixed;top:14px;right:14px;display:flex;gap:8px">
+<button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">🖨️ Print / PDF</button>
+<button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">✕</button>
+</div>
+</body></html>`);
+  w.document.close();
+}
+
+// ── PDF: full portfolio report ──
+function printProjectsReport(projects:any[],kpi:any){
+  const w=window.open("","_blank","width=1200,height=900");
+  if(!w)return;
+  const ongoingP=projects.filter((p:any)=>p.ongoing);
+  const closedP=projects.filter((p:any)=>!p.ongoing);
+  const rows=(list:any[])=>list.map((p:any)=>{
+    const meta=STATUS_META[p.status]||{color:"#4A5568",bg:"#F1F5F9"};
+    return `<tr>
+      <td style="font-weight:600">${p.name||p.description?.slice(0,30)||"—"}</td>
+      <td>${p.contractors||"—"}</td>
+      <td><span style="background:${meta.bg};color:${meta.color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${p.status}</span></td>
+      <td style="text-align:right">${fmt(+p.offerAmount||0)} €</td>
+      <td style="text-align:center">${p.chanceOfSuccess}%</td>
+      <td>${fmtD(p.expectedOrderDate)}</td>
+      <td>${fmtD(p.expectedInvoiceDate)}</td>
+    </tr>`;
+  }).join("");
+  const alertRows=kpi.alerts.slice(0,20).map((a:any)=>`<tr>
+      <td style="font-weight:600">${a.project.name||a.project.description?.slice(0,30)||"—"}</td>
+      <td>${a.kind}</td>
+      <td style="color:${a.sev==="red"?"#B91C1C":"#B45309"}">${a.msg}</td>
+    </tr>`).join("");
+  const pumpRows=kpi.pumpDist.map((d:any)=>`<tr><td>${d.label}</td><td style="text-align:right">${fmt(d.amount)} €</td><td style="text-align:center">${d.count}</td></tr>`).join("");
+
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Projects Report — ${new Date().toLocaleDateString("fr-FR")}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:28px 34px}
+h1{font-size:22px;margin-bottom:2px}
+h2{font-size:14px;margin:22px 0 10px;border-bottom:2px solid #0D1B2A;padding-bottom:5px}
+table{width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:6px}
+th{background:#0D1B2A;color:#fff;text-align:left;padding:7px 9px;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+td{padding:6px 9px;border-bottom:1px solid #E5EAF0}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}
+.kpi{border:1px solid #E5EAF0;border-radius:10px;padding:12px 14px}
+.kpi .l{font-size:10px;color:#8FA0B3;text-transform:uppercase;letter-spacing:.04em}
+.kpi .v{font-size:19px;font-weight:800;margin-top:3px}
+@media print{.no-print{display:none!important}}
+</style></head><body>
+<h1>📁 Projects — Rapport de portefeuille</h1>
+<div style="color:#8FA0B3">Généré le ${new Date().toLocaleDateString("fr-FR")} · ${projects.length} projets (${ongoingP.length} en cours, ${closedP.length} clôturés)</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="l">Pipeline total</div><div class="v" style="color:#0D9488">${fmt(kpi.pipelineTotal)} €</div></div>
+  <div class="kpi"><div class="l">Pipeline pondéré</div><div class="v" style="color:#7C3AED">${fmt(kpi.pipelineWeighted)} €</div></div>
+  <div class="kpi"><div class="l">Taux de réussite</div><div class="v" style="color:#059669">${kpi.winRate}%</div></div>
+  <div class="kpi"><div class="l">Alertes actives</div><div class="v" style="color:${kpi.alerts.some((a:any)=>a.sev==="red")?"#DC2626":"#D97706"}">${kpi.alerts.length}</div></div>
+</div>
+
+${alertRows?`<h2>⚠️ Alertes</h2><table><thead><tr><th>Projet</th><th>Type</th><th>Détail</th></tr></thead><tbody>${alertRows}</tbody></table>`:""}
+
+<h2>🔧 Pipeline par type de pompe</h2>
+<table><thead><tr><th>Type</th><th style="text-align:right">Montant</th><th style="text-align:center">Nb projets</th></tr></thead><tbody>${pumpRows}</tbody></table>
+
+<h2>📁 Projets en cours (${ongoingP.length})</h2>
+<table><thead><tr><th>Projet</th><th>Contractors</th><th>Statut</th><th style="text-align:right">Montant</th><th style="text-align:center">Chance</th><th>Commande prévue</th><th>Facturation prévue</th></tr></thead>
+<tbody>${rows(ongoingP.sort((a:any,b:any)=>(+b.offerAmount||0)-(+a.offerAmount||0)))||'<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucun projet en cours</td></tr>'}</tbody></table>
+
+<h2>✅ Projets clôturés (${closedP.length})</h2>
+<table><thead><tr><th>Projet</th><th>Contractors</th><th>Statut</th><th style="text-align:right">Montant</th><th style="text-align:center">Chance</th><th>Commande prévue</th><th>Facturation prévue</th></tr></thead>
+<tbody>${rows(closedP)||'<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucun projet clôturé</td></tr>'}</tbody></table>
+
+<div class="no-print" style="position:fixed;top:14px;right:14px;display:flex;gap:8px">
+<button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">🖨️ Print / PDF</button>
+<button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer">✕</button>
+</div>
+</body></html>`);
+  w.document.close();
+}
+
 function TresoreriePage({getAllOrders,clients,lang,isMobile}:any){
   const today=new Date();today.setHours(0,0,0,0);
   const all=getAllOrders();
