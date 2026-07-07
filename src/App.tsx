@@ -1004,7 +1004,7 @@ export default function App(){
 
   if(!data||!clients)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:C.t3,fontSize:14}}>Chargement…</div>;
 
-  const special=["kpi","dashboard","tresorerie","rapport","catalogue","documents","logs"];
+  const special=["kpi","dashboard","tresorerie","rapport","catalogue","documents","projects","logs"];
   const getConfig=(c:string)=>configs[c]||{accountNumber:"",termId:"net60",customDays:0};
 
   // ── Compute global alerts (for ticker on all pages) ──────────────
@@ -7348,7 +7348,7 @@ function ProjectModal({project,onSave,onClose}:any){
   const s=(k:string,v:any)=>setF((p:any)=>({...p,[k]:v}));
   const setStatus=(v:string)=>{
     const terminal=TERMINAL_STATUSES.includes(v);
-    setF((p:any)=>({...p,status:v,ongoing:!terminal}));
+    setF((p:any)=>({...p,status:v,ongoing:!terminal,reason:terminal?p.reason:""}));
   };
   const togglePump=(id:string)=>setF((p:any)=>({...p,pumpTypes:p.pumpTypes.includes(id)?p.pumpTypes.filter((x:string)=>x!==id):[...p.pumpTypes,id]}));
   const isMobile=window.innerWidth<768;
@@ -7422,7 +7422,7 @@ function ProjectModal({project,onSave,onClose}:any){
               </div>
             )}
 
-            <Sel label="En cours ou clôturé" value={f.ongoing?"ongoing":"closed"} onChange={(v:any)=>s("ongoing",v==="ongoing")}
+            <Sel label="En cours ou clôturé" value={f.ongoing?"ongoing":"closed"} onChange={(v:any)=>{const ongoing=v==="ongoing";setF((p:any)=>({...p,ongoing,reason:ongoing?"":p.reason}));}}
               options={[{value:"ongoing",label:"En cours"},{value:"closed",label:"Clôturé"}]}/>
             {needsReason
               ?<Fld label="Raison (clôture / inactivité)" value={f.reason} onChange={(v:any)=>s("reason",v)} placeholder="ex: Perdu face à un concurrent, budget annulé…"/>
@@ -7442,7 +7442,7 @@ function ProjectModal({project,onSave,onClose}:any){
 
             {isEdit&&(
               <div style={{gridColumn:"span 2",fontSize:11,color:C.t3,display:"flex",justifyContent:"space-between",paddingTop:4,borderTop:`1px dashed ${C.b}`}}>
-                <span>Enregistré le {new Date(f.createdAt).toLocaleDateString("fr-FR")} · Durée : {durationLabel(f.createdAt)}</span>
+                <span>Enregistré le {new Date(f.createdAt).toLocaleDateString("fr-FR")} · Durée : {durationLabel(f.processingDate||f.createdAt)}</span>
                 <span>Dernière modification : {new Date(f.updatedAt).toLocaleString("fr-FR")}</span>
               </div>
             )}
@@ -7502,7 +7502,11 @@ function ProjectsPage({isMobile}:any){
     if(!window.confirm(`Supprimer le projet "${p.name||p.description?.slice(0,30)}" ?`))return;
     persist(projects.filter((x:any)=>x.id!==p.id));
   };
-  const toggleOngoing=(p:any)=>persist(projects.map((x:any)=>x.id===p.id?{...x,ongoing:!x.ongoing,updatedAt:new Date().toISOString()}:x));
+  const toggleOngoing=(p:any)=>persist(projects.map((x:any)=>{
+    if(x.id!==p.id)return x;
+    const nextOngoing=!x.ongoing;
+    return{...x,ongoing:nextOngoing,reason:nextOngoing?"":x.reason,updatedAt:new Date().toISOString()};
+  }));
 
   // ── KPIs ──
   const ongoingP=projects.filter((p:any)=>p.ongoing);
@@ -7894,7 +7898,7 @@ function ProjectsPage({isMobile}:any){
                     </div>
                     <div style={{fontSize:11.5,color:C.t3,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
                       {p.partyName&&<span><i className="ti ti-building" style={{fontSize:11}} aria-hidden="true"/> {p.partyType} — {p.partyName}</span>}
-                      <span>{durationLabel(p.createdAt)}</span>
+                      <span>{durationLabel(p.processingDate||p.createdAt)}</span>
                     </div>
                   </div>
                   <div style={{textAlign:"right",minWidth:90}}>
@@ -7921,7 +7925,7 @@ function ProjectsPage({isMobile}:any){
                       <div><div style={{color:C.t3}}>Date de traitement</div><div style={{fontWeight:700,color:C.t1}}>{fmtD(p.processingDate)}</div></div>
                       <div><div style={{color:C.t3}}>Enregistré le</div><div style={{fontWeight:700,color:C.t1}}>{new Date(p.createdAt).toLocaleDateString("fr-FR")}</div></div>
                       <div><div style={{color:C.t3}}>Dernière modification</div><div style={{fontWeight:700,color:C.t1}}>{new Date(p.updatedAt).toLocaleDateString("fr-FR")}</div></div>
-                      <div><div style={{color:C.t3}}>Durée</div><div style={{fontWeight:700,color:C.t1}}>{durationLabel(p.createdAt)}</div></div>
+                      <div><div style={{color:C.t3}}>Durée</div><div style={{fontWeight:700,color:C.t1}}>{durationLabel(p.processingDate||p.createdAt)}</div></div>
                     </div>
                     {p.pumpTypes?.length>0&&(
                       <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10,fontSize:11.5,color:C.t3}}>
@@ -7930,7 +7934,7 @@ function ProjectsPage({isMobile}:any){
                         {p.pumpTypes.includes("others")&&p.pumpTypeOther&&<span>({p.pumpTypeOther})</span>}
                       </div>
                     )}
-                    {p.reason&&<div style={{background:C.redL,border:`1px solid ${C.red}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.redDk,marginBottom:12}}><strong>Raison :</strong> {p.reason}</div>}
+                    {p.reason&&(!p.ongoing||p.status==="Inactive")&&<div style={{background:C.redL,border:`1px solid ${C.red}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.redDk,marginBottom:12}}><strong>Raison :</strong> {p.reason}</div>}
                     {p.comments&&<div style={{background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.t2,marginBottom:12,whiteSpace:"pre-wrap"}}>{p.comments}</div>}
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       <button onClick={()=>setModal(p)} style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:6,padding:"7px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
@@ -7991,7 +7995,7 @@ h1{font-size:20px;margin-bottom:4px}
   <span class="badge" style="background:${statusMeta.bg};color:${statusMeta.color}">${p.status}</span>
   <span class="badge" style="background:${health.color}1A;color:${health.color}">${healthText}</span>
 </h1>
-<div style="color:#8FA0B3;font-size:12px">${p.ongoing?"Ongoing":"Closed"} · Registered on ${new Date(p.createdAt).toLocaleDateString("en-GB")} · Duration ${durationLabel(p.createdAt)}</div>
+<div style="color:#8FA0B3;font-size:12px">${p.ongoing?"Ongoing":"Closed"} · Registered on ${new Date(p.createdAt).toLocaleDateString("en-GB")} · Duration ${durationLabel(p.processingDate||p.createdAt)}</div>
 
 <div class="row">
   <div class="field full"><div class="l">Description</div><div class="v" style="font-weight:400">${p.description||"—"}</div></div>
@@ -8000,7 +8004,7 @@ h1{font-size:20px;margin-bottom:4px}
   <div class="field"><div class="l">Offer amount</div><div class="v" style="color:#1D4ED8">${fmt(+p.offerAmount||0)} €</div></div>
   <div class="field"><div class="l">Chance of success</div><div class="v">${p.chanceOfSuccess}%</div></div>
   <div class="field full"><div class="l">Pump types (info only)</div><div class="v">${pumpLabels}</div></div>
-  <div class="field"><div class="l">Duration (life of opportunity)</div><div class="v">${durationLabel(p.createdAt)}</div></div>
+  <div class="field"><div class="l">Duration (life of opportunity)</div><div class="v">${durationLabel(p.processingDate||p.createdAt)}</div></div>
   <div class="field"><div class="l">Processing date</div><div class="v">${fmtD(p.processingDate)}</div></div>
   <div class="field"><div class="l">Last modification</div><div class="v">${new Date(p.updatedAt).toLocaleDateString("en-GB")}</div></div>
   <div class="field"><div class="l">Expected order date</div><div class="v">${fmtD(p.expectedOrderDate)}</div></div>
@@ -8043,7 +8047,7 @@ function printProjectsReport(projects:any[],kpi:any){
       <td><span style="background:${statusMeta.bg};color:${statusMeta.color};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${p.status}</span></td>
       <td style="text-align:center">${healthLabel(p)}</td>
       <td>${new Date(p.createdAt).toLocaleDateString("en-GB")}</td>
-      <td>${durationLabel(p.createdAt)}</td>
+      <td>${durationLabel(p.processingDate||p.createdAt)}</td>
       <td>${fmtD(p.expectedOrderDate)}</td>
       <td>${fmtD(p.expectedInvoiceDate)}</td>
       <td style="max-width:220px;font-size:10.5px;color:#4A5568">${commentsShort}</td>
@@ -8258,7 +8262,7 @@ async function exportProjectsExcel(projects:any[],kpi:any){
         p.status||'—',
         healthText,
         new Date(p.createdAt).toLocaleDateString('en-GB'),
-        durationLabel(p.createdAt),
+        durationLabel(p.processingDate||p.createdAt),
         p.expectedOrderDate?fmtD(p.expectedOrderDate):'—',
         p.expectedInvoiceDate?fmtD(p.expectedInvoiceDate):'—',
         p.comments||'—',
