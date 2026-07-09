@@ -9130,6 +9130,11 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
       rows=withMonthly(items,"date",rowOpen,subOpen,totOpen);
       printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Date</th><th>Statut</th><th>PO (€)</th><th>Facturé (€)</th><th>Reste (€)</th></tr>",rows);
 
+    } else if(rtype==="ready_upcoming"){
+      const readyItems=allOrders.filter((o:any)=>["prete","partiel"].includes(o.status)&&inRange(o.expectedDate||o.date));
+      const upcomingItems=allOrders.filter((o:any)=>["en_cours","attente_fdi"].includes(o.status)&&inRange(o.expectedDate||o.date));
+      printReadyUpcoming(fromDate,toDate,readyItems,upcomingItems);
+
     } else if(rtype==="overdue"){
       title="Factures échues — Échéances dépassées non soldées";
       const items=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{
@@ -9228,8 +9233,116 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
     w.document.close();
   };
 
+  // Commandes prêtes à expédier (status prete/partiel) + commandes à venir
+  // (en_cours/attente_fdi avec date attendue) — groupées par mois (période)
+  // et récapitulées par client, dans un même document.
+  const printReadyUpcoming=(from:string,to:string,readyItems:any[],upcomingItems:any[])=>{
+    const w=window.open("","_blank","width=1100,height=800");
+    if(!w)return;
+    const monthKey=(d:string)=>d?d.slice(0,7):"0000-00";
+    const monthLabel=(d:string)=>{if(!d)return"Sans date";const dt=new Date(d+"T00:00:00");return dt.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}).replace(/^./,c=>c.toUpperCase());};
+    const withMonthly2=(items:any[],dateField:string,rowFn:(i:any)=>string,subtotalFn:(grp:any[],label:string)=>string,totalFn:(all:any[])=>string)=>{
+      const sorted=[...items].sort((a:any,b:any)=>(a[dateField]||"").localeCompare(b[dateField]||""));
+      const byMonth:Record<string,any[]>={};
+      sorted.forEach((i:any)=>{const k=monthKey(i[dateField]);if(!byMonth[k])byMonth[k]=[];byMonth[k].push(i);});
+      let out="";
+      Object.keys(byMonth).sort().forEach(k=>{
+        const grp=byMonth[k];const label=monthLabel(grp[0][dateField]);
+        out+=`<tr style="background:#1E3A5F"><td colspan="99" style="padding:7px 12px;color:#93C5FD;font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase">📅 ${label}</td></tr>`;
+        out+=grp.map(rowFn).join("");
+        out+=subtotalFn(grp,label);
+      });
+      out+=totalFn(sorted);
+      return out;
+    };
+
+    const READY_META:Record<string,{label:string,color:string,bg:string}>={
+      prete:{label:"Prête (complète)",color:"#059669",bg:"#D1FAE5"},
+      partiel:{label:"Prête (partielle)",color:"#D97706",bg:"#FEF3C7"},
+    };
+    const UPCOMING_META:Record<string,{label:string,color:string,bg:string}>={
+      en_cours:{label:"En cours",color:"#2563EB",bg:"#DBEAFE"},
+      attente_fdi:{label:"En attente FDI",color:"#DC2626",bg:"#FEE2E2"},
+    };
+
+    const rowReady=(o:any)=>{const meta=READY_META[o.status]||{label:o.status,color:"#374151",bg:"#F1F5F9"};
+      return `<tr><td style="font-weight:700">${o._client}</td><td>${o.poNumber||"—"}</td><td>${o.soNumber||"—"}</td><td><span style="background:${meta.bg};color:${meta.color};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">${meta.label}</span></td><td>${fmtD(o.expectedDate||o.date)}</td><td style="text-align:right;font-weight:700">${fmt(+o.amount||0)} €</td></tr>`;};
+    const subReady=(grp:any[],label:string)=>`<tr style="background:#F0FDFA;font-weight:700"><td colspan="5" style="text-align:right;color:#0D9488;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#0D9488;padding:6px 10px">${fmt(grp.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
+    const totReady=(all:any[])=>`<tr style="background:#CCFBF1;font-weight:800;font-size:12px"><td colspan="5" style="text-align:right;padding:8px 10px">TOTAL PRÊTES</td><td style="text-align:right;padding:8px 10px">${fmt(all.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
+    const readyRows=withMonthly2(readyItems,"expectedDate",rowReady,subReady,totReady);
+
+    const rowUp=(o:any)=>{const meta=UPCOMING_META[o.status]||{label:o.status,color:"#374151",bg:"#F1F5F9"};
+      const d=o.expectedDate?diffD(o.expectedDate):null;
+      const dLabel=d===null?"—":d<0?`${Math.abs(d)}j retard`:d===0?"Aujourd'hui":`${d}j`;
+      const dColor=d===null?"#6B7280":d<0?"#B91C1C":d<=7?"#D97706":"#2563EB";
+      return `<tr><td style="font-weight:700">${o._client}</td><td>${o.poNumber||"—"}</td><td>${o.soNumber||"—"}</td><td><span style="background:${meta.bg};color:${meta.color};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">${meta.label}</span></td><td>${fmtD(o.expectedDate)}</td><td style="text-align:center;font-weight:700;color:${dColor}">${dLabel}</td><td style="text-align:right;font-weight:700">${fmt(+o.amount||0)} €</td></tr>`;};
+    const subUp=(grp:any[],label:string)=>`<tr style="background:#EFF6FF;font-weight:700"><td colspan="6" style="text-align:right;color:#1D4ED8;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#1D4ED8;padding:6px 10px">${fmt(grp.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
+    const totUp=(all:any[])=>`<tr style="background:#DBEAFE;font-weight:800;font-size:12px"><td colspan="6" style="text-align:right;padding:8px 10px">TOTAL À VENIR</td><td style="text-align:right;padding:8px 10px">${fmt(all.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
+    const upRows=withMonthly2(upcomingItems,"expectedDate",rowUp,subUp,totUp);
+
+    const clientsSet=Array.from(new Set([...readyItems,...upcomingItems].map((o:any)=>o._client))).sort() as string[];
+    const clientRows=clientsSet.map(c=>{
+      const r=readyItems.filter((o:any)=>o._client===c).reduce((s:number,o:any)=>s+(+o.amount||0),0);
+      const u=upcomingItems.filter((o:any)=>o._client===c).reduce((s:number,o:any)=>s+(+o.amount||0),0);
+      return `<tr><td style="font-weight:700">${c}</td><td style="text-align:right;color:#0D9488;font-weight:700">${fmt(r)} €</td><td style="text-align:right;color:#1D4ED8;font-weight:700">${fmt(u)} €</td><td style="text-align:right;font-weight:800">${fmt(r+u)} €</td></tr>`;
+    }).join("");
+    const totR=readyItems.reduce((s:number,o:any)=>s+(+o.amount||0),0);
+    const totU=upcomingItems.reduce((s:number,o:any)=>s+(+o.amount||0),0);
+
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Commandes prêtes & à venir</title><style>
+      *{margin:0;padding:0;box-sizing:border-box;}
+      body{font-family:Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:28px 32px;}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:16px;border-bottom:3px solid #0D1B2A;}
+      .logo{font-size:20px;font-weight:800;color:#2563EB;letter-spacing:-.02em;}
+      .meta{text-align:right;font-size:11px;color:#8FA0B3;}
+      h1{font-size:16px;font-weight:700;color:#0D1B2A;margin-bottom:4px;}
+      h2{font-size:13px;font-weight:700;margin:22px 0 8px;padding-bottom:5px;border-bottom:2px solid #0D1B2A;}
+      table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px;}
+      th{background:#0D1B2A;color:#fff;padding:8px 10px;text-align:left;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.05em;}
+      td{padding:7px 10px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
+      tr:nth-child(even){background:#F8FAFC;}
+      .kpis{display:flex;gap:12px;margin:14px 0}
+      .kpi{flex:1;border:1px solid #E5EAF0;border-radius:8px;padding:10px 14px}
+      .kpi .l{font-size:10px;color:#8FA0B3;text-transform:uppercase}
+      .kpi .v{font-size:17px;font-weight:800;margin-top:2px}
+      .footer{margin-top:20px;padding-top:12px;border-top:1px solid #E5EAF0;font-size:10px;color:#8FA0B3;display:flex;justify-content:space-between;}
+      @media print{body{padding:16px;} .no-print{display:none!important}}
+    </style></head><body>
+    <div class="no-print" style="position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px">
+    <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
+    <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">✕ Close</button>
+    </div>
+    <div class="header">
+      <div><div class="logo">OrderTrack</div><h1>Commandes prêtes & à venir</h1></div>
+      <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Période : ${fmtD(from)} → ${fmtD(to)}</div>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="l">Prêtes à expédier</div><div class="v" style="color:#0D9488">${fmt(totR)} €</div></div>
+      <div class="kpi"><div class="l">À venir</div><div class="v" style="color:#1D4ED8">${fmt(totU)} €</div></div>
+      <div class="kpi"><div class="l">Total</div><div class="v">${fmt(totR+totU)} €</div></div>
+    </div>
+
+    <h2>📦 Commandes prêtes à expédier (${readyItems.length})</h2>
+    <table><thead><tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Statut</th><th>Date</th><th>Montant (€)</th></tr></thead><tbody>${readyRows||'<tr><td colspan="6" style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande prête</td></tr>'}</tbody></table>
+
+    <h2>📅 Commandes à venir (${upcomingItems.length})</h2>
+    <table><thead><tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Statut</th><th>Date attendue</th><th>Délai</th><th>Montant (€)</th></tr></thead><tbody>${upRows||'<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande à venir</td></tr>'}</tbody></table>
+
+    <h2>🏢 Récapitulatif par client</h2>
+    <table><thead><tr><th>Customer</th><th style="text-align:right">Prêtes (€)</th><th style="text-align:right">À venir (€)</th><th style="text-align:right">Total (€)</th></tr></thead>
+    <tbody>${clientRows||'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucune donnée</td></tr>'}
+    <tr style="background:#DBEAFE;font-weight:800"><td>TOTAL</td><td style="text-align:right">${fmt(totR)} €</td><td style="text-align:right">${fmt(totU)} €</td><td style="text-align:right">${fmt(totR+totU)} €</td></tr>
+    </tbody></table>
+
+    <div class="footer"><span>OrderTrack — Rapport confidentiel</span><span>Page 1</span></div>
+    </body></html>`);
+    w.document.close();
+  };
+
   const REPORT_TYPES=[
     {id:"open_orders",  label:"Open Orders",           desc:"Commandes non entièrement facturées",   icon:"ti-hourglass-low",     color:C.amber},
+    {id:"ready_upcoming",label:"Commandes prêtes & à venir",desc:"Prêtes à expédier + en préparation, par client/période", icon:"ti-package-export", color:"#0D9488"},
     {id:"overdue",      label:"Factures échues",        desc:"Échéance dépassée, solde non réglé",    icon:"ti-clock-exclamation", color:C.red},
     {id:"upcoming",     label:"Échéances à venir",      desc:"Factures dues dans les 30 prochains jours", icon:"ti-clock",         color:C.purple},
     {id:"unpaid",       label:"Factures en cours",      desc:"Solde non encore encaissé (toutes)",    icon:"ti-alert-circle",      color:"#0D9488"},
@@ -9240,7 +9353,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
   return(
     <Modal title={tr("report_title")} sub={tr("report_sub")} width={560} onClose={onClose}
       footer={<><button onClick={onClose}>Annuler</button><Btn icon="ti-file-download" label={tr("report_generate")} onClick={generate} variant="primary"/></>}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:18,gridTemplateRows:"auto auto"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:18}}>
         {REPORT_TYPES.map(rt=>(
           <div key={rt.id} onClick={()=>setRtype(rt.id)} style={{cursor:"pointer",border:`2px solid ${rtype===rt.id?rt.color:C.b}`,borderRadius:C.r,padding:"12px 14px",background:rtype===rt.id?rt.color+"10":"#fff",transition:"all .15s"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
