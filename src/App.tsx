@@ -1577,7 +1577,7 @@ function AlertTicker({alerts,lang="fr"}:any){
 }
 
 // ─── KPI PAGE ────────────────────────────────────────────────────────────────
-function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,selYear,setSelYear,lang="fr",isMobile=false,canExport=true}:any){
+function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,selYear,setSelYear,lang="fr",isMobile=false,canExport=true,isAdmin=true}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const all=getAllOrders();
   const totPO=all.reduce((s:number,o:any)=>s+(+o.amount||0),0);
