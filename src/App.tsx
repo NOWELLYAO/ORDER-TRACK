@@ -9088,6 +9088,17 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
   const[selCustomers,setSelCustomers]=useState<string[]>(clients||[]);
   const toggleCustomer=(c:string)=>setSelCustomers(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
 
+  // "Commandes prêtes & à venir" looks forward (readiness/delivery dates in
+  // the future, e.g. "prêt fin juillet") — the other reports default to
+  // "since Jan 1st through today", which would silently exclude any future
+  // date. Switch to a forward-looking window automatically for this type.
+  useEffect(()=>{
+    if(rtype==="ready_upcoming"){
+      setFromDate(todayStr());
+      setToDate(addDays(todayStr(),120));
+    }
+  },[rtype]);
+
   const generate=()=>{
     const fd=new Date(fromDate+"T00:00:00"),td=new Date(toDate+"T00:00:00");
     td.setHours(23,59,59);
@@ -9131,8 +9142,12 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
       printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Date</th><th>Statut</th><th>PO (€)</th><th>Facturé (€)</th><th>Reste (€)</th></tr>",rows);
 
     } else if(rtype==="ready_upcoming"){
-      const readyItems=allOrders.filter((o:any)=>["prete","partiel"].includes(o.status)&&inRange(o.expectedDate||o.date));
-      const upcomingItems=allOrders.filter((o:any)=>["en_cours","attente_fdi"].includes(o.status)&&inRange(o.expectedDate||o.date));
+      // Ready orders are a *current state*, not tied to the reporting window —
+      // never hide them behind the date filter. Upcoming orders ARE filtered
+      // by their expected (readiness/delivery) date, and orders missing that
+      // date are still kept (surfaced under "Sans date") rather than dropped.
+      const readyItems=allOrders.filter((o:any)=>["prete","partiel"].includes(o.status));
+      const upcomingItems=allOrders.filter((o:any)=>["en_cours","attente_fdi"].includes(o.status)&&(!o.expectedDate||inRange(o.expectedDate)));
       printReadyUpcoming(fromDate,toDate,readyItems,upcomingItems);
 
     } else if(rtype==="overdue"){
