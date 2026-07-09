@@ -494,6 +494,7 @@ const getStatusMeta=(id:string,lang:Lang="fr")=>{
 const DEFAULT_ADMIN_PIN="1234";
 const AUTH_KEY="ordertrack_auth";
 const USERS_DB_KEY="ordertrack-users";
+const USERS_CACHE_KEY="ordertrack_users_cache";
 
 function LoginScreen({onLogin}:any){
   const[pin,setPin]=useState("");
@@ -505,32 +506,35 @@ function LoginScreen({onLogin}:any){
   const tryLogin=async()=>{
     if(!pin){setError("Entrez votre code d'accès");return;}
     setLoading(true);setError("");
-    // Check against Supabase users
+    const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
+    const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
+    let users:any[]|null=null;
     try{
-      const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
-      const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
       const res=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+USERS_DB_KEY+"&select=payload&limit=1",
         {headers:{"apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=representation"}});
-      const rows=res.ok?await res.json():null;
-      const users:any[]=rows?.[0]?.payload?.users||[{name:"Admin",pin:DEFAULT_ADMIN_PIN,role:"admin"}];
-      const found=users.find((u:any)=>u.pin===pin);
-      if(found){
-        const session={name:found.name,role:found.role,pin:found.pin,loginAt:new Date().toISOString()};
-        localStorage.setItem(AUTH_KEY,JSON.stringify(session));
-        onLogin(session);
-      } else {
-        setError("Code incorrect. Vérifiez votre code d'accès.");
-        setPin("");
+      if(res.ok){
+        const rows=await res.json();
+        users=rows?.[0]?.payload?.users||null;
+        if(users){try{localStorage.setItem(USERS_CACHE_KEY,JSON.stringify(users));}catch{}}
       }
-    }catch{
-      // Offline fallback: check if admin pin
-      if(pin===DEFAULT_ADMIN_PIN||pin==="1234"){
-        const session={name:"Admin",role:"admin",pin,loginAt:new Date().toISOString()};
-        localStorage.setItem(AUTH_KEY,JSON.stringify(session));
-        onLogin(session);
-      } else {
-        setError("Connexion impossible. Vérifiez votre réseau.");
-      }
+    }catch{/* network error — fall through to cache below */}
+
+    if(!users){
+      // Offline / unreachable: fall back to the last successfully synced
+      // user list (never a hardcoded PIN, so a changed code stays effective
+      // even if Supabase is briefly unreachable).
+      try{const cached=localStorage.getItem(USERS_CACHE_KEY);users=cached?JSON.parse(cached):null;}catch{}
+    }
+    if(!users)users=[{name:"Admin",pin:DEFAULT_ADMIN_PIN,role:"admin"}]; // first-ever run, nothing synced yet
+
+    const found=users.find((u:any)=>u.pin===pin);
+    if(found){
+      const session={name:found.name,role:found.role,pin:found.pin,loginAt:new Date().toISOString()};
+      localStorage.setItem(AUTH_KEY,JSON.stringify(session));
+      onLogin(session);
+    } else {
+      setError(navigator.onLine?"Code incorrect. Vérifiez votre code d'accès.":"Connexion impossible. Vérifiez votre réseau.");
+      setPin("");
     }
     setLoading(false);
   };
@@ -578,21 +582,57 @@ function UserManager({session,onClose}:any){
     try{
       const res=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+USERS_DB_KEY+"&select=payload&limit=1",
         {headers:{"apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=representation"}});
-      const rows=res.ok?await res.json():null;
-      setUsers(rows?.[0]?.payload?.users||[{name:"Admin",pin:"1234",role:"admin",perms:DEFAULT_PERMS}]);
-    }catch{setUsers([{name:"Admin",pin:"1234",role:"admin",perms:DEFAULT_PERMS}]);}
+      if(res.ok){
+        const rows=await res.json();
+        const list=rows?.[0]?.payload?.users||[{name:"Admin",pin:"1234",role:"admin",perms:DEFAULT_PERMS}];
+        setUsers(list);
+        try{localStorage.setItem(USERS_CACHE_KEY,JSON.stringify(list));}catch{}
+      } else {
+        throw new Error("load failed");
+      }
+    }catch{
+      // Offline fallback: use the last successfully synced list, never a hardcoded PIN
+      try{
+        const cached=localStorage.getItem(USERS_CACHE_KEY);
+        setUsers(cached?JSON.parse(cached):[{name:"Admin",pin:"1234",role:"admin",perms:DEFAULT_PERMS}]);
+      }catch{setUsers([{name:"Admin",pin:"1234",role:"admin",perms:DEFAULT_PERMS}]);}
+      setMsg("⚠️ Hors ligne — liste non synchronisée");
+    }
   };
   const saveUsers=async(updated:any[])=>{
+    setMsg("Enregistrement…");
     try{
-      // Always use upsert (merge-duplicates) — PATCH returns 204 even for 0 rows matched
-      const r=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
-        method:"POST",
-        headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
-        body:JSON.stringify({user_key:USERS_DB_KEY,payload:{users:updated}})
+      // Step 1: try PATCH (update the existing row) — this is the reliable
+      // path since it targets the row via user_key in the URL filter itself,
+      // instead of relying on POST upsert conflict-column resolution (which
+      // silently mismatches unless the table's primary key is user_key).
+      const patch=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K+"&user_key=eq."+USERS_DB_KEY,{
+        method:"PATCH",
+        headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=minimal"},
+        body:JSON.stringify({payload:{users:updated},updated_at:new Date().toISOString()})
       });
-      if(!r.ok){const e=await r.text();console.warn("[saveUsers]",r.status,e);}
-      setUsers(updated);setMsg("✓ Sauvegardé");setTimeout(()=>setMsg(""),2000);
-    }catch{setMsg("Erreur de sauvegarde");}
+      let ok=patch.status===204||patch.status===200;
+      if(!ok){
+        // Step 2: no existing row — insert it
+        const post=await fetch(B+"/rest/v1/ordertrack_data?apikey="+K,{
+          method:"POST",
+          headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"return=minimal"},
+          body:JSON.stringify({user_key:USERS_DB_KEY,payload:{users:updated}})
+        });
+        ok=post.status===201||post.status===200||post.status===204;
+        if(!ok)console.warn("[saveUsers] POST failed:",post.status,await post.text().catch(()=>""));
+      }
+      if(ok){
+        setUsers(updated);
+        try{localStorage.setItem(USERS_CACHE_KEY,JSON.stringify(updated));}catch{}
+        setMsg("✓ Sauvegardé");setTimeout(()=>setMsg(""),2500);
+      } else {
+        setMsg("❌ Échec de la sauvegarde — réessaie ou vérifie ta connexion");
+      }
+    }catch(e){
+      console.warn("[saveUsers] Exception:",e);
+      setMsg("❌ Échec de la sauvegarde — réessaie ou vérifie ta connexion");
+    }
   };
   const addUser=()=>{
     if(!newName||!newPin){setMsg("Nom et code requis");return;}
@@ -768,15 +808,15 @@ export default function App(){
     return()=>{window.removeEventListener("online",goOn);window.removeEventListener("offline",goOff);};
   },[]);
 
-  // ── Session expiration (30 min) ──────────────────────────────────────────
+  // ── Session expiration (1h) ──────────────────────────────────────────
   const timerRef=useRef<any>(null);
   const resetSessionTimer=React.useCallback(()=>{
     if(timerRef.current)clearTimeout(timerRef.current);
     timerRef.current=setTimeout(()=>{
-      alert("Votre session a expiré après 30 minutes d'inactivité.");
+      alert("Votre session a expiré après 1h d'inactivité.");
       localStorage.removeItem(AUTH_KEY);
       setSession(null);
-    },30*60*1000);
+    },60*60*1000);
   },[]);
   useEffect(()=>{
     if(!session)return;
