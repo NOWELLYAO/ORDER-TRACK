@@ -529,7 +529,7 @@ function LoginScreen({onLogin}:any){
 
     const found=users.find((u:any)=>u.pin===pin);
     if(found){
-      const session={name:found.name,role:found.role,pin:found.pin,clientAccess:found.clientAccess||"",loginAt:new Date().toISOString()};
+      const session={name:found.name,role:found.role,pin:found.pin,clientAccess:found.clientAccess||"",perms:found.perms||DEFAULT_PERMS,loginAt:new Date().toISOString()};
       localStorage.setItem(AUTH_KEY,JSON.stringify(session));
       onLogin(session);
     } else {
@@ -563,7 +563,7 @@ function LoginScreen({onLogin}:any){
 
 const DEFAULT_PERMS={canEdit:true,canDelete:true,canAddCustomer:true,canViewReports:true,canExport:true};
 
-function UserManager({session,clients,onClose}:any){
+function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandled}:any){
   const[users,setUsers]=useState<any[]>([]);
   const[newName,setNewName]=useState("");
   const[newPin,setNewPin]=useState("");
@@ -650,6 +650,13 @@ function UserManager({session,clients,onClose}:any){
   const startEdit=(idx:number)=>{
     setEditIdx(idx);setEditName(users[idx].name);setEditPin("");setEditClientAccess(users[idx].clientAccess||"");setEditShowPin(false);
   };
+  useEffect(()=>{
+    if(!focusClient||users.length===0)return;
+    const idx=users.findIndex((u:any)=>u.clientAccess===focusClient);
+    if(idx>=0)startEdit(idx);
+    else{setNewRole("user");setNewClientAccess(focusClient);}
+    onFocusHandled?.();
+  },[focusClient,users]);
   const saveEdit=()=>{
     if(!editName){setMsg("Nom requis");return;}
     if(editPin&&editPin.length<4){setMsg("Le code doit avoir au moins 4 caractères");return;}
@@ -662,22 +669,22 @@ function UserManager({session,clients,onClose}:any){
     saveUsers(updated);
   };
   const PERMS_LIST=[
-    {key:"canEdit",label:"Modifier les commandes / factures",icon:"ti-edit"},
-    {key:"canDelete",label:"Supprimer des données",icon:"ti-trash"},
-    {key:"canAddCustomer",label:"Ajouter / supprimer des clients",icon:"ti-user-plus"},
-    {key:"canViewReports",label:"Accès aux rapports hebdo",icon:"ti-file-report"},
-    {key:"canExport",label:"Exporter en PDF",icon:"ti-file-export"},
+    {key:"canEdit",label:"Modifier les commandes / factures",labelClient:"Modifier ses commandes / factures",icon:"ti-edit"},
+    {key:"canDelete",label:"Supprimer des données",labelClient:"Supprimer ses commandes / factures",icon:"ti-trash"},
+    {key:"canAddCustomer",label:"Ajouter / supprimer des clients",labelClient:"Modifier ses infos (conditions de paiement, n° compte)",icon:"ti-user-plus"},
+    {key:"canViewReports",label:"Accès aux rapports hebdo",labelClient:"Accès au Weekly Report (interne — reste masqué)",icon:"ti-file-report"},
+    {key:"canExport",label:"Exporter en PDF",labelClient:"Générer ses propres rapports PDF",icon:"ti-file-export"},
   ];
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,backdropFilter:"blur(3px)"}}>
-      <div style={{background:"#fff",borderRadius:16,width:560,maxWidth:"96vw",maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+    <div style={embedded?{}:{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,backdropFilter:"blur(3px)"}}>
+      <div style={{background:"#fff",borderRadius:embedded?12:16,width:embedded?"100%":560,maxWidth:embedded?"100%":"96vw",maxHeight:embedded?"none":"92vh",display:"flex",flexDirection:"column",boxShadow:embedded?"none":"0 20px 60px rgba(0,0,0,.3)",border:embedded?`1px solid #E5EAF0`:"none"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 22px",borderBottom:`1px solid #E5EAF0`}}>
           <h3 style={{margin:0,fontSize:16,fontWeight:700,color:"#0D1B2A",display:"flex",alignItems:"center",gap:8}}>
             <i className="ti ti-users" style={{fontSize:18,color:"#2563EB"}} aria-hidden="true"/> Gestion des accès
           </h3>
-          <button onClick={onClose} style={{background:"#F1F5F9",border:"none",color:"#8FA0B3",cursor:"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          {!embedded&&<button onClick={onClose} style={{background:"#F1F5F9",border:"none",color:"#8FA0B3",cursor:"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center"}}>
             <i className="ti ti-x" style={{fontSize:15}} aria-hidden="true"/>
-          </button>
+          </button>}
         </div>
         <div style={{overflowY:"auto",flex:1,padding:"16px 22px"}}>
           {msg&&<div style={{background:msg.startsWith("✓")?"#D1FAE5":"#FEE2E2",color:msg.startsWith("✓")?"#065F46":"#B91C1C",padding:"8px 12px",borderRadius:6,marginBottom:12,fontSize:12,fontWeight:600}}>{msg}</div>}
@@ -765,11 +772,14 @@ function UserManager({session,clients,onClose}:any){
                 {/* Permissions panel */}
                 {expandPerms===i&&u.role!=="admin"&&(
                   <div style={{padding:"10px 14px",borderTop:"1px solid #E5EAF0",background:"#fff"}}>
-                    <div style={{fontSize:11,fontWeight:600,color:"#7C3AED",marginBottom:8,display:"flex",alignItems:"center",gap:5}}>
+                    <div style={{fontSize:11,fontWeight:600,color:"#7C3AED",marginBottom:2,display:"flex",alignItems:"center",gap:5}}>
                       <i className="ti ti-lock" style={{fontSize:12}} aria-hidden="true"/> Permissions de {u.name}
                     </div>
+                    <div style={{fontSize:10.5,color:"#8FA0B3",marginBottom:8}}>
+                      {u.clientAccess?`Actions autorisées sur les données de ${u.clientAccess} uniquement.`:"Actions autorisées sur l'ensemble des clients accessibles."}
+                    </div>
                     <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                      {PERMS_LIST.map(({key,label,icon})=>{
+                      {PERMS_LIST.map(({key,label,labelClient,icon})=>{
                         const val=(u.perms||DEFAULT_PERMS)[key]!==false;
                         return(
                           <label key={key} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",padding:"4px 0"}}>
@@ -778,7 +788,7 @@ function UserManager({session,clients,onClose}:any){
                               <div style={{width:16,height:16,borderRadius:8,background:"#fff",position:"absolute",top:2,left:val?18:2,transition:"all .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
                             </div>
                             <i className={`ti ${icon}`} style={{fontSize:13,color:val?"#7C3AED":"#9CA3AF"}} aria-hidden="true"/>
-                            <span style={{fontSize:11,color:val?"#0D1B2A":"#9CA3AF",fontWeight:val?500:400}}>{label}</span>
+                            <span style={{fontSize:11,color:val?"#0D1B2A":"#9CA3AF",fontWeight:val?500:400}}>{u.clientAccess&&labelClient?labelClient:label}</span>
                           </label>
                         );
                       })}
@@ -790,6 +800,140 @@ function UserManager({session,clients,onClose}:any){
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AdminPage({session,clients,configs,getConfig,getAllOrders,setModal,delCustomer,appSettings,saveAppSettings,lang,isMobile}:any){
+  const[tab,setTab]=useState<"users"|"clients"|"settings"|"logs">("users");
+  const TABS=[
+    {id:"users",label:"Utilisateurs & accès",icon:"ti-users"},
+    {id:"clients",label:"Clients",icon:"ti-building-store"},
+    {id:"settings",label:"Paramètres généraux",icon:"ti-settings"},
+    {id:"logs",label:"Activity Logs",icon:"ti-activity"},
+  ];
+  const[localTermId,setLocalTermId]=useState(appSettings.defaultTermId||"net60");
+  const[settingsMsg,setSettingsMsg]=useState("");
+  useEffect(()=>{setLocalTermId(appSettings.defaultTermId||"net60");},[appSettings.defaultTermId]);
+  const saveSettings=async()=>{
+    await saveAppSettings({...appSettings,defaultTermId:localTermId});
+    setSettingsMsg("✓ Enregistré");
+    setTimeout(()=>setSettingsMsg(""),2000);
+  };
+  const allOrders=getAllOrders()||[];
+
+  // Light read-only view of the users list, just to show which clients
+  // already have a dedicated access configured — refreshed whenever the
+  // Clients tab is opened, so it reflects changes made in the Users tab.
+  const[usersLight,setUsersLight]=useState<any[]>([]);
+  const[focusClient,setFocusClient]=useState<string|null>(null);
+  useEffect(()=>{
+    if(tab==="clients"){
+      (async()=>{try{const r=await sbGet("ordertrack-users");setUsersLight(r?.users||[]);}catch{}})();
+    }
+  },[tab]);
+  const configureClientAccess=(c:string)=>{setFocusClient(c);setTab("users");};
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      <div>
+        <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Administration</h1>
+        <p style={{margin:0,color:C.t3,fontSize:13}}>Utilisateurs, clients, paramètres et journal d'activité</p>
+      </div>
+
+      <div style={{display:"flex",gap:isMobile?2:6,borderBottom:`1px solid ${C.b}`,flexWrap:"wrap",overflowX:isMobile?"auto":undefined}}>
+        {TABS.map(tb=>(
+          <button key={tb.id} onClick={()=>setTab(tb.id as any)}
+            style={{display:"flex",alignItems:"center",gap:6,padding:isMobile?"9px 10px":"10px 16px",background:"none",border:"none",borderBottom:tab===tb.id?`2px solid ${C.blue}`:"2px solid transparent",color:tab===tb.id?C.blue:C.t3,fontWeight:tab===tb.id?700:500,fontSize:12.5,cursor:"pointer",whiteSpace:"nowrap"}}>
+            <i className={`ti ${tb.icon}`} style={{fontSize:15}} aria-hidden="true"/> {tb.label}
+          </button>
+        ))}
+      </div>
+
+      {tab==="users"&&<UserManager session={session} clients={clients} focusClient={focusClient} onFocusHandled={()=>setFocusClient(null)} embedded/>}
+
+      {tab==="clients"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+            <div style={{fontSize:13,fontWeight:600,color:C.t1}}>{clients.length} client{clients.length>1?"s":""}</div>
+            <button onClick={()=>setModal({type:"client"})} style={{display:"flex",alignItems:"center",gap:6,background:C.blue,color:"#fff",border:"none",borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              <i className="ti ti-plus" style={{fontSize:14}} aria-hidden="true"/> Ajouter un client
+            </button>
+          </div>
+          <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:560}}>
+              <thead><tr style={{background:"#0D1B2A"}}>
+                {["Client","N° de compte","Conditions de paiement","Commandes","Accès dédié","Actions"].map(h=>(
+                  <th key={h} style={{padding:"9px 14px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10.5,textTransform:"uppercase",letterSpacing:".04em"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {clients.map((c:string,i:number)=>{
+                  const cfg=getConfig(c);
+                  const termLabel=PAY_TERMS.find((tp:any)=>tp.id===cfg.termId)?.label||cfg.termId;
+                  const nbCmds=allOrders.filter((o:any)=>o._client===c).length;
+                  const clientUser=usersLight.find((u:any)=>u.clientAccess===c);
+                  return(
+                    <tr key={c} style={{borderBottom:`1px solid ${C.b}`,background:i%2===0?"#fff":"#FAFBFD"}}>
+                      <td style={{padding:"9px 14px",fontWeight:700,color:C.t1}}>{c}</td>
+                      <td style={{padding:"9px 14px",color:C.t2,fontFamily:"monospace"}}>{cfg.accountNumber||"—"}</td>
+                      <td style={{padding:"9px 14px",color:C.t2}}>{termLabel}</td>
+                      <td style={{padding:"9px 14px",color:C.t2}}>{nbCmds}</td>
+                      <td style={{padding:"9px 14px"}}>
+                        <button onClick={()=>configureClientAccess(c)}
+                          style={{display:"flex",alignItems:"center",gap:5,background:clientUser?C.greenL:"#F1F5F9",color:clientUser?C.greenDk:C.t3,border:"none",borderRadius:99,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                          <i className={`ti ${clientUser?"ti-lock":"ti-lock-open"}`} style={{fontSize:11}} aria-hidden="true"/>
+                          {clientUser?`Configuré (${clientUser.name})`:"Non configuré"}
+                        </button>
+                      </td>
+                      <td style={{padding:"7px 10px"}}>
+                        <div style={{display:"flex",gap:5}}>
+                          <button onClick={()=>setModal({type:"client",name:c,cfg})} title="Modifier"
+                            style={{background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                            <i className="ti ti-edit" style={{fontSize:12}} aria-hidden="true"/>
+                          </button>
+                          <button onClick={()=>{if(window.confirm(`${c} — supprimer toutes les données ?`))delCustomer(c);}} title="Supprimer"
+                            style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                            <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {clients.length===0&&<tr><td colSpan={6} style={{padding:24,textAlign:"center",color:C.t3}}>Aucun client</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab==="settings"&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"20px 24px",maxWidth:520,display:"flex",flexDirection:"column",gap:16}}>
+          <div>
+            <Label t="Devise"/>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,color:C.t2}}>
+              <i className="ti ti-currency-euro" style={{fontSize:15,color:C.t3}} aria-hidden="true"/> EUR (€)
+            </div>
+            <div style={{fontSize:11,color:C.t3,marginTop:5}}>Devise utilisée dans toute l'application (commandes, factures, rapports).</div>
+          </div>
+          <div>
+            <Label t="Conditions de paiement par défaut (nouveaux clients)"/>
+            <select value={localTermId} onChange={(e:any)=>setLocalTermId(e.target.value)} style={{width:"100%",padding:"9px 12px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,boxSizing:"border-box"}}>
+              {PAY_TERMS.map((tp:any)=><option key={tp.id} value={tp.id}>{tp.label}</option>)}
+            </select>
+            <div style={{fontSize:11,color:C.t3,marginTop:5}}>Pré-remplit ce choix à chaque création d'un nouveau client. Les clients existants ne sont pas affectés.</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={saveSettings} style={{background:C.blue,color:"#fff",border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+              Enregistrer
+            </button>
+            {settingsMsg&&<span style={{fontSize:12,color:C.greenDk,fontWeight:600}}>{settingsMsg}</span>}
+          </div>
+        </div>
+      )}
+
+      {tab==="logs"&&<ActivityLogsPage session={session}/>}
     </div>
   );
 }
@@ -807,7 +951,19 @@ export default function App(){
   const[session,setSession]=useState<any>(()=>{
     try{const s=localStorage.getItem(AUTH_KEY);return s?JSON.parse(s):null;}catch{return null;}
   });
-  const[showUserMgr,setShowUserMgr]=useState(false);
+  const[appSettings,setAppSettings]=useState<any>({defaultTermId:"net60",currency:"EUR"});
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const s=await sbGet("ordertrack-settings");
+        if(s)setAppSettings((prev:any)=>({...prev,...s}));
+      }catch(e){console.warn("[appSettings] load failed",e);}
+    })();
+  },[]);
+  const saveAppSettings=async(next:any)=>{
+    setAppSettings(next);
+    try{await sbSet("ordertrack-settings",next);}catch(e){console.warn("[appSettings] save failed",e);}
+  };
   const logout=()=>{localStorage.removeItem(AUTH_KEY);setSession(null);};
   const[configs,setConfigs]=useState<Record<string,any>>({});
   const[modal,setModal]=useState<any>(null);
@@ -1072,11 +1228,16 @@ export default function App(){
 
   if(!data||!clients)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"system-ui",color:C.t3,fontSize:14}}>Chargement…</div>;
 
-  const special=["kpi","dashboard","tresorerie","rapport","catalogue","documents","projects","logs"];
+  const special=["kpi","dashboard","tresorerie","rapport","catalogue","documents","projects","logs","admin"];
   const getConfig=(c:string)=>configs[c]||{accountNumber:"",termId:"net60",customDays:0};
 
   // ── Compute global alerts (for ticker on all pages) ──────────────
-  const _allOrders=getAllOrders();
+  // Scoped to session.clientAccess when set — a client-restricted account
+  // must never see alerts (or the client/PO names inside them) for anyone
+  // else's data, on any page.
+  const _allOrders=session?.clientAccess
+    ?getAllOrders().filter((o:any)=>o._client===session.clientAccess)
+    :getAllOrders();
   const _allInvoices=_allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_client:o._client,_po:o.poNumber,_oid:o.id})));
   const globalAlerts:(()=>{level:string,icon:string,text:string,detail:string}[])=()=>{
     const alerts:any[]=[];
@@ -1113,10 +1274,13 @@ export default function App(){
   const getAllOrdersScoped=restrictedClient
     ?()=>getAllOrders().filter((o:any)=>o._client===restrictedClient)
     :getAllOrders;
+  // Actual per-account permissions (checkboxes set in Administration → Utilisateurs
+  // & accès). Admins always have full rights; everyone else follows session.perms.
+  const perms=session?.role==="admin"?DEFAULT_PERMS:{...DEFAULT_PERMS,...(session?.perms||{})};
+  const deny=()=>alert("Action non autorisée par votre profil d'accès.");
 
   return(
     <div style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:C.page,overflow:"hidden",position:"relative"}}>
-      {showUserMgr&&<UserManager session={session} clients={clients} onClose={()=>setShowUserMgr(false)}/>}
 
       {/* ── SIDEBAR ─────────────────────────────────────────── */}
       {/* Mobile overlay backdrop */}
@@ -1151,10 +1315,11 @@ export default function App(){
           <SBtn icon="ti-table-column" label={t(lang,"nav_compilation")} active={page==="dashboard"} open={sideOpen} onClick={()=>{setPage("dashboard");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-search" label={t(lang,"nav_search")} active={false} open={sideOpen} onClick={()=>{setShowSearch(true);if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-chart-area-line" label="Trésorerie" active={page==="tresorerie"} open={sideOpen} onClick={()=>{setPage("tresorerie");if(isMobile)setMobileMenuOpen(false);}}/>
-          {!restrictedClient&&<SBtn icon="ti-file-report" label="Weekly Report" active={page==="rapport"} open={sideOpen} onClick={()=>{setPage("rapport");if(isMobile)setMobileMenuOpen(false);}}/>}
+          {!restrictedClient&&perms.canViewReports&&<SBtn icon="ti-file-report" label="Weekly Report" active={page==="rapport"} open={sideOpen} onClick={()=>{setPage("rapport");if(isMobile)setMobileMenuOpen(false);}}/>}
           <SBtn icon="ti-receipt" label="Catalogue & Devis" active={page==="catalogue"} open={sideOpen} onClick={()=>{setPage("catalogue");if(isMobile)setMobileMenuOpen(false);}}/>
           {!restrictedClient&&<SBtn icon="ti-files" label="Documents" active={page==="documents"} open={sideOpen} onClick={()=>{setPage("documents");if(isMobile)setMobileMenuOpen(false);}}/>}
           {!restrictedClient&&<SBtn icon="ti-briefcase" label="Projects" active={page==="projects"} open={sideOpen} onClick={()=>{setPage("projects");if(isMobile)setMobileMenuOpen(false);}}/>}
+          {session?.role==="admin"&&<SBtn icon="ti-shield-lock" label="Administration" active={page==="admin"} open={sideOpen} onClick={()=>{setPage("admin");if(isMobile)setMobileMenuOpen(false);}}/>}
 
           {sideOpen&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 6px 4px",marginTop:4}}>
@@ -1183,9 +1348,7 @@ export default function App(){
                 {session?.role==="admin"&&<span style={{background:"rgba(37,99,235,.3)",color:"#93C5FD",fontSize:9,padding:"1px 5px",borderRadius:3,fontWeight:700}}>ADMIN</span>}
               </span>
               <div style={{display:"flex",gap:4}}>
-                {session?.role==="admin"&&<button onClick={()=>setShowUserMgr(true)} title="Gérer les accès" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-users" style={{fontSize:14}} aria-hidden="true"/></button>}
                 <button onClick={logout} title="Se déconnecter" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-logout" style={{fontSize:14}} aria-hidden="true"/></button>
-                {session?.role==="admin"&&<button onClick={()=>setPage("logs")} title="Activity Logs" style={{background:"transparent",border:"none",color:"#6B7280",cursor:"pointer",padding:4,borderRadius:4,display:"flex"}}><i className="ti ti-activity" style={{fontSize:14}} aria-hidden="true"/></button>}
               </div>
             </div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -1255,29 +1418,30 @@ export default function App(){
           </div>
         )}
         <main style={{flex:1,overflow:"auto",padding:isMobile?"16px":"28px 32px"}}>
-        {page==="kpi"&&<KpiPage clients={visibleClients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrdersScoped} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
+        {page==="kpi"&&<KpiPage clients={visibleClients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrdersScoped} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} canExport={perms.canExport}/>}
         {page==="dashboard"&&<CompilPage getStats={getStats} clients={visibleClients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
         {page==="tresorerie"&&<TresoreriePage getAllOrders={getAllOrdersScoped} clients={visibleClients} lang={lang} isMobile={isMobile}/>}
-        {page==="rapport"&&!restrictedClient&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
+        {page==="rapport"&&!restrictedClient&&perms.canViewReports&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
         {page==="catalogue"&&<CataloguePage clients={visibleClients} restrictedClient={restrictedClient} lang={lang} isMobile={isMobile}/>}
         {page==="documents"&&!restrictedClient&&<DocumentsPage isMobile={isMobile}/>}
         {page==="projects"&&!restrictedClient&&<ProjectsPage isMobile={isMobile}/>}
         {page==="logs"&&<ActivityLogsPage session={session}/>}
+        {page==="admin"&&session?.role==="admin"&&<AdminPage session={session} clients={clients} configs={configs} getConfig={getConfig} getAllOrders={getAllOrders} setModal={setModal} delCustomer={delCustomer} appSettings={appSettings} saveAppSettings={saveAppSettings} lang={lang} isMobile={isMobile}/>}
         {!special.includes(page)&&(!restrictedClient||page===restrictedClient)&&(
           <CustomerPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
-            onSaveOrder={restrictedClient?()=>alert("Accès en lecture seule."):(f:any)=>saveOrder(page,f)}
-            onAdd={restrictedClient?()=>alert("Accès en lecture seule."):()=>setModal({type:"order",client:page})}
-            onEditOrder={restrictedClient?()=>alert("Accès en lecture seule."):(o:any)=>setModal({type:"order",client:page,order:o})}
-            onDelOrder={restrictedClient?()=>alert("Accès en lecture seule."):(id:string)=>delOrder(page,id)}
-            onAddInv={restrictedClient?()=>alert("Accès en lecture seule."):(o:any)=>setModal({type:"invoice",client:page,order:o,cfg:getConfig(page)})}
-            onEditInv={restrictedClient?()=>alert("Accès en lecture seule."):(o:any,i:any)=>setModal({type:"invoice",client:page,order:o,invoice:i,cfg:getConfig(page)})}
-            onDelInv={restrictedClient?()=>alert("Accès en lecture seule."):(oid:string,iid:string)=>delInvoice(page,oid,iid)}
-            onAddPay={restrictedClient?()=>alert("Accès en lecture seule."):(o:any,i:any)=>setModal({type:"payment",client:page,order:o,invoice:i})}
-            onEditPay={restrictedClient?()=>alert("Accès en lecture seule."):(o:any,i:any,p:any)=>setModal({type:"payment",client:page,order:o,invoice:i,payment:p})}
-            onDelPay={restrictedClient?()=>alert("Accès en lecture seule."):(oid:string,iid:string,pid:string)=>delPayment(page,oid,iid,pid)}
-            onEditCustomer={restrictedClient?()=>alert("Accès en lecture seule."):()=>setModal({type:"client",name:page,cfg:getConfig(page)})}
-            onDelCustomer={restrictedClient?()=>alert("Accès en lecture seule."):()=>{if(window.confirm(`${t(lang,"confirm_del_client",{name:page})}`))delCustomer(page);}}
+            onSaveOrder={perms.canEdit?(f:any)=>saveOrder(page,f):deny}
+            onAdd={perms.canEdit?()=>setModal({type:"order",client:page}):deny}
+            onEditOrder={perms.canEdit?(o:any)=>setModal({type:"order",client:page,order:o}):deny}
+            onDelOrder={perms.canDelete?(id:string)=>delOrder(page,id):deny}
+            onAddInv={perms.canEdit?(o:any)=>setModal({type:"invoice",client:page,order:o,cfg:getConfig(page)}):deny}
+            onEditInv={perms.canEdit?(o:any,i:any)=>setModal({type:"invoice",client:page,order:o,invoice:i,cfg:getConfig(page)}):deny}
+            onDelInv={perms.canDelete?(oid:string,iid:string)=>delInvoice(page,oid,iid):deny}
+            onAddPay={perms.canEdit?(o:any,i:any)=>setModal({type:"payment",client:page,order:o,invoice:i}):deny}
+            onEditPay={perms.canEdit?(o:any,i:any,p:any)=>setModal({type:"payment",client:page,order:o,invoice:i,payment:p}):deny}
+            onDelPay={perms.canDelete?(oid:string,iid:string,pid:string)=>delPayment(page,oid,iid,pid):deny}
+            onEditCustomer={perms.canAddCustomer?()=>setModal({type:"client",name:page,cfg:getConfig(page)}):deny}
+            onDelCustomer={(session?.role==="admin"&&perms.canAddCustomer)?()=>{if(window.confirm(`${t(lang,"confirm_del_client",{name:page})}`))delCustomer(page);}:deny}
           />
         )}
         </main>
@@ -1286,7 +1450,7 @@ export default function App(){
       {/* ── MODALS ──────────────────────────────────────────── */}
       {modal&&(
         <div style={{position:"absolute",inset:0,background:"rgba(15,23,42,.55)",display:"flex",alignItems:isMobile?"flex-end":"center",justifyContent:"center",zIndex:100,backdropFilter:"blur(2px)"}} onClick={(e:any)=>{if(e.target===e.currentTarget)setModal(null);}}>
-          {modal.type==="client"&&<CustomerModal name={modal.name} cfg={modal.cfg} lang={lang} onSave={(n:string,c:any)=>{const ok=modal.name?editCustomer(modal.name,n,c):addCustomer(n,c);if(ok)setModal(null);else alert(lang==="en"?"Invalid or duplicate name.":"Nom invalide ou déjà utilisé.");}} onClose={()=>setModal(null)}/>}
+          {modal.type==="client"&&<CustomerModal name={modal.name} cfg={modal.cfg} defaultTermId={appSettings.defaultTermId} lang={lang} onSave={(n:string,c:any)=>{const ok=modal.name?editCustomer(modal.name,n,c):addCustomer(n,c);if(ok)setModal(null);else alert(lang==="en"?"Invalid or duplicate name.":"Nom invalide ou déjà utilisé.");}} onClose={()=>setModal(null)}/>}
           {modal.type==="order"&&<OrderModal client={modal.client} order={modal.order} lang={lang} onSave={(f:any)=>saveOrder(modal.client,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="invoice"&&<InvoiceModal client={modal.client} order={modal.order} invoice={modal.invoice} cfg={modal.cfg} lang={lang} onSave={(f:any)=>saveInvoice(modal.client,modal.order.id,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="payment"&&<PaymentModal invoice={modal.invoice} payment={modal.payment} lang={lang} onSave={(f:any)=>savePayment(modal.client,modal.order.id,modal.invoice.id,f)} onClose={()=>setModal(null)}/>}
@@ -1399,7 +1563,7 @@ function AlertTicker({alerts,lang="fr"}:any){
 }
 
 // ─── KPI PAGE ────────────────────────────────────────────────────────────────
-function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,selYear,setSelYear,lang="fr",isMobile=false}:any){
+function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,selYear,setSelYear,lang="fr",isMobile=false,canExport=true}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const all=getAllOrders();
   const totPO=all.reduce((s:number,o:any)=>s+(+o.amount||0),0);
@@ -1469,9 +1633,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
             <i className="ti ti-alert-triangle" style={{color:C.red,fontSize:16}} aria-hidden="true"/>
             <span style={{color:C.redDk,fontSize:12,fontWeight:600}}>{fmt(echuesAmt)} € de factures échues · {echues.length} facture{echues.length>1?"s":""}</span>
           </div>}
-          <button onClick={()=>setModal({type:"report"})} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          {canExport&&<button onClick={()=>setModal({type:"report"})} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
             <i className="ti ti-file-download" style={{fontSize:15}} aria-hidden="true"/> Rapports PDF
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -2251,11 +2415,11 @@ function Sel({label,value,onChange,options,span}:any){
   );
 }
 
-function CustomerModal({name,cfg,onSave,onClose,lang="fr"}:any){
+function CustomerModal({name,cfg,defaultTermId,onSave,onClose,lang="fr"}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[nm,setNm]=useState(name||"");
   const[acc,setAcc]=useState(cfg?.accountNumber||"");
-  const[termId,setTermId]=useState(cfg?.termId||"net60");
+  const[termId,setTermId]=useState(cfg?.termId||defaultTermId||"net60");
   const[customDays,setCustomDays]=useState(cfg?.customDays||0);
   const isEdit=!!name;
   const save=()=>onSave(nm,{accountNumber:acc,termId,customDays:+customDays});
