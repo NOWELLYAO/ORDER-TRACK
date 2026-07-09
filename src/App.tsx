@@ -529,7 +529,7 @@ function LoginScreen({onLogin}:any){
 
     const found=users.find((u:any)=>u.pin===pin);
     if(found){
-      const session={name:found.name,role:found.role,pin:found.pin,loginAt:new Date().toISOString()};
+      const session={name:found.name,role:found.role,pin:found.pin,clientAccess:found.clientAccess||"",loginAt:new Date().toISOString()};
       localStorage.setItem(AUTH_KEY,JSON.stringify(session));
       onLogin(session);
     } else {
@@ -563,15 +563,17 @@ function LoginScreen({onLogin}:any){
 
 const DEFAULT_PERMS={canEdit:true,canDelete:true,canAddCustomer:true,canViewReports:true,canExport:true};
 
-function UserManager({session,onClose}:any){
+function UserManager({session,clients,onClose}:any){
   const[users,setUsers]=useState<any[]>([]);
   const[newName,setNewName]=useState("");
   const[newPin,setNewPin]=useState("");
   const[newRole,setNewRole]=useState("user");
+  const[newClientAccess,setNewClientAccess]=useState(""); // "" = full access
   const[msg,setMsg]=useState("");
   const[editIdx,setEditIdx]=useState<number|null>(null);
   const[editName,setEditName]=useState("");
   const[editPin,setEditPin]=useState("");
+  const[editClientAccess,setEditClientAccess]=useState("");
   const[editShowPin,setEditShowPin]=useState(false);
   const[expandPerms,setExpandPerms]=useState<number|null>(null);
   const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
@@ -638,21 +640,21 @@ function UserManager({session,onClose}:any){
     if(!newName||!newPin){setMsg("Nom et code requis");return;}
     if(newPin.length<4){setMsg("Le code doit avoir au moins 4 caractères");return;}
     if(users.find((u:any)=>u.pin===newPin)){setMsg("Ce code est déjà utilisé");return;}
-    const updated=[...users,{name:newName,pin:newPin,role:newRole,perms:{...DEFAULT_PERMS}}];
-    saveUsers(updated);setNewName("");setNewPin("");
+    const updated=[...users,{name:newName,pin:newPin,role:newRole,clientAccess:newRole==="admin"?"":newClientAccess,perms:{...DEFAULT_PERMS}}];
+    saveUsers(updated);setNewName("");setNewPin("");setNewClientAccess("");
   };
   const delUser=(idx:number)=>{
     if(!window.confirm("Supprimer cet utilisateur ?"))return;
     saveUsers(users.filter((_:any,i:number)=>i!==idx));
   };
   const startEdit=(idx:number)=>{
-    setEditIdx(idx);setEditName(users[idx].name);setEditPin("");setEditShowPin(false);
+    setEditIdx(idx);setEditName(users[idx].name);setEditPin("");setEditClientAccess(users[idx].clientAccess||"");setEditShowPin(false);
   };
   const saveEdit=()=>{
     if(!editName){setMsg("Nom requis");return;}
     if(editPin&&editPin.length<4){setMsg("Le code doit avoir au moins 4 caractères");return;}
     if(editPin&&editIdx!==null&&users.find((u:any,i:number)=>i!==editIdx&&u.pin===editPin)){setMsg("Ce code est déjà utilisé");return;}
-    const updated=users.map((u:any,i:number)=>i===editIdx?{...u,name:editName,...(editPin?{pin:editPin}:{})}:u);
+    const updated=users.map((u:any,i:number)=>i===editIdx?{...u,name:editName,clientAccess:u.role==="admin"?"":editClientAccess,...(editPin?{pin:editPin}:{})}:u);
     saveUsers(updated);setEditIdx(null);
   };
   const togglePerm=(idx:number,perm:string,val:boolean)=>{
@@ -689,6 +691,15 @@ function UserManager({session,onClose}:any){
                 <option value="admin">Admin</option>
               </select>
             </div>
+            {newRole!=="admin"&&(
+              <div style={{marginBottom:8}}>
+                <select value={newClientAccess} onChange={e=>setNewClientAccess(e.target.value)} style={{width:"100%",padding:"8px 10px",border:"1px solid #E5EAF0",borderRadius:6,fontSize:12,boxSizing:"border-box"}}>
+                  <option value="">Accès complet (tous les clients)</option>
+                  {(clients||[]).map((c:string)=><option key={c} value={c}>Accès limité à : {c}</option>)}
+                </select>
+                {newClientAccess&&<div style={{fontSize:10.5,color:"#7C3AED",marginTop:4}}><i className="ti ti-lock" style={{fontSize:11}} aria-hidden="true"/> Cet utilisateur ne verra que les données de {newClientAccess}, nulle part ailleurs dans l'app.</div>}
+              </div>
+            )}
             <button onClick={addUser} style={{background:"#2563EB",color:"#fff",border:"none",borderRadius:6,padding:"8px 16px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
               + Ajouter
             </button>
@@ -703,25 +714,36 @@ function UserManager({session,onClose}:any){
                     <i className={`ti ${u.role==="admin"?"ti-shield-check":"ti-user"}`} style={{fontSize:16,color:u.role==="admin"?"#2563EB":"#7C3AED"}} aria-hidden="true"/>
                   </div>
                   {editIdx===i?(
-                    <div style={{flex:1,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                      <input value={editName} onChange={e=>setEditName(e.target.value)} placeholder="Nom"
-                        style={{padding:"5px 8px",border:"1px solid #93C5FD",borderRadius:5,fontSize:12,fontFamily:"inherit",flex:1,minWidth:80}}/>
-                      <div style={{display:"flex",alignItems:"center",gap:4}}>
-                        <input value={editPin} onChange={e=>setEditPin(e.target.value)}
-                          type={editShowPin?"text":"password"} placeholder="New code (optionnel)"
-                          style={{padding:"5px 8px",border:"1px solid #93C5FD",borderRadius:5,fontSize:12,fontFamily:"inherit",width:140}}/>
-                        <button onClick={()=>setEditShowPin(!editShowPin)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#8FA0B3",padding:2}}>
-                          <i className={`ti ${editShowPin?"ti-eye-off":"ti-eye"}`} style={{fontSize:13}} aria-hidden="true"/>
-                        </button>
+                    <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
+                      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                        <input value={editName} onChange={e=>setEditName(e.target.value)} placeholder="Nom"
+                          style={{padding:"5px 8px",border:"1px solid #93C5FD",borderRadius:5,fontSize:12,fontFamily:"inherit",flex:1,minWidth:80}}/>
+                        <div style={{display:"flex",alignItems:"center",gap:4}}>
+                          <input value={editPin} onChange={e=>setEditPin(e.target.value)}
+                            type={editShowPin?"text":"password"} placeholder="New code (optionnel)"
+                            style={{padding:"5px 8px",border:"1px solid #93C5FD",borderRadius:5,fontSize:12,fontFamily:"inherit",width:140}}/>
+                          <button onClick={()=>setEditShowPin(!editShowPin)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#8FA0B3",padding:2}}>
+                            <i className={`ti ${editShowPin?"ti-eye-off":"ti-eye"}`} style={{fontSize:13}} aria-hidden="true"/>
+                          </button>
+                        </div>
+                        <button onClick={saveEdit} style={{background:"#2563EB",color:"#fff",border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>✓</button>
+                        <button onClick={()=>setEditIdx(null)} style={{background:"#F1F5F9",color:"#6B7280",border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,cursor:"pointer"}}>✕</button>
                       </div>
-                      <button onClick={saveEdit} style={{background:"#2563EB",color:"#fff",border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>✓</button>
-                      <button onClick={()=>setEditIdx(null)} style={{background:"#F1F5F9",color:"#6B7280",border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,cursor:"pointer"}}>✕</button>
+                      {u.role!=="admin"&&(
+                        <select value={editClientAccess} onChange={e=>setEditClientAccess(e.target.value)} style={{padding:"5px 8px",border:"1px solid #93C5FD",borderRadius:5,fontSize:11.5,fontFamily:"inherit"}}>
+                          <option value="">Accès complet (tous les clients)</option>
+                          {(clients||[]).map((c:string)=><option key={c} value={c}>Accès limité à : {c}</option>)}
+                        </select>
+                      )}
                     </div>
                   ):(
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontWeight:600,fontSize:13,color:"#0D1B2A"}}>{u.name}</div>
+                      <div style={{fontWeight:600,fontSize:13,color:"#0D1B2A",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                        {u.name}
+                        {u.clientAccess&&<span style={{fontSize:9.5,fontWeight:700,color:"#7C3AED",background:"#F3E8FF",padding:"1px 7px",borderRadius:99,display:"flex",alignItems:"center",gap:3}}><i className="ti ti-lock" style={{fontSize:9}} aria-hidden="true"/>{u.clientAccess}</span>}
+                      </div>
                       <div style={{fontSize:11,color:"#8FA0B3"}}>
-                        {u.role==="admin"?"Administrateur":"Utilisateur"} · Code : {"•".repeat(u.pin?.length||4)}
+                        {u.role==="admin"?"Administrateur":u.clientAccess?"Accès client (limité)":"Utilisateur"} · Code : {"•".repeat(u.pin?.length||4)}
                       </div>
                     </div>
                   )}
@@ -828,6 +850,12 @@ export default function App(){
       if(timerRef.current)clearTimeout(timerRef.current);
     };
   },[session,resetSessionTimer]);
+
+  // Client-restricted accounts land directly on their own client page —
+  // never on cross-client dashboards/reports by default.
+  useEffect(()=>{
+    if(session?.clientAccess)setPage(session.clientAccess);
+  },[session?.clientAccess]);
 
   useEffect(()=>{
     (async()=>{
@@ -1075,9 +1103,20 @@ export default function App(){
 
   if(!session) return <LoginScreen onLogin={(s:any)=>setSession(s)}/>;
 
+  // ── Client-restricted access ─────────────────────────────────────────────
+  // A user account can be locked to a single client (session.clientAccess).
+  // When set, every list/page/report in the app must be scoped to just that
+  // client — including cross-client aggregate functions like getAllOrders(),
+  // which otherwise close over the full, unrestricted `clients` state.
+  const restrictedClient:string=session?.clientAccess||"";
+  const visibleClients=restrictedClient?clients.filter((c:string)=>c===restrictedClient):clients;
+  const getAllOrdersScoped=restrictedClient
+    ?()=>getAllOrders().filter((o:any)=>o._client===restrictedClient)
+    :getAllOrders;
+
   return(
     <div style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:C.page,overflow:"hidden",position:"relative"}}>
-      {showUserMgr&&<UserManager session={session} onClose={()=>setShowUserMgr(false)}/>}
+      {showUserMgr&&<UserManager session={session} clients={clients} onClose={()=>setShowUserMgr(false)}/>}
 
       {/* ── SIDEBAR ─────────────────────────────────────────── */}
       {/* Mobile overlay backdrop */}
@@ -1112,26 +1151,26 @@ export default function App(){
           <SBtn icon="ti-table-column" label={t(lang,"nav_compilation")} active={page==="dashboard"} open={sideOpen} onClick={()=>{setPage("dashboard");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-search" label={t(lang,"nav_search")} active={false} open={sideOpen} onClick={()=>{setShowSearch(true);if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-chart-area-line" label="Trésorerie" active={page==="tresorerie"} open={sideOpen} onClick={()=>{setPage("tresorerie");if(isMobile)setMobileMenuOpen(false);}}/>
-          <SBtn icon="ti-file-report" label="Weekly Report" active={page==="rapport"} open={sideOpen} onClick={()=>{setPage("rapport");if(isMobile)setMobileMenuOpen(false);}}/>
+          {!restrictedClient&&<SBtn icon="ti-file-report" label="Weekly Report" active={page==="rapport"} open={sideOpen} onClick={()=>{setPage("rapport");if(isMobile)setMobileMenuOpen(false);}}/>}
           <SBtn icon="ti-receipt" label="Catalogue & Devis" active={page==="catalogue"} open={sideOpen} onClick={()=>{setPage("catalogue");if(isMobile)setMobileMenuOpen(false);}}/>
-          <SBtn icon="ti-files" label="Documents" active={page==="documents"} open={sideOpen} onClick={()=>{setPage("documents");if(isMobile)setMobileMenuOpen(false);}}/>
-          <SBtn icon="ti-briefcase" label="Projects" active={page==="projects"} open={sideOpen} onClick={()=>{setPage("projects");if(isMobile)setMobileMenuOpen(false);}}/>
+          {!restrictedClient&&<SBtn icon="ti-files" label="Documents" active={page==="documents"} open={sideOpen} onClick={()=>{setPage("documents");if(isMobile)setMobileMenuOpen(false);}}/>}
+          {!restrictedClient&&<SBtn icon="ti-briefcase" label="Projects" active={page==="projects"} open={sideOpen} onClick={()=>{setPage("projects");if(isMobile)setMobileMenuOpen(false);}}/>}
 
           {sideOpen&&(
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 6px 4px",marginTop:4}}>
               <p style={{fontSize:10,color:"#374151",fontWeight:600,letterSpacing:".07em",textTransform:"uppercase",margin:0}}>Customers</p>
-              <button onClick={()=>setModal({type:"client"})} style={{display:"flex",alignItems:"center",gap:4,background:"rgba(99,102,241,.2)",border:"none",color:"#A5B4FC",cursor:"pointer",borderRadius:5,padding:"3px 7px",fontSize:11,fontWeight:500}}>
+              {!restrictedClient&&<button onClick={()=>setModal({type:"client"})} style={{display:"flex",alignItems:"center",gap:4,background:"rgba(99,102,241,.2)",border:"none",color:"#A5B4FC",cursor:"pointer",borderRadius:5,padding:"3px 7px",fontSize:11,fontWeight:500}}>
                 <i className="ti ti-plus" style={{fontSize:12}} aria-hidden="true"/> Ajouter
-              </button>
+              </button>}
             </div>
           )}
           {!sideOpen&&<div style={{height:12}}/>}
 
-          {clients.map(c=>(
+          {visibleClients.map(c=>(
             <SCustomerBtn key={c} label={c} active={page===c} open={sideOpen}
               onClick={()=>{setPage(c);if(isMobile)setMobileMenuOpen(false);}}
-              onEdit={()=>setModal({type:"client",name:c,cfg:getConfig(c)})}
-              onDelete={()=>{if(window.confirm(c+(lang==="en"?" — delete all data?":" — supprimer toutes les données ?")))delCustomer(c);}}
+              onEdit={restrictedClient?undefined:()=>setModal({type:"client",name:c,cfg:getConfig(c)})}
+              onDelete={restrictedClient?undefined:()=>{if(window.confirm(c+(lang==="en"?" — delete all data?":" — supprimer toutes les données ?")))delCustomer(c);}}
             />
           ))}
         </nav>
@@ -1150,7 +1189,7 @@ export default function App(){
               </div>
             </div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <span style={{fontSize:11,color:"#374151"}}>{clients.length} clients · {getAllOrders().length}</span>
+              <span style={{fontSize:11,color:"#374151"}}>{visibleClients.length} client{visibleClients.length>1?"s":""} · {getAllOrdersScoped().length}</span>
               <div style={{display:"flex",background:"rgba(255,255,255,.06)",borderRadius:6,overflow:"hidden"}}>
                 {(["fr","en"] as Lang[]).map(l=>(
                   <button key={l} onClick={()=>setLang(l)} style={{padding:"4px 10px",border:"none",background:lang===l?"#2563EB":"transparent",color:lang===l?"#fff":"#6B7280",fontWeight:lang===l?700:400,fontSize:11,cursor:"pointer",letterSpacing:".03em",textTransform:"uppercase"}}>
@@ -1216,29 +1255,29 @@ export default function App(){
           </div>
         )}
         <main style={{flex:1,overflow:"auto",padding:isMobile?"16px":"28px 32px"}}>
-        {page==="kpi"&&<KpiPage clients={clients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrders} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
-        {page==="dashboard"&&<CompilPage getStats={getStats} clients={clients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
-        {page==="tresorerie"&&<TresoreriePage getAllOrders={getAllOrders} clients={clients} lang={lang} isMobile={isMobile}/>}
-        {page==="rapport"&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
-        {page==="catalogue"&&<CataloguePage clients={clients} lang={lang} isMobile={isMobile}/>}
-        {page==="documents"&&<DocumentsPage isMobile={isMobile}/>}
-        {page==="projects"&&<ProjectsPage isMobile={isMobile}/>}
+        {page==="kpi"&&<KpiPage clients={visibleClients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrdersScoped} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
+        {page==="dashboard"&&<CompilPage getStats={getStats} clients={visibleClients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
+        {page==="tresorerie"&&<TresoreriePage getAllOrders={getAllOrdersScoped} clients={visibleClients} lang={lang} isMobile={isMobile}/>}
+        {page==="rapport"&&!restrictedClient&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
+        {page==="catalogue"&&<CataloguePage clients={visibleClients} restrictedClient={restrictedClient} lang={lang} isMobile={isMobile}/>}
+        {page==="documents"&&!restrictedClient&&<DocumentsPage isMobile={isMobile}/>}
+        {page==="projects"&&!restrictedClient&&<ProjectsPage isMobile={isMobile}/>}
         {page==="logs"&&<ActivityLogsPage session={session}/>}
-        {!special.includes(page)&&(
+        {!special.includes(page)&&(!restrictedClient||page===restrictedClient)&&(
           <CustomerPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
-            onSaveOrder={(f:any)=>saveOrder(page,f)}
-            onAdd={()=>setModal({type:"order",client:page})}
-            onEditOrder={(o:any)=>setModal({type:"order",client:page,order:o})}
-            onDelOrder={(id:string)=>delOrder(page,id)}
-            onAddInv={(o:any)=>setModal({type:"invoice",client:page,order:o,cfg:getConfig(page)})}
-            onEditInv={(o:any,i:any)=>setModal({type:"invoice",client:page,order:o,invoice:i,cfg:getConfig(page)})}
-            onDelInv={(oid:string,iid:string)=>delInvoice(page,oid,iid)}
-            onAddPay={(o:any,i:any)=>setModal({type:"payment",client:page,order:o,invoice:i})}
-            onEditPay={(o:any,i:any,p:any)=>setModal({type:"payment",client:page,order:o,invoice:i,payment:p})}
-            onDelPay={(oid:string,iid:string,pid:string)=>delPayment(page,oid,iid,pid)}
-            onEditCustomer={()=>setModal({type:"client",name:page,cfg:getConfig(page)})}
-            onDelCustomer={()=>{if(window.confirm(`${t(lang,"confirm_del_client",{name:page})}`))delCustomer(page);}}
+            onSaveOrder={restrictedClient?()=>alert("Accès en lecture seule."):(f:any)=>saveOrder(page,f)}
+            onAdd={restrictedClient?()=>alert("Accès en lecture seule."):()=>setModal({type:"order",client:page})}
+            onEditOrder={restrictedClient?()=>alert("Accès en lecture seule."):(o:any)=>setModal({type:"order",client:page,order:o})}
+            onDelOrder={restrictedClient?()=>alert("Accès en lecture seule."):(id:string)=>delOrder(page,id)}
+            onAddInv={restrictedClient?()=>alert("Accès en lecture seule."):(o:any)=>setModal({type:"invoice",client:page,order:o,cfg:getConfig(page)})}
+            onEditInv={restrictedClient?()=>alert("Accès en lecture seule."):(o:any,i:any)=>setModal({type:"invoice",client:page,order:o,invoice:i,cfg:getConfig(page)})}
+            onDelInv={restrictedClient?()=>alert("Accès en lecture seule."):(oid:string,iid:string)=>delInvoice(page,oid,iid)}
+            onAddPay={restrictedClient?()=>alert("Accès en lecture seule."):(o:any,i:any)=>setModal({type:"payment",client:page,order:o,invoice:i})}
+            onEditPay={restrictedClient?()=>alert("Accès en lecture seule."):(o:any,i:any,p:any)=>setModal({type:"payment",client:page,order:o,invoice:i,payment:p})}
+            onDelPay={restrictedClient?()=>alert("Accès en lecture seule."):(oid:string,iid:string,pid:string)=>delPayment(page,oid,iid,pid)}
+            onEditCustomer={restrictedClient?()=>alert("Accès en lecture seule."):()=>setModal({type:"client",name:page,cfg:getConfig(page)})}
+            onDelCustomer={restrictedClient?()=>alert("Accès en lecture seule."):()=>{if(window.confirm(`${t(lang,"confirm_del_client",{name:page})}`))delCustomer(page);}}
           />
         )}
         </main>
@@ -1251,11 +1290,12 @@ export default function App(){
           {modal.type==="order"&&<OrderModal client={modal.client} order={modal.order} lang={lang} onSave={(f:any)=>saveOrder(modal.client,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="invoice"&&<InvoiceModal client={modal.client} order={modal.order} invoice={modal.invoice} cfg={modal.cfg} lang={lang} onSave={(f:any)=>saveInvoice(modal.client,modal.order.id,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="payment"&&<PaymentModal invoice={modal.invoice} payment={modal.payment} lang={lang} onSave={(f:any)=>savePayment(modal.client,modal.order.id,modal.invoice.id,f)} onClose={()=>setModal(null)}/>}
-          {modal.type==="report"&&<ReportModal clients={clients} data={data} configs={configs} lang={lang} onClose={()=>setModal(null)}/>}
+          {modal.type==="report"&&<ReportModal clients={visibleClients} data={data} configs={configs} lang={lang} onClose={()=>setModal(null)}/>}
         </div>
       )}
-      {showSearch&&<SearchOverlay clients={clients} data={data} lang={lang}
+      {showSearch&&<SearchOverlay clients={visibleClients} data={data} lang={lang}
         navigate={(client:string,orderId:string|null)=>{
+          if(restrictedClient&&client!==restrictedClient)return;
           setFocusOrderId(orderId);
           setPage(client);
           setShowSearch(false);
@@ -2093,9 +2133,9 @@ function SCustomerBtn({label,active,open,onClick,onEdit,onDelete}:any){
         <i className="ti ti-building-store" style={{fontSize:16,flexShrink:0}} aria-hidden="true"/>
         {open&&<span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>}
       </button>
-      {open&&hov&&<div style={{display:"flex",gap:2,paddingRight:8,flexShrink:0}}>
-        <button onClick={(e:any)=>{e.stopPropagation();onEdit();}} style={{background:"transparent",border:"none",color:"#4B5563",cursor:"pointer",padding:4,borderRadius:4}}><i className="ti ti-edit" style={{fontSize:12}} aria-hidden="true"/></button>
-        <button onClick={(e:any)=>{e.stopPropagation();onDelete();}} style={{background:"transparent",border:"none",color:"#EF4444",cursor:"pointer",padding:4,borderRadius:4}}><i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/></button>
+      {open&&hov&&(onEdit||onDelete)&&<div style={{display:"flex",gap:2,paddingRight:8,flexShrink:0}}>
+        {onEdit&&<button onClick={(e:any)=>{e.stopPropagation();onEdit();}} style={{background:"transparent",border:"none",color:"#4B5563",cursor:"pointer",padding:4,borderRadius:4}}><i className="ti ti-edit" style={{fontSize:12}} aria-hidden="true"/></button>}
+        {onDelete&&<button onClick={(e:any)=>{e.stopPropagation();onDelete();}} style={{background:"transparent",border:"none",color:"#EF4444",cursor:"pointer",padding:4,borderRadius:4}}><i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/></button>}
       </div>}
     </div>
   );
@@ -5092,8 +5132,9 @@ function CatEditModal({product,onSave,onClose}:any){
 }
 
 // ─── CATALOGUE PAGE ───────────────────────────────────────────────────────────
-function CataloguePage({clients,lang,isMobile}:any){
-  const[tab,setTab]=useState<"upload"|"catalogue"|"devis"|"search">("devis");
+function CataloguePage({clients,restrictedClient,lang,isMobile}:any){
+  const[tab,setTab]=useState<"upload"|"catalogue"|"devis"|"search">(restrictedClient?"catalogue":"devis");
+  useEffect(()=>{if(restrictedClient&&tab!=="catalogue")setTab("catalogue");},[restrictedClient,tab]);
   const[quoteSearch,setQuoteSearch]=useState("");
   const[products,setProducts]=useState<any[]>([]);
   const[quotes,setQuotes]=useState<any[]>([]);
@@ -6090,7 +6131,9 @@ function CataloguePage({clients,lang,isMobile}:any){
     (p.description||"").toLowerCase().includes(catSearch.toLowerCase())
   );
 
-  const TABS=[
+  const TABS=restrictedClient?[
+    {id:"catalogue",label:"Catalogue",icon:"ti-database"},
+  ]:[
     {id:"devis",label:"New devis",icon:"ti-file-plus"},
     {id:"search",label:"Recherche devis",icon:"ti-search"},
     {id:"catalogue",label:"Catalogue",icon:"ti-database"},
@@ -6628,10 +6671,10 @@ function CataloguePage({clients,lang,isMobile}:any){
               style={{background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
               <i className="ti ti-refresh" style={{fontSize:13}} aria-hidden="true"/> Sync
             </button>
-            <button onClick={async()=>{if(window.confirm("Supprimer tout le catalogue ?"))await saveProducts([]);}}
+            {!restrictedClient&&<button onClick={async()=>{if(window.confirm("Supprimer tout le catalogue ?"))await saveProducts([]);}}
               style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
               <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/> Vider
-            </button>
+            </button>}
           </div>
           <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
             {loading?<div style={{padding:32,textAlign:"center",color:C.t3}}>Chargement…</div>:
@@ -6639,7 +6682,7 @@ function CataloguePage({clients,lang,isMobile}:any){
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:600}}>
                   <thead><tr style={{background:"#0D1B2A"}}>
-                    {["Part Number","Description","Prix disponibles","Dernière mise à jour","Actions"].map((h,i)=>(
+                    {(restrictedClient?["Part Number","Description","Prix disponibles","Dernière mise à jour"]:["Part Number","Description","Prix disponibles","Dernière mise à jour","Actions"]).map((h,i)=>(
                       <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
                     ))}
                   </tr></thead>
@@ -6660,7 +6703,7 @@ function CataloguePage({clients,lang,isMobile}:any){
                           </div>
                         </td>
                         <td style={{padding:"8px 12px",color:C.t3}}>{p.lastUpdated||"—"}</td>
-                        <td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
+                        {!restrictedClient&&<td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
                           <div style={{display:"flex",gap:4}}>
                             <button onClick={()=>setCatEditProduct(p)} title="Modifier"
                               style={{background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
@@ -6672,7 +6715,7 @@ function CataloguePage({clients,lang,isMobile}:any){
                               <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/>
                             </button>
                           </div>
-                        </td>
+                        </td>}
                       </tr>
                     ))}
                   </tbody>
