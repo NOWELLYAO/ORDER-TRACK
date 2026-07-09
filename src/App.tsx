@@ -1297,7 +1297,8 @@ export default function App(){
     :getAllOrders;
   // Actual per-account permissions (checkboxes set in Administration → Utilisateurs
   // & accès). Admins always have full rights; everyone else follows session.perms.
-  const perms=session?.role==="admin"?DEFAULT_PERMS:{...DEFAULT_PERMS,...(session?.perms||{})};
+  const isAdmin=session?.role==="admin";
+  const perms=isAdmin?DEFAULT_PERMS:{...DEFAULT_PERMS,...(session?.perms||{})};
   const deny=()=>alert("Action non autorisée par votre profil d'accès.");
 
   return(
@@ -1438,11 +1439,11 @@ export default function App(){
           </div>
         )}
         <main style={{flex:1,overflow:"auto",padding:isMobile?"16px":"28px 32px"}}>
-        {page==="kpi"&&<KpiPage clients={visibleClients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrdersScoped} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} canExport={perms.canExport}/>}
-        {page==="dashboard"&&<CompilPage getStats={getStats} clients={visibleClients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile}/>}
+        {page==="kpi"&&<KpiPage clients={visibleClients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrdersScoped} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} canExport={perms.canExport} isAdmin={isAdmin}/>}
+        {page==="dashboard"&&<CompilPage getStats={getStats} clients={visibleClients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} isAdmin={isAdmin}/>}
         {page==="tresorerie"&&<TresoreriePage getAllOrders={getAllOrdersScoped} clients={visibleClients} lang={lang} isMobile={isMobile}/>}
         {page==="rapport"&&!restrictedClient&&perms.canViewReports&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
-        {page==="catalogue"&&<CataloguePage clients={visibleClients} restrictedClient={restrictedClient} lang={lang} isMobile={isMobile}/>}
+        {page==="catalogue"&&<CataloguePage clients={visibleClients} restrictedClient={restrictedClient} isAdmin={isAdmin} lang={lang} isMobile={isMobile}/>}
         {page==="documents"&&!restrictedClient&&<DocumentsPage isMobile={isMobile}/>}
         {page==="projects"&&!restrictedClient&&<ProjectsPage isMobile={isMobile}/>}
         {page==="logs"&&<ActivityLogsPage session={session}/>}
@@ -1450,6 +1451,7 @@ export default function App(){
         {!special.includes(page)&&(!restrictedClient||page===restrictedClient)&&(
           <CustomerPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
+            perms={perms} isAdmin={isAdmin}
             onSaveOrder={perms.canEdit?(f:any)=>saveOrder(page,f):deny}
             onAdd={perms.canEdit?()=>setModal({type:"order",client:page}):deny}
             onEditOrder={perms.canEdit?(o:any)=>setModal({type:"order",client:page,order:o}):deny}
@@ -1474,7 +1476,7 @@ export default function App(){
           {modal.type==="order"&&<OrderModal client={modal.client} order={modal.order} lang={lang} onSave={(f:any)=>saveOrder(modal.client,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="invoice"&&<InvoiceModal client={modal.client} order={modal.order} invoice={modal.invoice} cfg={modal.cfg} lang={lang} onSave={(f:any)=>saveInvoice(modal.client,modal.order.id,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="payment"&&<PaymentModal invoice={modal.invoice} payment={modal.payment} lang={lang} onSave={(f:any)=>savePayment(modal.client,modal.order.id,modal.invoice.id,f)} onClose={()=>setModal(null)}/>}
-          {modal.type==="report"&&<ReportModal clients={visibleClients} data={data} configs={configs} lang={lang} onClose={()=>setModal(null)}/>}
+          {modal.type==="report"&&<ReportModal clients={visibleClients} data={data} configs={configs} lang={lang} isAdmin={isAdmin} onClose={()=>setModal(null)}/>}
         </div>
       )}
     </div>
@@ -1636,11 +1638,11 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
           <p style={{margin:0,color:C.t3,fontSize:13}}>{new Date().toLocaleDateString(lang==="en"?"en-GB":"fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden"}}>
+          {isAdmin&&<div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden"}}>
             {[2025,2026,2027,2028,2029,2030].map(y=>(
               <button key={y} onClick={()=>setSelYear(y)} style={{padding:"7px 14px",border:"none",background:y===selYear?C.blue:"transparent",color:y===selYear?"#fff":C.t2,fontWeight:y===selYear?700:400,fontSize:12,cursor:"pointer",transition:"all .15s"}}>{y}</button>
             ))}
-          </div>
+          </div>}
           {overdueAmt>0&&<div style={{background:C.redL,border:`1px solid ${C.red}30`,borderRadius:C.r,padding:"8px 14px",display:"flex",alignItems:"center",gap:8}}>
             <i className="ti ti-alert-triangle" style={{color:C.red,fontSize:16}} aria-hidden="true"/>
             <span style={{color:C.redDk,fontSize:12,fontWeight:600}}>{fmt(echuesAmt)} € de factures échues · {echues.length} facture{echues.length>1?"s":""}</span>
@@ -1656,8 +1658,8 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         <Kpi icon="ti-building-store" label={tr("kpi_clients")} val={clients.length} sub={`${clients.filter((c:string)=>(data?.[c]||[]).length>0).length} ${tr("kpi_active")}`} c={C.purple} bg={C.purpleL}/>
         <Kpi icon="ti-clipboard-list" label={tr("kpi_orders")} val={nbCmds} sub={`${noInv.length} ${tr("kpi_no_invoice")}`} c={C.blue} bg={C.blueL}/>
         <Kpi icon="ti-file-invoice" label={tr("kpi_po")} val={`${fmtK(totPO)} €`} sub={tr("commanded")} c={C.t2} bg="#F1F5F9"/>
-        <Kpi icon="ti-check" label={tr("kpi_invoiced")} val={`${fmtK(totInv)} €`} sub={`${txFact.toFixed(1)}% ${tr("kpi_invoiced_pct")}`} c={C.teal} bg={C.tealL}/>
-        <Kpi icon="ti-coin" label={tr("kpi_collected")} val={`${fmtK(totPaid)} €`} sub={`${txPay.toFixed(1)}% ${tr("kpi_collected_pct")}`} c={C.green} bg={C.greenL}/>
+        <Kpi icon="ti-check" label={tr("kpi_invoiced")} val={`${fmtK(totInv)} €`} sub={isAdmin?`${txFact.toFixed(1)}% ${tr("kpi_invoiced_pct")}`:undefined} c={C.teal} bg={C.tealL}/>
+        <Kpi icon="ti-coin" label={tr("kpi_collected")} val={`${fmtK(totPaid)} €`} sub={isAdmin?`${txPay.toFixed(1)}% ${tr("kpi_collected_pct")}`:undefined} c={C.green} bg={C.greenL}/>
         <Kpi icon="ti-hourglass-low" label="Factures en cours" val={`${fmtK(totUnpaid)} €`} sub={echues.length>0?`⚠ ${echues.length} échu${echues.length>1?"es":"e"}${upcoming.length>0?` · ${upcoming.length} à venir`:""}`:upcoming.length>0?`${upcoming.length} échéance${upcoming.length>1?"s":""} à venir`:"Aucune alerte"} c={echues.length>0?C.red:upcoming.length>0?C.amber:C.t3} bg={echues.length>0?C.redL:upcoming.length>0?C.amberL:"#F8FAFC"}/>
       </div>
 
@@ -1666,7 +1668,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         {/* Jauge double */}
         <Card title="Progression globale" icon="ti-target">
           {/* KPI globaux */}
-          <div style={{display:"flex",gap:16,marginBottom:20}}>
+          {isAdmin&&<div style={{display:"flex",gap:16,marginBottom:20}}>
             <div style={{flex:1,background:C.page,borderRadius:C.r,padding:"12px 16px"}}>
               <div style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>Taux de facturation</div>
               <div style={{fontSize:22,fontWeight:800,color:txFact>=80?C.greenDk:txFact>=50?C.amberDk:C.redDk,marginBottom:8}}>{txFact.toFixed(1)}%</div>
@@ -1677,7 +1679,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
               <div style={{fontSize:22,fontWeight:800,color:txPay>=80?C.greenDk:txPay>=50?C.amberDk:C.redDk,marginBottom:8}}>{txPay.toFixed(1)}%</div>
               <Track val={txPay} max={100} color={txPay>=80?C.green:txPay>=50?C.amber:C.red} h={8}/>
             </div>
-          </div>
+          </div>}
           {/* Par client */}
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             {cStats.filter((c:any)=>c.totalPO>0).map((c:any)=>{
@@ -1953,7 +1955,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
 }
 
 // ─── COMPILATION PAGE ────────────────────────────────────────────────────────
-function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="fr"}:any){
+function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="fr",isAdmin=true}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const all=clients.map((c:string)=>({client:c,...getStats(c,selYear)}));
   const totPO  = all.reduce((s:number,c:any)=>s+c.totalPO,0);
@@ -1973,15 +1975,15 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
           <h1 style={{margin:"0 0 3px",fontSize:22,fontWeight:700,color:C.t1}}>Compilation {selYear}</h1>
           <p style={{margin:0,color:C.t3,fontSize:13}}>Vue consolidée · tous les clients · {clients.length} comptes actifs</p>
         </div>
-        <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
+        {isAdmin&&<div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
           {[2025,2026,2027,2028,2029,2030].map(y=>(
             <button key={y} onClick={()=>setSelYear(y)} style={{padding:"8px 16px",border:"none",borderRight:`1px solid ${C.b}`,background:y===selYear?C.blue:"transparent",color:y===selYear?"#fff":C.t2,fontWeight:y===selYear?700:400,fontSize:13,cursor:"pointer",transition:"all .15s"}}>{y}</button>
           ))}
-        </div>
+        </div>}
       </div>
 
       {/* ── KPI STRIP ── */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isAdmin?"repeat(5,1fr)":"repeat(4,1fr)",gap:14}}>
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Total PO {selYear}</div>
           <div style={{fontSize:22,fontWeight:800,color:C.blue,letterSpacing:"-.02em"}}>{fmtK(totPO)} €</div>
@@ -1990,29 +1992,33 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Total facturé</div>
           <div style={{fontSize:22,fontWeight:800,color:C.teal,letterSpacing:"-.02em"}}>{fmtK(totInv)} €</div>
-          <div style={{marginTop:6,height:5,background:"#F1F5F9",borderRadius:99}}>
-            <div style={{height:"100%",width:`${Math.min(100,txFact)}%`,background:txFact>=80?C.green:txFact>=50?C.teal:C.amber,borderRadius:99,transition:"width .5s"}}/>
-          </div>
-          <div style={{fontSize:11,color:C.t3,marginTop:4}}>{txFact.toFixed(1)}% du PO</div>
+          {isAdmin&&<>
+            <div style={{marginTop:6,height:5,background:"#F1F5F9",borderRadius:99}}>
+              <div style={{height:"100%",width:`${Math.min(100,txFact)}%`,background:txFact>=80?C.green:txFact>=50?C.teal:C.amber,borderRadius:99,transition:"width .5s"}}/>
+            </div>
+            <div style={{fontSize:11,color:C.t3,marginTop:4}}>{txFact.toFixed(1)}% du PO</div>
+          </>}
         </div>
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Total encaissé</div>
           <div style={{fontSize:22,fontWeight:800,color:C.green,letterSpacing:"-.02em"}}>{fmtK(totPaid)} €</div>
-          <div style={{marginTop:6,height:5,background:"#F1F5F9",borderRadius:99}}>
-            <div style={{height:"100%",width:`${Math.min(100,txPay)}%`,background:C.green,borderRadius:99,transition:"width .5s"}}/>
-          </div>
-          <div style={{fontSize:11,color:C.t3,marginTop:4}}>{txPay.toFixed(1)}% des factures</div>
+          {isAdmin&&<>
+            <div style={{marginTop:6,height:5,background:"#F1F5F9",borderRadius:99}}>
+              <div style={{height:"100%",width:`${Math.min(100,txPay)}%`,background:C.green,borderRadius:99,transition:"width .5s"}}/>
+            </div>
+            <div style={{fontSize:11,color:C.t3,marginTop:4}}>{txPay.toFixed(1)}% des factures</div>
+          </>}
         </div>
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Open Orders</div>
           <div style={{fontSize:22,fontWeight:800,color:C.amberDk,letterSpacing:"-.02em"}}>{fmtK(totOpen)} €</div>
           <div style={{fontSize:11,color:C.t3,marginTop:4}}>Remaining to invoice</div>
         </div>
-        <div style={{background:`linear-gradient(135deg,${C.blue},${C.purple})`,borderRadius:C.rLg,boxShadow:C.shMd,padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+        {isAdmin&&<div style={{background:`linear-gradient(135deg,${C.blue},${C.purple})`,borderRadius:C.rLg,boxShadow:C.shMd,padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
           <div style={{fontSize:10,color:"rgba(255,255,255,.7)",fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Taux global</div>
           <div style={{fontSize:22,fontWeight:800,color:"#fff",letterSpacing:"-.02em"}}>{txFact.toFixed(1)}%</div>
           <div style={{fontSize:11,color:"rgba(255,255,255,.7)",marginTop:4}}>Facturation / Encaiss. {txPay.toFixed(1)}%</div>
-        </div>
+        </div>}
       </div>
 
       {/* ── CLIENT BARS + MONTHLY TABLE split layout ── */}
@@ -2166,7 +2172,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
 
       {/* ── OPEN ORDERS FOOTER ── */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:16}}>
-        <div style={{display:"flex",gap:10}}>
+        {isAdmin&&<div style={{display:"flex",gap:10}}>
           <div style={{background:"#fff",boxShadow:C.sh,borderRadius:C.r,padding:"10px 18px",border:`1px solid ${C.b}`,textAlign:"center"}}>
             <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:2}}>Taux facturation</div>
             <div style={{fontSize:18,fontWeight:800,color:txFact>=80?C.greenDk:txFact>=50?C.amberDk:C.redDk}}>{txFact.toFixed(1)}%</div>
@@ -2175,7 +2181,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
             <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:2}}>Taux encaissement</div>
             <div style={{fontSize:18,fontWeight:800,color:txPay>=80?C.greenDk:txPay>=50?C.amberDk:C.redDk}}>{txPay.toFixed(1)}%</div>
           </div>
-        </div>
+        </div>}
         <div style={{background:`linear-gradient(135deg,${C.amberDk},#F59E0B)`,boxShadow:"0 6px 24px rgba(217,119,6,.3)",borderRadius:C.rLg,padding:"16px 32px",display:"flex",alignItems:"center",gap:20}}>
           <div>
             <div style={{fontSize:10,color:"rgba(255,255,255,.75)",fontWeight:600,textTransform:"uppercase",letterSpacing:".08em",marginBottom:2}}>Open Orders {selYear}</div>
@@ -2190,7 +2196,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
 }
 
 // ─── CLIENT PAGE ─────────────────────────────────────────────────────────────
-function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder}:any){
+function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
   const tgl=(id:string)=>setExp(p=>({...p,[id]:!p[id]}));
@@ -2227,9 +2233,9 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
           </div>}
         </div>
         <div style={{display:"flex",gap:8}}>
-          <Btn icon="ti-edit" label="Modifier" onClick={onEditCustomer} variant="ghost"/>
-          <Btn icon="ti-trash" label="Supprimer" onClick={onDelCustomer} variant="danger"/>
-          <Btn icon="ti-plus" label={tr("btn_new_order")} onClick={onAdd} variant="primary"/>
+          {perms?.canAddCustomer&&<Btn icon="ti-edit" label="Modifier" onClick={onEditCustomer} variant="ghost"/>}
+          {isAdmin&&<Btn icon="ti-trash" label="Supprimer" onClick={onDelCustomer} variant="danger"/>}
+          {perms?.canEdit&&<Btn icon="ti-plus" label={tr("btn_new_order")} onClick={onAdd} variant="primary"/>}
         </div>
       </div>
 
@@ -2244,8 +2250,8 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
         return(
           <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:isMobile?8:12}}>
             <Kpi icon="ti-file-invoice"    label="PO total"           val={`${fmtK(stats.totalPO)} €`}    sub="Commandé"                                   c={C.blue}   bg={C.blueL}/>
-            <Kpi icon="ti-receipt"         label="Facturé"            val={`${fmtK(stats.totalInv)} €`}   sub={`${txFact.toFixed(1)}% du PO`}              c={C.teal}   bg={C.tealL}/>
-            <Kpi icon="ti-coin"            label="Encaissé"           val={`${fmtK(stats.totalPaid)} €`}  sub={`${txPay.toFixed(1)}% des factures`}         c={C.green}  bg={C.greenL}/>
+            <Kpi icon="ti-receipt"         label="Facturé"            val={`${fmtK(stats.totalInv)} €`}   sub={isAdmin?`${txFact.toFixed(1)}% du PO`:""}              c={C.teal}   bg={C.tealL}/>
+            <Kpi icon="ti-coin"            label="Encaissé"           val={`${fmtK(stats.totalPaid)} €`}  sub={isAdmin?`${txPay.toFixed(1)}% des factures`:""}         c={C.green}  bg={C.greenL}/>
             <Kpi icon="ti-clock-exclamation" label="Factures échues"  val={echuesAmt>0?`${fmtK(echuesAmt)} €`:"—"}  sub={`${clientEchues.length} facture${clientEchues.length>1?"s":""} en retard`}  c={echuesAmt>0?C.redDk:C.t3}   bg={echuesAmt>0?C.redL:"#F8FAFC"}/>
             <Kpi icon="ti-hourglass"       label="En cours (non échu)" val={enCoursAmt>0?`${fmtK(enCoursAmt)} €`:"—"} sub={`${clientEnCours.length} facture${clientEnCours.length>1?"s":""} en attente`} c={enCoursAmt>0?C.amberDk:C.t3} bg={enCoursAmt>0?C.amberL:"#F8FAFC"}/>
             <Kpi icon="ti-clock"           label="Open orders"        val={`${fmtK(stats.openOrders)} €`} sub="Remaining to invoice"                            c={C.purple} bg={C.purpleL}/>
@@ -2278,15 +2284,15 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
         onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay}
         onEditInv={onEditInv} onDelInv={onDelInv}
         focusOrderId={focusOrderId} onClearFocus={onClearFocus} onAdd={onAdd} lang={lang}
-        onSaveOrder={onSaveOrder}
+        onSaveOrder={onSaveOrder} perms={perms}
       />
     </div>
     {/* Floating action button — always accessible */}
-    <div style={{position:"fixed",bottom:28,right:28,zIndex:40,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+    {perms?.canEdit&&<div style={{position:"fixed",bottom:28,right:28,zIndex:40,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
       <button onClick={onAdd} title="Nouvelle commande" style={{width:52,height:52,borderRadius:99,background:`linear-gradient(135deg,${C.blue},${C.purple})`,border:"none",color:"#fff",fontSize:22,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",boxShadow:"0 4px 20px rgba(37,99,235,.45)",transition:"transform .15s"}} onMouseEnter={(e:any)=>e.currentTarget.style.transform="scale(1.1)"} onMouseLeave={(e:any)=>e.currentTarget.style.transform="scale(1)"}>
         <i className="ti ti-plus" aria-hidden="true"/>
       </button>
-    </div>
+    </div>}
     </>
   );
 }
@@ -2584,7 +2590,7 @@ function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
 }
 
 // ─── ORDER TABS PANEL ────────────────────────────────────────────────────────
-function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder}:any){
+function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[tab,setTab]=useState<"orders"|"invoices"|"payments">("orders");
   const[search,setSearch]=useState("");
@@ -2662,7 +2668,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>Aucune commande trouvée</div>}
-            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder}/>)}
+            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
                 onMouseEnter={(e:any)=>{e.currentTarget.style.background=C.blueL;e.currentTarget.style.borderColor=C.blue;}}
@@ -2713,9 +2719,9 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
                       <td style={{padding:"8px 10px",textAlign:"center"}}><Tag label={ps.label} c={ps.color} bg={ps.bg} sm/></td>
                       <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
                         <div style={{display:"flex",gap:3,justifyContent:"center"}}>
-                          <IBtn icon="ti-coin" title="Paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(inv._order,inv)} small/>
-                          <IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(inv._order,inv)} small/>
-                          <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_invoice")))onDelInv(inv._oid,inv.id);}} small/>
+                          {perms?.canEdit&&<IBtn icon="ti-coin" title="Paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(inv._order,inv)} small/>}
+                          {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(inv._order,inv)} small/>}
+                          {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_invoice")))onDelInv(inv._oid,inv.id);}} small/>}
                         </div>
                       </td>
                     </tr>
@@ -2768,8 +2774,8 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
                     <td style={{padding:"8px 10px",color:C.t3,fontSize:11,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.notes||"—"}</td>
                     <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
                       <div style={{display:"flex",gap:3,justifyContent:"center"}}>
-                        <IBtn icon="ti-edit" title={tr("edit_payment")} c={C.blue} bg={C.blueL} onClick={()=>onEditPay(p._inv._order,p._inv,p)} small/>
-                        <IBtn icon="ti-trash" title={tr("delete")} c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_payment")))onDelPay(p._inv._oid,p._inv.id,p.id);}} small/>
+                        {perms?.canEdit&&<IBtn icon="ti-edit" title={tr("edit_payment")} c={C.blue} bg={C.blueL} onClick={()=>onEditPay(p._inv._order,p._inv,p)} small/>}
+                        {perms?.canDelete&&<IBtn icon="ti-trash" title={tr("delete")} c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_payment")))onDelPay(p._inv._oid,p._inv.id,p.id);}} small/>}
                       </div>
                     </td>
                   </tr>
@@ -2803,7 +2809,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
 }
 
 // ─── ORDER CARD (extracted from CustomerPage) ───────────────────────────────────
-function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder}:any){
+function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
   const open=Math.max(0,(+order.amount||0)-invoiced);
@@ -2863,9 +2869,9 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
             );
           })()}
           <div style={{display:"flex",gap:4}} onClick={(e:any)=>e.stopPropagation()}>
-            <IBtn icon="ti-plus" title="Ajouter facture" c={C.teal} bg={C.tealL} onClick={()=>onAddInv(order)}/>
-            <IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditOrder(order)}/>
-            <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_order")))onDelOrder(order.id);}}/>
+            {perms?.canEdit&&<IBtn icon="ti-plus" title="Ajouter facture" c={C.teal} bg={C.tealL} onClick={()=>onAddInv(order)}/>}
+            {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditOrder(order)}/>}
+            {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_order")))onDelOrder(order.id);}}/>}
           </div>
         </div>
       </div>
@@ -2891,7 +2897,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
           />
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
             <h4 style={{margin:0,fontSize:13,fontWeight:700,color:C.t1}}>Expéditions & Factures</h4>
-            <Btn icon="ti-plus" label="Ajouter facture" onClick={()=>onAddInv(order)} variant="success" small/>
+            {perms?.canEdit&&<Btn icon="ti-plus" label="Ajouter facture" onClick={()=>onAddInv(order)} variant="success" small/>}
           </div>
           {(order.invoices||[]).length===0?(
             <div style={{background:"#fff",border:`1px dashed ${C.b}`,borderRadius:C.r,padding:20,textAlign:"center",color:C.t3,fontSize:12}}>Aucune facture pour cette commande</div>
@@ -2912,9 +2918,9 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
                         <div style={{height:3,background:"#F1F5F9",borderRadius:99,marginTop:4,width:120}}><div style={{height:"100%",width:`${pctPay}%`,background:ps.color,borderRadius:99}}/></div>
                       </div>
                       <div style={{display:"flex",gap:4}}>
-                        <IBtn icon="ti-coin" title="Enregistrer paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(order,inv)}/>
-                        <IBtn icon="ti-edit" title="Modifier facture" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(order,inv)}/>
-                        <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_invoice")))onDelInv(order.id,inv.id);}}/>
+                        {perms?.canEdit&&<IBtn icon="ti-coin" title="Enregistrer paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(order,inv)}/>}
+                        {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier facture" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(order,inv)}/>}
+                        {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_invoice")))onDelInv(order.id,inv.id);}}/>}
                       </div>
                     </div>
                     {(inv.payments||[]).length>0&&(
@@ -2927,8 +2933,8 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
                               <span style={{fontWeight:700,color:C.green,minWidth:100}}>{fmt(p.amount)} €</span>
                               <span style={{color:C.t2,flex:1}}>{p.method||"—"}{p.reference?` · Réf: ${p.reference}`:""}</span>
                               <div style={{display:"flex",gap:3}}>
-                                <IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditPay(order,inv,p)} small/>
-                                <IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_payment")))onDelPay(order.id,inv.id,p.id);}} small/>
+                                {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditPay(order,inv,p)} small/>}
+                                {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_payment")))onDelPay(order.id,inv.id,p.id);}} small/>}
                               </div>
                             </div>
                           ))}
@@ -5308,9 +5314,10 @@ function CatEditModal({product,onSave,onClose}:any){
 }
 
 // ─── CATALOGUE PAGE ───────────────────────────────────────────────────────────
-function CataloguePage({clients,restrictedClient,lang,isMobile}:any){
-  const[tab,setTab]=useState<"upload"|"catalogue"|"devis"|"search">(restrictedClient?"catalogue":"devis");
-  useEffect(()=>{if(restrictedClient&&tab!=="catalogue")setTab("catalogue");},[restrictedClient,tab]);
+function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any){
+  const catReadOnly=!!restrictedClient||!isAdmin;
+  const[tab,setTab]=useState<"upload"|"catalogue"|"devis"|"search">(catReadOnly?"catalogue":"devis");
+  useEffect(()=>{if(catReadOnly&&tab!=="catalogue")setTab("catalogue");},[catReadOnly,tab]);
   const[quoteSearch,setQuoteSearch]=useState("");
   const[products,setProducts]=useState<any[]>([]);
   const[quotes,setQuotes]=useState<any[]>([]);
@@ -6307,7 +6314,7 @@ function CataloguePage({clients,restrictedClient,lang,isMobile}:any){
     (p.description||"").toLowerCase().includes(catSearch.toLowerCase())
   );
 
-  const TABS=restrictedClient?[
+  const TABS=catReadOnly?[
     {id:"catalogue",label:"Catalogue",icon:"ti-database"},
   ]:[
     {id:"devis",label:"New devis",icon:"ti-file-plus"},
@@ -6847,7 +6854,7 @@ function CataloguePage({clients,restrictedClient,lang,isMobile}:any){
               style={{background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
               <i className="ti ti-refresh" style={{fontSize:13}} aria-hidden="true"/> Sync
             </button>
-            {!restrictedClient&&<button onClick={async()=>{if(window.confirm("Supprimer tout le catalogue ?"))await saveProducts([]);}}
+            {!catReadOnly&&<button onClick={async()=>{if(window.confirm("Supprimer tout le catalogue ?"))await saveProducts([]);}}
               style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
               <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/> Vider
             </button>}
@@ -6858,7 +6865,7 @@ function CataloguePage({clients,restrictedClient,lang,isMobile}:any){
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:600}}>
                   <thead><tr style={{background:"#0D1B2A"}}>
-                    {(restrictedClient?["Part Number","Description","Prix disponibles","Dernière mise à jour"]:["Part Number","Description","Prix disponibles","Dernière mise à jour","Actions"]).map((h,i)=>(
+                    {(catReadOnly?["Part Number","Description","Prix disponibles","Dernière mise à jour"]:["Part Number","Description","Prix disponibles","Dernière mise à jour","Actions"]).map((h,i)=>(
                       <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
                     ))}
                   </tr></thead>
@@ -6879,7 +6886,7 @@ function CataloguePage({clients,restrictedClient,lang,isMobile}:any){
                           </div>
                         </td>
                         <td style={{padding:"8px 12px",color:C.t3}}>{p.lastUpdated||"—"}</td>
-                        {!restrictedClient&&<td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
+                        {!catReadOnly&&<td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
                           <div style={{display:"flex",gap:4}}>
                             <button onClick={()=>setCatEditProduct(p)} title="Modifier"
                               style={{background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
@@ -9218,7 +9225,7 @@ function TresoreriePage({getAllOrders,clients,lang,isMobile}:any){
 function Chip({label,c}:any){return<span style={{fontSize:10,background:c+"18",color:c,padding:"2px 7px",borderRadius:4,fontWeight:500,whiteSpace:"nowrap"}}>{label}</span>;}
 
 // ─── REPORT MODAL ────────────────────────────────────────────────────────────
-function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
+function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[rtype,setRtype]=useState("open_orders");
   const[fromDate,setFromDate]=useState(new Date().getFullYear()+"-01-01");
@@ -9500,7 +9507,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr"}:any){
     {id:"upcoming",     label:"Échéances à venir",      desc:"Factures dues dans les 30 prochains jours", icon:"ti-clock",         color:C.purple},
     {id:"unpaid",       label:"Factures en cours",      desc:"Solde non encore encaissé (toutes)",    icon:"ti-alert-circle",      color:"#0D9488"},
     {id:"all_invoices", label:"Toutes les factures",    desc:"Listing complet sur la période",        icon:"ti-receipt",           color:C.teal},
-    {id:"summary",      label:"Synthèse clients",       desc:"Récapitulatif par client",              icon:"ti-building-store",    color:C.blue},
+    ...(isAdmin?[{id:"summary",label:"Synthèse clients",desc:"Récapitulatif par client",icon:"ti-building-store",color:C.blue}]:[]),
   ];
 
   return(
