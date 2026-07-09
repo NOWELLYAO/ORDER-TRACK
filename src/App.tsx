@@ -1654,21 +1654,21 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       </div>
 
       {/* KPI row */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:isMobile?10:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":isAdmin?"repeat(6,1fr)":"repeat(3,1fr)",gap:isMobile?10:14}}>
         <Kpi icon="ti-building-store" label={tr("kpi_clients")} val={clients.length} sub={`${clients.filter((c:string)=>(data?.[c]||[]).length>0).length} ${tr("kpi_active")}`} c={C.purple} bg={C.purpleL}/>
         <Kpi icon="ti-clipboard-list" label={tr("kpi_orders")} val={nbCmds} sub={`${noInv.length} ${tr("kpi_no_invoice")}`} c={C.blue} bg={C.blueL}/>
-        <Kpi icon="ti-file-invoice" label={tr("kpi_po")} val={`${fmtK(totPO)} €`} sub={tr("commanded")} c={C.t2} bg="#F1F5F9"/>
-        <Kpi icon="ti-check" label={tr("kpi_invoiced")} val={`${fmtK(totInv)} €`} sub={isAdmin?`${txFact.toFixed(1)}% ${tr("kpi_invoiced_pct")}`:undefined} c={C.teal} bg={C.tealL}/>
-        <Kpi icon="ti-coin" label={tr("kpi_collected")} val={`${fmtK(totPaid)} €`} sub={isAdmin?`${txPay.toFixed(1)}% ${tr("kpi_collected_pct")}`:undefined} c={C.green} bg={C.greenL}/>
+        {isAdmin&&<Kpi icon="ti-file-invoice" label={tr("kpi_po")} val={`${fmtK(totPO)} €`} sub={tr("commanded")} c={C.t2} bg="#F1F5F9"/>}
+        {isAdmin&&<Kpi icon="ti-check" label={tr("kpi_invoiced")} val={`${fmtK(totInv)} €`} sub={`${txFact.toFixed(1)}% ${tr("kpi_invoiced_pct")}`} c={C.teal} bg={C.tealL}/>}
+        {isAdmin&&<Kpi icon="ti-coin" label={tr("kpi_collected")} val={`${fmtK(totPaid)} €`} sub={`${txPay.toFixed(1)}% ${tr("kpi_collected_pct")}`} c={C.green} bg={C.greenL}/>}
         <Kpi icon="ti-hourglass-low" label="Factures en cours" val={`${fmtK(totUnpaid)} €`} sub={echues.length>0?`⚠ ${echues.length} échu${echues.length>1?"es":"e"}${upcoming.length>0?` · ${upcoming.length} à venir`:""}`:upcoming.length>0?`${upcoming.length} échéance${upcoming.length>1?"s":""} à venir`:"Aucune alerte"} c={echues.length>0?C.red:upcoming.length>0?C.amber:C.t3} bg={echues.length>0?C.redL:upcoming.length>0?C.amberL:"#F8FAFC"}/>
       </div>
 
       {/* Row 2 : jauges + alertes paiements */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"5fr 4fr",gap:isMobile?12:16}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":isAdmin?"5fr 4fr":"1fr",gap:isMobile?12:16}}>
         {/* Jauge double */}
-        <Card title="Progression globale" icon="ti-target">
+        {isAdmin&&<Card title="Progression globale" icon="ti-target">
           {/* KPI globaux */}
-          {isAdmin&&<div style={{display:"flex",gap:16,marginBottom:20}}>
+          <div style={{display:"flex",gap:16,marginBottom:20}}>
             <div style={{flex:1,background:C.page,borderRadius:C.r,padding:"12px 16px"}}>
               <div style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>Taux de facturation</div>
               <div style={{fontSize:22,fontWeight:800,color:txFact>=80?C.greenDk:txFact>=50?C.amberDk:C.redDk,marginBottom:8}}>{txFact.toFixed(1)}%</div>
@@ -1679,7 +1679,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
               <div style={{fontSize:22,fontWeight:800,color:txPay>=80?C.greenDk:txPay>=50?C.amberDk:C.redDk,marginBottom:8}}>{txPay.toFixed(1)}%</div>
               <Track val={txPay} max={100} color={txPay>=80?C.green:txPay>=50?C.amber:C.red} h={8}/>
             </div>
-          </div>}
+          </div>
           {/* Par client */}
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             {cStats.filter((c:any)=>c.totalPO>0).map((c:any)=>{
@@ -1702,7 +1702,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
               );
             })}
           </div>
-        </Card>
+        </Card>}
 
         {/* Alertes & Échéances */}
         <Card title="Alertes & Échéances" icon="ti-bell-ringing" badge={echues.length>0?{n:echues.length,color:C.red}:upcoming.length>0?{n:upcoming.length,color:C.amber}:undefined}>
@@ -2892,6 +2892,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
             files={order.attachments||[]}
             entityId={order.id}
             entityType="order"
+            canEdit={perms?.canEdit}
             onAdd={(f:any)=>{const upd={...order,attachments:[...(order.attachments||[]),f]};if(onSaveOrder)onSaveOrder(upd);else onEditOrder(upd);}}
             onDel={(idx:number)=>{const a=[...(order.attachments||[])];a.splice(idx,1);const upd={...order,attachments:a};if(onSaveOrder)onSaveOrder(upd);else onEditOrder(upd);}}
           />
@@ -2958,7 +2959,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
 }
 
 // ─── FILE ATTACHMENTS ────────────────────────────────────────────────────────
-function FileAttachments({files,entityId,entityType,onAdd,onDel}:any){
+function FileAttachments({files,entityId,entityType,onAdd,onDel,canEdit=true}:any){
   const[uploading,setUploading]=useState(false);
   const[error,setError]=useState<string|null>(null);
   const inputRef=useRef<HTMLInputElement>(null);
@@ -3005,12 +3006,12 @@ function FileAttachments({files,entityId,entityType,onAdd,onDel}:any){
         <div>
           <input ref={inputRef} type="file" style={{display:"none"}} onChange={handleUpload}
             accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"/>
-          <button onClick={()=>inputRef.current?.click()} disabled={uploading}
+          {canEdit&&<button onClick={()=>inputRef.current?.click()} disabled={uploading}
             style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:uploading?"not-allowed":"pointer",opacity:uploading?.6:1}}>
             {uploading
               ?<><i className="ti ti-loader-2 rotating" style={{fontSize:13}} aria-hidden="true"/> Envoi…</>
               :<><i className="ti ti-upload" style={{fontSize:13}} aria-hidden="true"/> Joindre un fichier</>}
-          </button>
+          </button>}
         </div>
       </div>
       {error&&<div style={{fontSize:11,color:C.redDk,background:C.redL,borderRadius:4,padding:"4px 8px",marginBottom:8}}>{error}</div>}
@@ -3030,7 +3031,7 @@ function FileAttachments({files,entityId,entityType,onAdd,onDel}:any){
                   <i className="ti ti-download" style={{fontSize:12}} aria-hidden="true"/> Ouvrir
                 </a>
                 <button onClick={()=>handleDel(i,f.path)}
-                  style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0}}>
+                  style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:24,height:24,display:canEdit?"flex":"none",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0}}>
                   <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/>
                 </button>
               </div>
