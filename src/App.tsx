@@ -567,6 +567,7 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
   const[users,setUsers]=useState<any[]>([]);
   const[newName,setNewName]=useState("");
   const[newPin,setNewPin]=useState("");
+  const[newShowPin,setNewShowPin]=useState(false);
   const[newRole,setNewRole]=useState("user");
   const[newClientAccess,setNewClientAccess]=useState(""); // "" = full access
   const[msg,setMsg]=useState("");
@@ -576,6 +577,9 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
   const[editClientAccess,setEditClientAccess]=useState("");
   const[editShowPin,setEditShowPin]=useState(false);
   const[expandPerms,setExpandPerms]=useState<number|null>(null);
+  const[revealedIdx,setRevealedIdx]=useState<Set<number>>(new Set());
+  const toggleReveal=(idx:number)=>setRevealedIdx(prev=>{const next=new Set(prev);if(next.has(idx))next.delete(idx);else next.add(idx);return next;});
+  const genPin=()=>Math.floor(1000+Math.random()*9000).toString();
   const K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
   const B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
 
@@ -641,7 +645,7 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
     if(newPin.length<4){setMsg("Le code doit avoir au moins 4 caractères");return;}
     if(users.find((u:any)=>u.pin===newPin)){setMsg("Ce code est déjà utilisé");return;}
     const updated=[...users,{name:newName,pin:newPin,role:newRole,clientAccess:newRole==="admin"?"":newClientAccess,perms:{...DEFAULT_PERMS}}];
-    saveUsers(updated);setNewName("");setNewPin("");setNewClientAccess("");
+    saveUsers(updated);setNewName("");setNewPin("");setNewClientAccess("");setNewShowPin(false);
   };
   const delUser=(idx:number)=>{
     if(!window.confirm("Supprimer cet utilisateur ?"))return;
@@ -649,6 +653,7 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
   };
   const startEdit=(idx:number)=>{
     setEditIdx(idx);setEditName(users[idx].name);setEditPin("");setEditClientAccess(users[idx].clientAccess||"");setEditShowPin(false);
+    setExpandPerms(idx);
   };
   useEffect(()=>{
     if(!focusClient||users.length===0)return;
@@ -690,9 +695,19 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
           {msg&&<div style={{background:msg.startsWith("✓")?"#D1FAE5":"#FEE2E2",color:msg.startsWith("✓")?"#065F46":"#B91C1C",padding:"8px 12px",borderRadius:6,marginBottom:12,fontSize:12,fontWeight:600}}>{msg}</div>}
           <div style={{marginBottom:16}}>
             <div style={{fontSize:12,fontWeight:600,color:"#0D1B2A",marginBottom:8}}>Ajouter un utilisateur</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 120px 100px",gap:8,marginBottom:8}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 100px",gap:8,marginBottom:8}}>
               <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Nom" style={{padding:"8px 10px",border:"1px solid #E5EAF0",borderRadius:6,fontSize:12,fontFamily:"inherit"}}/>
-              <input value={newPin} onChange={e=>setNewPin(e.target.value)} placeholder="Code PIN" type="password" style={{padding:"8px 10px",border:"1px solid #E5EAF0",borderRadius:6,fontSize:12,fontFamily:"inherit"}}/>
+              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                <input value={newPin} onChange={e=>setNewPin(e.target.value)} placeholder="Code PIN" type={newShowPin?"text":"password"}
+                  style={{padding:"8px 10px",border:"1px solid #E5EAF0",borderRadius:6,fontSize:12,fontFamily:"inherit",flex:1,minWidth:0}}/>
+                <button onClick={()=>setNewShowPin(!newShowPin)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#8FA0B3",padding:2,flexShrink:0}}>
+                  <i className={`ti ${newShowPin?"ti-eye-off":"ti-eye"}`} style={{fontSize:14}} aria-hidden="true"/>
+                </button>
+                <button onClick={()=>{setNewPin(genPin());setNewShowPin(true);}} title="Générer un code"
+                  style={{background:"#F3E8FF",border:"none",borderRadius:5,cursor:"pointer",color:"#7C3AED",padding:"6px 8px",fontSize:11,fontWeight:600,display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+                  <i className="ti ti-dice" style={{fontSize:12}} aria-hidden="true"/>
+                </button>
+              </div>
               <select value={newRole} onChange={e=>setNewRole(e.target.value)} style={{padding:"8px 10px",border:"1px solid #E5EAF0",borderRadius:6,fontSize:12}}>
                 <option value="user">Utilisateur</option>
                 <option value="admin">Admin</option>
@@ -732,9 +747,13 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
                           <button onClick={()=>setEditShowPin(!editShowPin)} style={{background:"transparent",border:"none",cursor:"pointer",color:"#8FA0B3",padding:2}}>
                             <i className={`ti ${editShowPin?"ti-eye-off":"ti-eye"}`} style={{fontSize:13}} aria-hidden="true"/>
                           </button>
+                          <button onClick={()=>{setEditPin(genPin());setEditShowPin(true);}} title="Générer un nouveau code"
+                            style={{background:"#F3E8FF",border:"none",borderRadius:5,cursor:"pointer",color:"#7C3AED",padding:"4px 7px",fontSize:10.5,fontWeight:600,display:"flex",alignItems:"center",gap:3}}>
+                            <i className="ti ti-dice" style={{fontSize:12}} aria-hidden="true"/> Générer
+                          </button>
                         </div>
                         <button onClick={saveEdit} style={{background:"#2563EB",color:"#fff",border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>✓</button>
-                        <button onClick={()=>setEditIdx(null)} style={{background:"#F1F5F9",color:"#6B7280",border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,cursor:"pointer"}}>✕</button>
+                        <button onClick={()=>{setEditIdx(null);setExpandPerms(null);}} style={{background:"#F1F5F9",color:"#6B7280",border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,cursor:"pointer"}}>✕</button>
                       </div>
                       {u.role!=="admin"&&(
                         <select value={editClientAccess} onChange={e=>setEditClientAccess(e.target.value)} style={{padding:"5px 8px",border:"1px solid #93C5FD",borderRadius:5,fontSize:11.5,fontFamily:"inherit"}}>
@@ -749,8 +768,11 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
                         {u.name}
                         {u.clientAccess&&<span style={{fontSize:9.5,fontWeight:700,color:"#7C3AED",background:"#F3E8FF",padding:"1px 7px",borderRadius:99,display:"flex",alignItems:"center",gap:3}}><i className="ti ti-lock" style={{fontSize:9}} aria-hidden="true"/>{u.clientAccess}</span>}
                       </div>
-                      <div style={{fontSize:11,color:"#8FA0B3"}}>
-                        {u.role==="admin"?"Administrateur":u.clientAccess?"Accès client (limité)":"Utilisateur"} · Code : {"•".repeat(u.pin?.length||4)}
+                      <div style={{fontSize:11,color:"#8FA0B3",display:"flex",alignItems:"center",gap:5}}>
+                        {u.role==="admin"?"Administrateur":u.clientAccess?"Accès client (limité)":"Utilisateur"} · Code : {revealedIdx.has(i)?<strong style={{color:"#0D1B2A",fontFamily:"monospace",letterSpacing:".05em"}}>{u.pin}</strong>:"•".repeat(u.pin?.length||4)}
+                        <button onClick={()=>toggleReveal(i)} style={{background:"none",border:"none",color:"#8FA0B3",cursor:"pointer",padding:0,display:"flex"}} title={revealedIdx.has(i)?"Masquer":"Afficher le code"}>
+                          <i className={`ti ${revealedIdx.has(i)?"ti-eye-off":"ti-eye"}`} style={{fontSize:12}} aria-hidden="true"/>
+                        </button>
                       </div>
                     </div>
                   )}
@@ -759,7 +781,7 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
                       style={{background:expandPerms===i?"#EDE9FE":"#F3E8FF",color:"#7C3AED",border:"none",borderRadius:5,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
                       <i className="ti ti-lock" style={{fontSize:13}} aria-hidden="true"/>
                     </button>}
-                    <button onClick={()=>editIdx===i?setEditIdx(null):startEdit(i)} title="Modifier"
+                    <button onClick={()=>{if(editIdx===i){setEditIdx(null);setExpandPerms(null);}else startEdit(i);}} title="Modifier"
                       style={{background:"#DBEAFE",color:"#2563EB",border:"none",borderRadius:5,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
                       <i className="ti ti-edit" style={{fontSize:13}} aria-hidden="true"/>
                     </button>
@@ -970,7 +992,6 @@ export default function App(){
   const[sideOpen,setSideOpen]=useState(true);
   const[mobileMenuOpen,setMobileMenuOpen]=useState(false);
   const[selYear,setSelYear]=useState<number>(new Date().getFullYear());
-  const[showSearch,setShowSearch]=useState(false);
   const[lang,setLang]=useState<Lang>("fr");
   const[syncStatus,setSyncStatus]=useState<"idle"|"syncing"|"ok"|"offline"|"error">("idle");
   const[lastSync,setLastSync]=useState<string|null>(null);
@@ -1313,7 +1334,6 @@ export default function App(){
           {sideOpen&&<p style={{fontSize:10,color:"#374151",fontWeight:600,letterSpacing:".07em",textTransform:"uppercase",padding:"8px 6px 4px",margin:0}}>Général</p>}
           <SBtn icon="ti-layout-dashboard" label={t(lang,"nav_dashboard")} active={page==="kpi"} open={sideOpen} onClick={()=>{setPage("kpi");if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-table-column" label={t(lang,"nav_compilation")} active={page==="dashboard"} open={sideOpen} onClick={()=>{setPage("dashboard");if(isMobile)setMobileMenuOpen(false);}}/>
-          <SBtn icon="ti-search" label={t(lang,"nav_search")} active={false} open={sideOpen} onClick={()=>{setShowSearch(true);if(isMobile)setMobileMenuOpen(false);}}/>
           <SBtn icon="ti-chart-area-line" label="Trésorerie" active={page==="tresorerie"} open={sideOpen} onClick={()=>{setPage("tresorerie");if(isMobile)setMobileMenuOpen(false);}}/>
           {!restrictedClient&&perms.canViewReports&&<SBtn icon="ti-file-report" label="Weekly Report" active={page==="rapport"} open={sideOpen} onClick={()=>{setPage("rapport");if(isMobile)setMobileMenuOpen(false);}}/>}
           <SBtn icon="ti-receipt" label="Catalogue & Devis" active={page==="catalogue"} open={sideOpen} onClick={()=>{setPage("catalogue");if(isMobile)setMobileMenuOpen(false);}}/>
@@ -1457,14 +1477,6 @@ export default function App(){
           {modal.type==="report"&&<ReportModal clients={visibleClients} data={data} configs={configs} lang={lang} onClose={()=>setModal(null)}/>}
         </div>
       )}
-      {showSearch&&<SearchOverlay clients={visibleClients} data={data} lang={lang}
-        navigate={(client:string,orderId:string|null)=>{
-          if(restrictedClient&&client!==restrictedClient)return;
-          setFocusOrderId(orderId);
-          setPage(client);
-          setShowSearch(false);
-        }}
-        onClose={()=>setShowSearch(false)}/>}
     </div>
   );
 }
@@ -9202,127 +9214,6 @@ function TresoreriePage({getAllOrders,clients,lang,isMobile}:any){
   );
 }
 
-// ─── SEARCH OVERLAY ──────────────────────────────────────────────────────────
-function SearchOverlay({clients,data,navigate,onClose,lang="fr"}:any){
-  const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
-  const[q,setQ]=useState("");
-  const ref=React.useRef<HTMLInputElement>(null);
-  React.useEffect(()=>{ref.current?.focus();},[]);
-
-  const results:any[]=[];
-  if(q.trim().length>=2){
-    const lq=q.trim().toLowerCase();
-    (clients||[]).forEach((c:string)=>{
-      (data?.[c]||[]).forEach((o:any)=>{
-        const match=(v:string)=>String(v||"").toLowerCase().includes(lq);
-        if(match(o.poNumber)||match(o.soNumber)||match(o.notes)){
-          // Compute invoice/payment info for preview
-          const totInv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
-          const totPaid=(o.invoices||[]).reduce((s:number,i:any)=>s+(i.payments||[]).reduce((ss:number,p:any)=>ss+(+p.amount||0),0),0);
-          const open=Math.max(0,(+o.amount||0)-totInv);
-          results.push({type:"order",client:c,label:o.poNumber,sub:`S/O ${o.soNumber||"—"} · ${o.status||""}`,amount:+o.amount||0,orderId:o.id,
-            extra:{date:o.date,status:o.status,amount:+o.amount||0,invoiced:totInv,paid:totPaid,open,nb:(o.invoices||[]).length}});
-        }
-        (o.invoices||[]).forEach((i:any)=>{
-          if(match(i.invoiceNumber)||match(i.notes)){
-            const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
-            const ps=payStatus(i);
-            results.push({type:"invoice",client:c,label:i.invoiceNumber,sub:`PO ${o.poNumber} · ${fmt(+i.amount||0)} €`,amount:+i.amount||0,orderId:o.id,
-              extra:{date:i.date,dueDate:i.dueDate,amount:+i.amount||0,paid,rem:ps.rem,psLabel:ps.label,psColor:ps.color,psBg:ps.bg,poNumber:o.poNumber}});
-          }
-          (i.payments||[]).forEach((p:any)=>{
-            if(match(p.reference)||match(p.notes)){
-              results.push({type:"payment",client:c,label:`Paiement ${p.reference||"—"}`,sub:`Facture ${i.invoiceNumber} · ${fmt(+p.amount||0)} €`,amount:+p.amount||0,orderId:o.id,
-                extra:{date:p.date,method:p.method,reference:p.reference,amount:+p.amount||0,invoiceNumber:i.invoiceNumber,poNumber:o.poNumber}});
-            }
-          });
-        });
-      });
-    });
-  }
-
-  const typeIcon:any={order:"ti-clipboard-list",invoice:"ti-receipt",payment:"ti-coin"};
-  const typeColor:any={order:C.blue,invoice:C.teal,payment:C.green};
-  const typeLabel:any={order:"Commande",invoice:"Facture",payment:"Paiement"};
-
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",zIndex:200,display:"flex",flexDirection:"column",alignItems:"center",paddingTop:80,backdropFilter:"blur(3px)"}} onClick={(e:any)=>{if(e.target===e.currentTarget)onClose();}}>
-      <div style={{width:600,maxWidth:"94vw",background:"#fff",borderRadius:C.rLg,boxShadow:"0 20px 60px rgba(0,0,0,.25)",overflow:"hidden"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"14px 18px",borderBottom:`1px solid ${C.b}`}}>
-          <i className="ti ti-search" style={{fontSize:18,color:C.t3}} aria-hidden="true"/>
-          <input ref={ref} value={q} onChange={e=>setQ(e.target.value)} placeholder={tr("search_placeholder")} style={{flex:1,border:"none",outline:"none",fontSize:14,color:C.t1,fontFamily:"inherit"}}/>
-          {q&&<button onClick={()=>setQ("")} style={{background:"none",border:"none",color:C.t3,cursor:"pointer",fontSize:16}}><i className="ti ti-x" aria-hidden="true"/></button>}
-          <button onClick={onClose} style={{background:"#F1F5F9",border:"none",color:C.t3,cursor:"pointer",borderRadius:5,padding:"4px 8px",fontSize:11}}>Esc</button>
-        </div>
-        <div style={{maxHeight:440,overflowY:"auto"}}>
-          {q.trim().length<2&&(
-            <div style={{padding:"32px 20px",textAlign:"center",color:C.t3}}>
-              <i className="ti ti-search" style={{fontSize:32,display:"block",marginBottom:8,opacity:.4}} aria-hidden="true"/>
-              <div style={{fontSize:13}}>Tapez au moins 2 caractères pour rechercher</div>
-            </div>
-          )}
-          {q.trim().length>=2&&results.length===0&&(
-            <div style={{padding:"32px 20px",textAlign:"center",color:C.t3}}>
-              <i className="ti ti-search-off" style={{fontSize:32,display:"block",marginBottom:8,opacity:.4}} aria-hidden="true"/>
-              <div style={{fontSize:13}}>Aucun résultat pour « {q} »</div>
-            </div>
-          )}
-          {results.slice(0,20).map((r,i)=>(
-            <div key={i} onClick={()=>navigate(r.client, r.orderId||null)}
-              style={{display:"flex",flexDirection:"column",gap:0,padding:"12px 18px",cursor:"pointer",borderBottom:`1px solid ${C.b}`,transition:"background .1s"}}
-              onMouseEnter={(e:any)=>e.currentTarget.style.background="#F8FAFC"}
-              onMouseLeave={(e:any)=>e.currentTarget.style.background="transparent"}>
-              {/* Main row */}
-              <div style={{display:"flex",alignItems:"center",gap:12}}>
-                <div style={{width:32,height:32,borderRadius:8,background:typeColor[r.type]+"18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <i className={`ti ${typeIcon[r.type]}`} style={{fontSize:15,color:typeColor[r.type]}} aria-hidden="true"/>
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:700,fontSize:13,color:C.t1}}>{r.label}</div>
-                  <div style={{fontSize:11,color:C.t3,marginTop:1}}>{r.sub}</div>
-                </div>
-                <div style={{textAlign:"right",flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
-                  <div style={{fontSize:11,background:typeColor[r.type]+"18",color:typeColor[r.type],padding:"2px 8px",borderRadius:4,fontWeight:600}}>{typeLabel[r.type]}</div>
-                  <div style={{fontSize:11,color:C.t3}}>{r.client}</div>
-                </div>
-              </div>
-              {/* Detail preview */}
-              {r.extra&&<div style={{marginTop:8,marginLeft:44,display:"flex",flexWrap:"wrap",gap:6}}>
-                {r.type==="order"&&<>
-                  <Chip label={`PO : ${fmt(r.extra.amount)} €`} c={C.blue}/>
-                  <Chip label={`Facturé : ${fmt(r.extra.invoiced)} €`} c={C.teal}/>
-                  <Chip label={`Encaissé : ${fmt(r.extra.paid)} €`} c={C.green}/>
-                  {r.extra.open>0&&<Chip label={`Reste : ${fmt(r.extra.open)} €`} c={C.amber}/>}
-                  <Chip label={`${r.extra.nb} facture${r.extra.nb>1?"s":""}`} c={C.t3}/>
-                  <Chip label={fmtD(r.extra.date)} c={C.t3}/>
-                </>}
-                {r.type==="invoice"&&<>
-                  <Chip label={`PO ${r.extra.poNumber}`} c={C.blue}/>
-                  <Chip label={`${fmt(r.extra.amount)} €`} c={C.teal}/>
-                  {r.extra.paid>0&&<Chip label={`Payé : ${fmt(r.extra.paid)} €`} c={C.green}/>}
-                  {r.extra.rem>0&&<Chip label={`Reste : ${fmt(r.extra.rem)} €`} c={r.extra.psColor}/>}
-                  <span style={{fontSize:10,background:r.extra.psBg,color:r.extra.psColor,padding:"2px 7px",borderRadius:4,fontWeight:600}}>{r.extra.psLabel}</span>
-                  {r.extra.dueDate&&<Chip label={`Échéance : ${fmtD(r.extra.dueDate)}`} c={C.t3}/>}
-                </>}
-                {r.type==="payment"&&<>
-                  <Chip label={`PO ${r.extra.poNumber}`} c={C.blue}/>
-                  <Chip label={`Facture ${r.extra.invoiceNumber}`} c={C.teal}/>
-                  <Chip label={`${fmt(r.extra.amount)} €`} c={C.green}/>
-                  {r.extra.method&&<Chip label={r.extra.method} c={C.t3}/>}
-                  <Chip label={fmtD(r.extra.date)} c={C.t3}/>
-                </>}
-              </div>}
-              <div style={{marginTop:8,marginLeft:44,fontSize:11,color:typeColor[r.type],fontWeight:500,display:"flex",alignItems:"center",gap:4}}>
-                <i className="ti ti-arrow-right" style={{fontSize:12}} aria-hidden="true"/> Cliquer pour ouvrir et modifier
-              </div>
-            </div>
-          ))}
-          {results.length>20&&<div style={{padding:"10px 18px",textAlign:"center",fontSize:11,color:C.t3}}>+{results.length-20} résultats — affinez votre recherche</div>}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function Chip({label,c}:any){return<span style={{fontSize:10,background:c+"18",color:c,padding:"2px 7px",borderRadius:4,fontWeight:500,whiteSpace:"nowrap"}}>{label}</span>;}
 
