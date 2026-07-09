@@ -7254,7 +7254,123 @@ const emptyProject=()=>({
   createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(),
   comments:"",
   history:[] as any[],
+  archived:false,
 });
+const ARCHIVE_AFTER_DAYS=180; // closed opportunities older than this can be archived
+
+// Fuzzy duplicate detection: same party name (or same project name) with a
+// similar offer amount (within 15%). Flags pairs for review — never blocks
+// saving, since two genuinely distinct deals can share a client and budget.
+function findPotentialDuplicates(projects:any[]){
+  const pairs:any[]=[];
+  for(let i=0;i<projects.length;i++){
+    for(let j=i+1;j<projects.length;j++){
+      const a=projects[i],b=projects[j];
+      const sameParty=a.partyName&&b.partyName&&a.partyName.trim().toLowerCase()===b.partyName.trim().toLowerCase();
+      const sameName=a.name&&b.name&&a.name.trim().toLowerCase()===b.name.trim().toLowerCase();
+      if(!sameParty&&!sameName)continue;
+      const amtA=+a.offerAmount||0,amtB=+b.offerAmount||0;
+      const maxAmt=Math.max(amtA,amtB,1);
+      const closeAmount=Math.abs(amtA-amtB)/maxAmt<=0.15;
+      if(sameName||( sameParty&&closeAmount))pairs.push({a,b,reason:sameName?"Même nom de projet":"Même intervenant, montant proche"});
+    }
+  }
+  return pairs;
+}
+function findDuplicatesOf(current:any,others:any[]){
+  return others.filter((o:any)=>{
+    if(o.id===current.id)return false;
+    const sameParty=current.partyName&&o.partyName&&current.partyName.trim().toLowerCase()===o.partyName.trim().toLowerCase();
+    const sameName=current.name&&o.name&&current.name.trim().toLowerCase()===o.name.trim().toLowerCase();
+    if(!sameParty&&!sameName)return false;
+    const amtA=+current.offerAmount||0,amtB=+o.offerAmount||0;
+    const maxAmt=Math.max(amtA,amtB,1);
+    const closeAmount=Math.abs(amtA-amtB)/maxAmt<=0.15;
+    return sameName||(sameParty&&closeAmount);
+  });
+}
+
+// ── Excel import: opportunities CRM export (same format as OPPORTUNITIES_*.xlsx) ──
+// Loads SheetJS from CDN (with cellDates so date cells resolve to JS Date
+// objects directly), auto-detects the header row (a title row may precede
+// it), and maps flexible column names to our project fields.
+const loadXLSXLib=():Promise<any>=>new Promise((resolve,reject)=>{
+  if((window as any).XLSX){resolve((window as any).XLSX);return;}
+  const s=document.createElement("script");
+  s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+  s.onload=()=>resolve((window as any).XLSX);
+  s.onerror=()=>reject(new Error("XLSX load failed"));
+  document.head.appendChild(s);
+});
+
+const excelCellToDateStr=(v:any):string=>{
+  if(v===undefined||v===null||v==="")return"";
+  if(v instanceof Date)return isNaN(v.getTime())?"":v.toISOString().slice(0,10);
+  if(typeof v==="number"){const d=new Date(Math.round((v-25569)*86400*1000));return isNaN(d.getTime())?"":d.toISOString().slice(0,10);}
+  if(typeof v==="string"){const d=new Date(v);return isNaN(d.getTime())?"":d.toISOString().slice(0,10);}
+  return"";
+};
+const OPP_PHASE_MAP:Record<string,string>={
+  "identification":"Identification","initiation":"Initiation","offer/quotation":"Offer/Quotation",
+  "negotiation":"Negotiation","order fulfilment":"Completed/Closed","order fulfillment":"Completed/Closed",
+  "completed/closed":"Completed/Closed","after sales":"After-sales","after-sales":"After-sales",
+};
+
+async function parseOpportunitiesFile(file:File):Promise<{items:any[],rowsFound:number,error?:string}>{
+  let XLSX:any;
+  try{XLSX=await loadXLSXLib();}catch{return{items:[],rowsFound:0,error:"Impossible de charger la librairie Excel. Vérifie ta connexion internet."};}
+  const buf=await file.arrayBuffer();
+  let rows:any[][];
+  try{
+    const wb=XLSX.read(new Uint8Array(buf),{type:"array",cellDates:true});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true});
+  }catch{return{items:[],rowsFound:0,error:"Fichier illisible — vérifie qu'il s'agit bien d'un .xlsx valide."};}
+
+  // find header row (contains 'ID' and 'Description') within the first 10 rows
+  let headerIdx=-1,headers:string[]=[];
+  for(let i=0;i<Math.min(10,rows.length);i++){
+    const norm=(rows[i]||[]).map((c:any)=>String(c||"").trim().toLowerCase());
+    if(norm.includes("id")&&norm.some(c=>c.includes("description"))){headerIdx=i;headers=norm;break;}
+  }
+  if(headerIdx===-1)return{items:[],rowsFound:0,error:"Colonnes attendues introuvables (ID, Description…). Le fichier ne semble pas être un export d'opportunités."};
+
+  const col=(...keys:string[])=>{for(const k of keys){const i=headers.findIndex(h=>h===k);if(i>=0)return i;}for(const k of keys){const i=headers.findIndex(h=>h.includes(k));if(i>=0)return i;}return-1;};
+  const iId=col("id"),iDesc=col("description"),iAmount=col("expected sales value"),iChance=col("chance of success"),
+    iOkNotOk=col("ok / not ok","ok/not ok"),iPhase=col("current phase"),iReason=col("reason"),
+    iCreated=col("created on"),iOrderDate=col("expected order date"),iInvDate=col("expected invoicing date","expected invoice date"),
+    iLastChanged=col("last changed date"),iComments=col("comments");
+
+  const items:any[]=[];
+  for(let r=headerIdx+1;r<rows.length;r++){
+    const row=rows[r]||[];
+    const idVal=iId>=0?row[iId]:"";
+    if(!idVal||!/^\d+$/.test(String(idVal).trim()))continue; // skip title/footer/blank rows
+    const okNotOk=iOkNotOk>=0?String(row[iOkNotOk]||"").toUpperCase():"";
+    const ongoing=okNotOk.includes("OPEN");
+    const phaseRaw=iPhase>=0?String(row[iPhase]||"").trim().toLowerCase():"";
+    const phase=OPP_PHASE_MAP[phaseRaw]||"Identification";
+    const reason=iReason>=0?String(row[iReason]||"").trim():"";
+    const status=ongoing?"Open":"Competitor gets the order-lost";
+    const createdStr=iCreated>=0?excelCellToDateStr(row[iCreated]):"";
+    const lastChangedStr=iLastChanged>=0?excelCellToDateStr(row[iLastChanged]):"";
+    const chanceRaw=iChance>=0?+row[iChance]||0:0;
+    items.push({
+      oppId:String(idVal).trim(),
+      name:iDesc>=0?String(row[iDesc]||"").trim():"",
+      offerAmount:iAmount>=0?Math.round((+row[iAmount]||0)*100)/100:0,
+      chanceOfSuccess:Math.round(chanceRaw*100),
+      ongoing, phase, status, reason,
+      processingDate:createdStr||todayStr(),
+      expectedOrderDate:iOrderDate>=0?excelCellToDateStr(row[iOrderDate]):"",
+      expectedInvoiceDate:iInvDate>=0?excelCellToDateStr(row[iInvDate]):"",
+      createdAt:createdStr?createdStr+"T00:00:00.000Z":new Date().toISOString(),
+      updatedAt:lastChangedStr?lastChangedStr+"T00:00:00.000Z":(createdStr?createdStr+"T00:00:00.000Z":new Date().toISOString()),
+      comments:iComments>=0?String(row[iComments]||"").trim():"",
+    });
+  }
+  return{items,rowsFound:items.length};
+}
 
 // Builds audit-trail entries by diffing tracked fields between the previous
 // and the new version of a project. Used to keep a lightweight change log
@@ -7404,7 +7520,7 @@ function fieldValueAsOf(p:any,label:string,cutoffMs:number,currentVal:any){
   return found?val:events[0].from;
 }
 
-function ProjectModal({project,onSave,onClose}:any){
+function ProjectModal({project,otherProjects,onSave,onClose}:any){
   const isEdit=!!project;
   const [f,setF]=useState<any>(project?{...project}:emptyProject());
   const s=(k:string,v:any)=>setF((p:any)=>({...p,[k]:v}));
@@ -7416,6 +7532,7 @@ function ProjectModal({project,onSave,onClose}:any){
   const isMobile=window.innerWidth<768;
   const canSave=f.name.trim()||f.description.trim();
   const needsReason=!f.ongoing||f.status==="Inactive";
+  const duplicates=findDuplicatesOf(f,otherProjects||[]);
   const dateError=
     (f.expectedOrderDate&&f.processingDate&&f.expectedOrderDate<f.processingDate)
       ?"La date de commande prévue ne peut pas être antérieure à la date de traitement du projet."
@@ -7451,6 +7568,12 @@ function ProjectModal({project,onSave,onClose}:any){
 
             <Sel label="Intervenant — type" value={f.partyType} onChange={(v:any)=>s("partyType",v)} options={PARTY_TYPES}/>
             <Fld label="Intervenant — nom" value={f.partyName} onChange={(v:any)=>s("partyName",v)} placeholder="Nom de la société"/>
+            {duplicates.length>0&&(
+              <div style={{gridColumn:"span 2",display:"flex",alignItems:"flex-start",gap:6,fontSize:11.5,color:C.amberDk,background:C.amberL,border:`1px solid ${C.amber}`,borderRadius:C.rSm,padding:"8px 10px"}}>
+                <i className="ti ti-copy" style={{fontSize:13,marginTop:1,flexShrink:0}} aria-hidden="true"/>
+                <span>Doublon potentiel : {duplicates.map((d:any)=>(d.oppId?`[${d.oppId}] `:"")+(d.name||d.description?.slice(0,30)||"projet similaire")).join(", ")}. Vérifie qu'il ne s'agit pas de la même opportunité déjà saisie.</span>
+              </div>
+            )}
 
             <div style={{gridColumn:"span 2"}}>
               <Label t="Type de pompes (informatif)"/>
@@ -7527,7 +7650,12 @@ function ProjectsPage({isMobile}:any){
   const[sortBy,setSortBy]=useState("deadline"); // deadline | amount | chance | recent
   const[showAlerts,setShowAlerts]=useState(true);
   const[showCalendar,setShowCalendar]=useState(true);
+  const[showDuplicates,setShowDuplicates]=useState(true);
   const[exportingXlsx,setExportingXlsx]=useState(false);
+  const[importPreview,setImportPreview]=useState<any>(null); // {toAdd:[],toUpdate:[]} | null
+  const[importBusy,setImportBusy]=useState(false);
+  const[importError,setImportError]=useState("");
+  const importFileRef=useRef<HTMLInputElement>(null);
   const[expandedId,setExpandedId]=useState<string|null>(null);
 
   const loadFromCloud=async(silent=false)=>{
@@ -7576,6 +7704,67 @@ function ProjectsPage({isMobile}:any){
     const histEntry={date:new Date().toISOString(),label:"State",from:x.ongoing?"Ongoing":"Closed",to:nextOngoing?"Ongoing":"Closed"};
     return{...x,ongoing:nextOngoing,reason:nextOngoing?"":x.reason,updatedAt:new Date().toISOString(),history:[...(x.history||[]),histEntry].slice(-50)};
   }));
+  const toggleArchived=(p:any)=>persist(projects.map((x:any)=>{
+    if(x.id!==p.id)return x;
+    const nextArchived=!x.archived;
+    const histEntry={date:new Date().toISOString(),label:"Archived",from:x.archived?"Yes":"No",to:nextArchived?"Yes":"No"};
+    return{...x,archived:nextArchived,history:[...(x.history||[]),histEntry].slice(-50)};
+  }));
+  const archiveOldClosed=()=>{
+    if(!window.confirm(`Archiver ${archivableCount} opportunité${archivableCount>1?"s":""} clôturée${archivableCount>1?"s":""} depuis plus de ${ARCHIVE_AFTER_DAYS} jours ?`))return;
+    const now=new Date().toISOString();
+    persist(projects.map((x:any)=>{
+      if(x.ongoing||x.archived||daysSince(x.updatedAt||x.createdAt)<=ARCHIVE_AFTER_DAYS)return x;
+      const histEntry={date:now,label:"Archived",from:"No",to:"Yes"};
+      return{...x,archived:true,history:[...(x.history||[]),histEntry].slice(-50)};
+    }));
+  };
+
+  const handleImportFileSelected=async(e:any)=>{
+    const file=e.target.files?.[0];
+    if(e.target)e.target.value=""; // allow re-selecting the same file later
+    if(!file)return;
+    setImportBusy(true);setImportError("");
+    const res=await parseOpportunitiesFile(file);
+    setImportBusy(false);
+    if(res.error){setImportError(res.error);return;}
+    if(res.items.length===0){setImportError("Aucune opportunité reconnue dans ce fichier.");return;}
+    const existingByOppId=new Map(projects.filter((p:any)=>p.oppId).map((p:any)=>[p.oppId,p]));
+    const toAdd:any[]=[],toUpdate:any[]=[];
+    res.items.forEach((item:any)=>{
+      const existing=existingByOppId.get(item.oppId);
+      if(existing)toUpdate.push({item,existing});
+      else toAdd.push(item);
+    });
+    setImportPreview({toAdd,toUpdate});
+  };
+
+  const confirmImport=()=>{
+    if(!importPreview)return;
+    const now=new Date().toISOString();
+    const updatedIds=new Set(importPreview.toUpdate.map((u:any)=>u.existing.id));
+    const merged=projects.map((x:any)=>{
+      const upd=importPreview.toUpdate.find((u:any)=>u.existing.id===x.id);
+      if(!upd)return x;
+      const item=upd.item;
+      const nextP={...x,offerAmount:item.offerAmount,chanceOfSuccess:item.chanceOfSuccess,ongoing:item.ongoing,
+        phase:item.phase,status:item.status,reason:item.reason||x.reason,
+        expectedOrderDate:item.expectedOrderDate||x.expectedOrderDate,expectedInvoiceDate:item.expectedInvoiceDate||x.expectedInvoiceDate,
+        comments:item.comments||x.comments,updatedAt:item.updatedAt};
+      const diff=buildHistoryDiff(x,nextP);
+      return{...nextP,history:[...(x.history||[]),...(diff.length?diff:[{date:now,label:"Imported",from:undefined,to:undefined}])].slice(-50)};
+    });
+    const newOnes=importPreview.toAdd.map((item:any)=>({
+      ...emptyProject(),
+      oppId:item.oppId,name:item.name,offerAmount:item.offerAmount,chanceOfSuccess:item.chanceOfSuccess,
+      ongoing:item.ongoing,phase:item.phase,status:item.status,reason:item.reason,
+      processingDate:item.processingDate,expectedOrderDate:item.expectedOrderDate,expectedInvoiceDate:item.expectedInvoiceDate,
+      createdAt:item.createdAt,updatedAt:item.updatedAt,comments:item.comments,
+      history:[{date:item.createdAt,label:"Created",from:undefined,to:undefined}],
+    }));
+    persist([...newOnes,...merged]);
+    setImportPreview(null);
+  };
 
   // ── KPIs ──
   const ongoingP=projects.filter((p:any)=>p.ongoing);
@@ -7630,6 +7819,8 @@ function ProjectsPage({isMobile}:any){
   const alerts=projectAlerts(projects);
   const redAlerts=alerts.filter((a:any)=>a.sev==="red").length;
   const calendarEvents=buildFollowUpCalendar(projects);
+  const duplicatePairs=findPotentialDuplicates(projects);
+  const archivableCount=projects.filter((p:any)=>!p.ongoing&&!p.archived&&daysSince(p.updatedAt||p.createdAt)>ARCHIVE_AFTER_DAYS).length;
 
   // phase distribution (count, all)
   const phaseDist=PHASES.map(ph=>({phase:ph,count:projects.filter((p:any)=>p.phase===ph).length}));
@@ -7676,7 +7867,11 @@ function ProjectsPage({isMobile}:any){
   // ── filters + sort ──
   const sq=search.trim().toLowerCase();
   let filtered=projects.filter((p:any)=>{
-    const matchOngoing=ongoingFilter==="all"||(ongoingFilter==="ongoing"?p.ongoing:!p.ongoing);
+    const matchOngoing=
+      ongoingFilter==="archived"?!!p.archived:
+      p.archived?false:
+      ongoingFilter==="all"?true:
+      ongoingFilter==="ongoing"?p.ongoing:!p.ongoing;
     const matchPhase=phaseFilter==="all"||p.phase===phaseFilter;
     const matchStatus=projStatusFilter==="all"||p.status===projStatusFilter;
     const matchSearch=!sq||[p.oppId,p.name,p.description,p.partyName,p.partyType,p.status,p.phase,p.reason,p.comments].some((v:any)=>String(v||"").toLowerCase().includes(sq));
@@ -7732,7 +7927,7 @@ function ProjectsPage({isMobile}:any){
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <style>{`@keyframes projHealthBlink{0%,100%{opacity:1}50%{opacity:.2}}`}</style>
-      {modal&&<ProjectModal project={modal===true?null:modal} onSave={handleSave} onClose={()=>setModal(null)}/>}
+      {modal&&<ProjectModal project={modal===true?null:modal} otherProjects={projects.filter((x:any)=>x.id!==(modal===true?null:modal)?.id)} onSave={handleSave} onClose={()=>setModal(null)}/>}
 
       {/* Header */}
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
@@ -7744,20 +7939,71 @@ function ProjectsPage({isMobile}:any){
           <p style={{margin:0,color:C.t3,fontSize:13}}>{projects.length} projet{projects.length>1?"s":""} · {ongoingP.length} en cours · {closedP.length} clôturé{closedP.length>1?"s":""}</p>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>printProjectsReport(projects,{pipelineTotal,pipelineWeighted,winRate,alerts,measurablePct,measurableAmount,staleAmount})}
+          <button onClick={()=>printProjectsReport(projects.filter((p:any)=>!p.archived),{pipelineTotal,pipelineWeighted,winRate,alerts,measurablePct,measurableAmount,staleAmount})}
             style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-file-report" style={{fontSize:14}} aria-hidden="true"/> Rapport PDF
           </button>
-          <button disabled={exportingXlsx} onClick={async()=>{setExportingXlsx(true);try{await exportProjectsExcel(projects,{pipelineTotal,pipelineWeighted,winRate,alerts,measurablePct,measurableAmount,staleAmount});}catch(e){alert("Erreur lors de la génération du fichier Excel.");}setExportingXlsx(false);}}
+          <button disabled={exportingXlsx} onClick={async()=>{setExportingXlsx(true);try{await exportProjectsExcel(projects.filter((p:any)=>!p.archived),{pipelineTotal,pipelineWeighted,winRate,alerts,measurablePct,measurableAmount,staleAmount});}catch(e){alert("Erreur lors de la génération du fichier Excel.");}setExportingXlsx(false);}}
             style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:exportingXlsx?"wait":"pointer",boxShadow:C.sh,opacity:exportingXlsx?.6:1}}>
             <i className={`ti ${exportingXlsx?"ti-loader-2":"ti-file-spreadsheet"}`} style={{fontSize:14}} aria-hidden="true"/> {exportingXlsx?"Génération…":"Export Excel"}
           </button>
+          <button disabled={importBusy} onClick={()=>importFileRef.current?.click()}
+            style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:600,cursor:importBusy?"wait":"pointer",boxShadow:C.sh,opacity:importBusy?.6:1}}>
+            <i className={`ti ${importBusy?"ti-loader-2":"ti-file-upload"}`} style={{fontSize:14}} aria-hidden="true"/> {importBusy?"Analyse…":"Importer"}
+          </button>
+          <input ref={importFileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={handleImportFileSelected}/>
           <button onClick={()=>setModal(true)}
             style={{display:"flex",alignItems:"center",gap:6,background:C.blue,border:"none",color:"#fff",borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-plus" style={{fontSize:14}} aria-hidden="true"/> Nouveau projet
           </button>
         </div>
       </div>
+
+      {importError&&(
+        <div style={{display:"flex",alignItems:"center",gap:8,background:C.redL,border:`1px solid ${C.red}`,borderRadius:C.rSm,padding:"9px 14px",fontSize:12,color:C.redDk}}>
+          <i className="ti ti-alert-triangle" style={{fontSize:14}} aria-hidden="true"/> {importError}
+          <button onClick={()=>setImportError("")} style={{marginLeft:"auto",background:"none",border:"none",color:C.redDk,cursor:"pointer",fontWeight:700}}>✕</button>
+        </div>
+      )}
+
+      {importPreview&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(2px)"}} onClick={()=>setImportPreview(null)}>
+          <div onClick={(e:any)=>e.stopPropagation()}>
+            <Modal title="Confirmer l'import" sub={`${importPreview.toAdd.length+importPreview.toUpdate.length} opportunité(s) détectée(s) dans le fichier`} width={520} onClose={()=>setImportPreview(null)}
+              footer={<>
+                <button onClick={()=>setImportPreview(null)} style={{background:"#F1F5F9",color:C.t2,border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Annuler</button>
+                <button onClick={confirmImport} style={{background:C.blue,color:"#fff",border:"none",borderRadius:C.rSm,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  <i className="ti ti-check" style={{fontSize:13,marginRight:6}} aria-hidden="true"/> Confirmer l'import
+                </button>
+              </>}>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{display:"flex",gap:10}}>
+                  <div style={{flex:1,background:C.greenL,borderRadius:C.rSm,padding:"10px 14px",textAlign:"center"}}>
+                    <div style={{fontSize:20,fontWeight:800,color:C.greenDk}}>{importPreview.toAdd.length}</div>
+                    <div style={{fontSize:11,color:C.greenDk}}>Nouvelles opportunités</div>
+                  </div>
+                  <div style={{flex:1,background:C.blueL,borderRadius:C.rSm,padding:"10px 14px",textAlign:"center"}}>
+                    <div style={{fontSize:20,fontWeight:800,color:C.blueDk}}>{importPreview.toUpdate.length}</div>
+                    <div style={{fontSize:11,color:C.blueDk}}>Mises à jour (ID déjà connu)</div>
+                  </div>
+                </div>
+                <div style={{maxHeight:220,overflowY:"auto",display:"flex",flexDirection:"column",gap:4,fontSize:12}}>
+                  {importPreview.toAdd.map((it:any,i:number)=>(
+                    <div key={"a"+i} style={{display:"flex",gap:8,padding:"5px 8px",background:"#F8FAFC",borderRadius:6}}>
+                      <span style={{color:C.green,fontWeight:700}}>+ NEW</span><span style={{color:C.t1}}>[{it.oppId}] {it.name}</span>
+                    </div>
+                  ))}
+                  {importPreview.toUpdate.map((u:any,i:number)=>(
+                    <div key={"u"+i} style={{display:"flex",gap:8,padding:"5px 8px",background:"#F8FAFC",borderRadius:6}}>
+                      <span style={{color:C.blue,fontWeight:700}}>↻ MAJ</span><span style={{color:C.t1}}>[{u.item.oppId}] {u.item.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Modal>
+          </div>
+        </div>
+      )}
 
       {/* Alerts */}
       {alerts.length>0&&(
@@ -7781,6 +8027,43 @@ function ProjectsPage({isMobile}:any){
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Potential duplicates */}
+      {duplicatePairs.length>0&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.amber}`,boxShadow:C.sh,overflow:"hidden"}}>
+          <button onClick={()=>setShowDuplicates(!showDuplicates)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",background:C.amberL,border:"none",cursor:"pointer"}}>
+            <span style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700,color:C.amberDk}}>
+              <i className="ti ti-copy" style={{fontSize:15}} aria-hidden="true"/> {duplicatePairs.length} doublon{duplicatePairs.length>1?"s":""} potentiel{duplicatePairs.length>1?"s":""}
+            </span>
+            <i className={`ti ${showDuplicates?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:14,color:C.amberDk}} aria-hidden="true"/>
+          </button>
+          {showDuplicates&&(
+            <div style={{maxHeight:220,overflowY:"auto"}}>
+              {duplicatePairs.map((d:any,i:number)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 16px",borderTop:`1px solid ${C.b}`,fontSize:12,flexWrap:"wrap"}}>
+                  <span onClick={()=>setModal(d.a)} style={{fontWeight:700,color:C.blue,cursor:"pointer"}}>{d.a.oppId?`[${d.a.oppId}] `:""}{d.a.name||d.a.description?.slice(0,25)||"Sans nom"}</span>
+                  <span style={{color:C.t3}}>↔</span>
+                  <span onClick={()=>setModal(d.b)} style={{fontWeight:700,color:C.blue,cursor:"pointer"}}>{d.b.oppId?`[${d.b.oppId}] `:""}{d.b.name||d.b.description?.slice(0,25)||"Sans nom"}</span>
+                  <span style={{color:C.t3,fontSize:11}}>— {d.reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Bulk archive suggestion */}
+      {archivableCount>0&&(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.rLg,padding:"10px 16px",fontSize:12.5,color:C.t2}}>
+          <span style={{display:"flex",alignItems:"center",gap:8}}>
+            <i className="ti ti-archive" style={{fontSize:14,color:C.t3}} aria-hidden="true"/>
+            {archivableCount} opportunité{archivableCount>1?"s":""} clôturée{archivableCount>1?"s":""} depuis plus de {ARCHIVE_AFTER_DAYS} jours peu{archivableCount>1?"vent":"t"} être archivée{archivableCount>1?"s":""}.
+          </span>
+          <button onClick={archiveOldClosed} style={{background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:6,padding:"6px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+            Archiver maintenant
+          </button>
         </div>
       )}
 
@@ -7976,6 +8259,7 @@ function ProjectsPage({isMobile}:any){
           <option value="all">Tous — état</option>
           <option value="ongoing">En cours</option>
           <option value="closed">Clôturé</option>
+          <option value="archived">Archivées</option>
         </select>
         <select value={phaseFilter} onChange={(e:any)=>setPhaseFilter(e.target.value)} style={{fontSize:12,padding:"7px 10px"}}>
           <option value="all">Toutes phases</option>
@@ -8031,6 +8315,7 @@ function ProjectsPage({isMobile}:any){
                       <span style={{fontSize:10,fontWeight:700,color:phaseMeta.color,background:phaseMeta.bg,padding:"2px 8px",borderRadius:99}}>{p.phase}</span>
                       <span style={{fontSize:10,fontWeight:700,color:statusMeta.color,background:statusMeta.bg,padding:"2px 8px",borderRadius:99}}>{p.status}</span>
                       {!p.ongoing&&<span style={{fontSize:10,fontWeight:700,color:C.t3,background:"#F1F5F9",padding:"2px 8px",borderRadius:99}}>CLÔTURÉ</span>}
+                      {p.archived&&<span style={{fontSize:10,fontWeight:700,color:"#fff",background:C.t3,padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:3}}><i className="ti ti-archive" style={{fontSize:9}} aria-hidden="true"/>ARCHIVÉ</span>}
                       {p.ongoing&&!upToDate&&<span title="Sans mise à jour récente" style={{fontSize:10,fontWeight:700,color:C.amberDk,background:C.amberL,padding:"2px 8px",borderRadius:99}}><i className="ti ti-alarm" style={{fontSize:10}} aria-hidden="true"/> à relancer</span>}
                     </div>
                     <div style={{fontSize:11.5,color:C.t3,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -8104,6 +8389,11 @@ function ProjectsPage({isMobile}:any){
                       <button onClick={()=>toggleOngoing(p)} style={{display:"flex",alignItems:"center",gap:5,background:"#F1F5F9",color:C.t2,border:"none",borderRadius:6,padding:"7px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
                         <i className={`ti ${p.ongoing?"ti-check":"ti-refresh"}`} style={{fontSize:12}} aria-hidden="true"/> {p.ongoing?"Marquer clôturé":"Rouvrir"}
                       </button>
+                      {!p.ongoing&&(
+                        <button onClick={()=>toggleArchived(p)} style={{display:"flex",alignItems:"center",gap:5,background:"#F1F5F9",color:C.t2,border:"none",borderRadius:6,padding:"7px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
+                          <i className={`ti ${p.archived?"ti-archive-off":"ti-archive"}`} style={{fontSize:12}} aria-hidden="true"/> {p.archived?"Désarchiver":"Archiver"}
+                        </button>
+                      )}
                       <button onClick={()=>printOneProject(p)} style={{display:"flex",alignItems:"center",gap:5,background:C.tealL,color:C.teal,border:"none",borderRadius:6,padding:"7px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
                         <i className="ti ti-file-report" style={{fontSize:12}} aria-hidden="true"/> Rapport PDF
                       </button>
