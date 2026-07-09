@@ -7261,18 +7261,20 @@ const ARCHIVE_AFTER_DAYS=180; // closed opportunities older than this can be arc
 // Fuzzy duplicate detection: same party name (or same project name) with a
 // similar offer amount (within 15%). Flags pairs for review — never blocks
 // saving, since two genuinely distinct deals can share a client and budget.
+// Only flags genuinely strong signals of duplication: the exact same project
+// name (typo-free re-entry) or the same opportunity ID entered twice.
+// Sharing a distributor/party with a similar amount is NOT used anymore —
+// the same wholesaler routinely has many distinct concurrent opportunities,
+// which made that heuristic produce mostly false positives.
 function findPotentialDuplicates(projects:any[]){
   const pairs:any[]=[];
   for(let i=0;i<projects.length;i++){
     for(let j=i+1;j<projects.length;j++){
       const a=projects[i],b=projects[j];
-      const sameParty=a.partyName&&b.partyName&&a.partyName.trim().toLowerCase()===b.partyName.trim().toLowerCase();
-      const sameName=a.name&&b.name&&a.name.trim().toLowerCase()===b.name.trim().toLowerCase();
-      if(!sameParty&&!sameName)continue;
-      const amtA=+a.offerAmount||0,amtB=+b.offerAmount||0;
-      const maxAmt=Math.max(amtA,amtB,1);
-      const closeAmount=Math.abs(amtA-amtB)/maxAmt<=0.15;
-      if(sameName||( sameParty&&closeAmount))pairs.push({a,b,reason:sameName?"Même nom de projet":"Même intervenant, montant proche"});
+      const sameName=!!a.name&&!!b.name&&a.name.trim().toLowerCase()===b.name.trim().toLowerCase();
+      const sameOppId=!!a.oppId&&!!b.oppId&&a.oppId.trim()===b.oppId.trim();
+      if(sameOppId)pairs.push({a,b,reason:"Même ID opportunity"});
+      else if(sameName)pairs.push({a,b,reason:"Même nom de projet"});
     }
   }
   return pairs;
@@ -7280,13 +7282,9 @@ function findPotentialDuplicates(projects:any[]){
 function findDuplicatesOf(current:any,others:any[]){
   return others.filter((o:any)=>{
     if(o.id===current.id)return false;
-    const sameParty=current.partyName&&o.partyName&&current.partyName.trim().toLowerCase()===o.partyName.trim().toLowerCase();
-    const sameName=current.name&&o.name&&current.name.trim().toLowerCase()===o.name.trim().toLowerCase();
-    if(!sameParty&&!sameName)return false;
-    const amtA=+current.offerAmount||0,amtB=+o.offerAmount||0;
-    const maxAmt=Math.max(amtA,amtB,1);
-    const closeAmount=Math.abs(amtA-amtB)/maxAmt<=0.15;
-    return sameName||(sameParty&&closeAmount);
+    const sameName=!!current.name&&!!o.name&&current.name.trim().toLowerCase()===o.name.trim().toLowerCase();
+    const sameOppId=!!current.oppId&&!!o.oppId&&current.oppId.trim()===o.oppId.trim();
+    return sameName||sameOppId;
   });
 }
 
@@ -7649,7 +7647,7 @@ function ProjectsPage({isMobile}:any){
   const[projStatusFilter,setProjStatusFilter]=useState("all");
   const[sortBy,setSortBy]=useState("deadline"); // deadline | amount | chance | recent
   const[showAlerts,setShowAlerts]=useState(true);
-  const[showCalendar,setShowCalendar]=useState(true);
+  const[showCalendar,setShowCalendar]=useState(false);
   const[showDuplicates,setShowDuplicates]=useState(true);
   const[exportingXlsx,setExportingXlsx]=useState(false);
   const[importPreview,setImportPreview]=useState<any>(null); // {toAdd:[],toUpdate:[]} | null
@@ -7896,24 +7894,21 @@ function ProjectsPage({isMobile}:any){
   });
 
   const ProjectKpi=({icon,label,value,color,sub,delta,deltaUnit}:any)=>(
-    <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px",display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
-      <div style={{display:"flex",alignItems:"center",gap:8}}>
-        <div style={{width:28,height:28,borderRadius:8,background:color+"1A",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <i className={`ti ${icon}`} style={{fontSize:14,color}} aria-hidden="true"/>
-        </div>
-        <span style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".03em"}}>{label}</span>
+    <div style={{background:"#fff",borderRadius:C.rSm,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"8px 10px",display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <i className={`ti ${icon}`} style={{fontSize:12,color,flexShrink:0}} aria-hidden="true"/>
+        <span style={{fontSize:9.5,color:C.t3,fontWeight:700,textTransform:"uppercase",letterSpacing:".02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>
       </div>
-      <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-        <div style={{fontSize:20,fontWeight:800,color:C.t1,lineHeight:1}}>{value}</div>
+      <div style={{display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
+        <div style={{fontSize:16,fontWeight:800,color:C.t1,lineHeight:1.1}}>{value}</div>
         {delta!==undefined&&(
-          <span style={{display:"flex",alignItems:"center",gap:2,fontSize:10.5,fontWeight:700,color:delta>0?C.greenDk:delta<0?C.redDk:C.t3}}>
-            <i className={`ti ${delta>0?"ti-arrow-up-right":delta<0?"ti-arrow-down-right":"ti-minus"}`} style={{fontSize:11}} aria-hidden="true"/>
+          <span style={{display:"flex",alignItems:"center",gap:2,fontSize:9.5,fontWeight:700,color:delta>0?C.greenDk:delta<0?C.redDk:C.t3}}>
+            <i className={`ti ${delta>0?"ti-arrow-up-right":delta<0?"ti-arrow-down-right":"ti-minus"}`} style={{fontSize:10}} aria-hidden="true"/>
             {delta===0?"stable":`${Math.abs(delta)}${deltaUnit||"%"}`}
           </span>
         )}
       </div>
-      {sub&&<div style={{fontSize:11,color:C.t3}}>{sub}</div>}
-      {delta!==undefined&&<div style={{fontSize:10,color:C.t3}}>vs 30 jours</div>}
+      {sub&&<div style={{fontSize:9.5,color:C.t3}}>{sub}</div>}
     </div>
   );
 
@@ -8078,19 +8073,17 @@ function ProjectsPage({isMobile}:any){
         <ProjectKpi icon="ti-rotate-clockwise" label="Suivi à jour" value={upToDateP.length} color={C.green} sub={`sur ${ongoingP.length} en cours`}/>
         <ProjectKpi icon="ti-alarm" label="À relancer" value={staleP.length} color={staleP.length>0?C.amber:C.t3} sub={`+${FOLLOWUP_DAYS}j sans MAJ`}/>
         {/* Measurable pipeline: share of pipeline value not affected by an overdue forecast date */}
-        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px",display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <div style={{width:28,height:28,borderRadius:8,background:(measurablePct>=70?C.green:measurablePct>=40?C.amber:C.red)+"1A",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              <i className="ti ti-gauge" style={{fontSize:14,color:measurablePct>=70?C.green:measurablePct>=40?C.amber:C.red}} aria-hidden="true"/>
-            </div>
-            <span style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".03em"}}>Measurable pipeline</span>
+        <div style={{background:"#fff",borderRadius:C.rSm,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"8px 10px",display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <i className="ti ti-gauge" style={{fontSize:12,color:measurablePct>=70?C.green:measurablePct>=40?C.amber:C.red,flexShrink:0}} aria-hidden="true"/>
+            <span style={{fontSize:9.5,color:C.t3,fontWeight:700,textTransform:"uppercase",letterSpacing:".02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Measurable pipeline</span>
           </div>
-          <div style={{fontSize:20,fontWeight:800,color:C.t1,lineHeight:1}}>{measurablePct}%</div>
-          <div style={{display:"flex",height:6,borderRadius:99,overflow:"hidden",background:"#F1F5F9"}}>
+          <div style={{fontSize:16,fontWeight:800,color:C.t1,lineHeight:1.1}}>{measurablePct}%</div>
+          <div style={{display:"flex",height:4,borderRadius:99,overflow:"hidden",background:"#F1F5F9"}}>
             <div style={{width:`${measurablePct}%`,background:C.green}}/>
             <div style={{width:`${100-measurablePct}%`,background:C.red}}/>
           </div>
-          <div style={{fontSize:11,color:C.t3}}>{fmtK(measurableAmount)} € dans les délais · {fmtK(staleAmount)} € date dépassée</div>
+          <div style={{fontSize:9.5,color:C.t3}}>{fmtK(measurableAmount)}€ à jour · {fmtK(staleAmount)}€ en retard</div>
         </div>
       </div>
 
@@ -8285,7 +8278,7 @@ function ProjectsPage({isMobile}:any){
           <p style={{color:C.t3,fontSize:14,margin:0}}>{projects.length===0?"Aucun projet — utilisez le bouton \"Nouveau projet\" pour commencer.":"Aucun résultat pour ces filtres."}</p>
         </div>
       ):(
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
           {filtered.map((p:any,idx:number)=>{
             const statusMeta=STATUS_META[p.status]||{color:C.t3,bg:"#F1F5F9"};
             const phaseMeta=PHASE_META[p.phase]||{color:C.t3,bg:"#F1F5F9"};
@@ -8305,39 +8298,39 @@ function ProjectsPage({isMobile}:any){
                   <div style={{flex:1,height:1,background:C.b}}/>
                 </div>
               )}
-              <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,borderLeft:`4px solid ${health.color}`,boxShadow:C.sh,overflow:"hidden"}}>
-                <div onClick={()=>setExpandedId(expanded?null:p.id)} style={{padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,flexWrap:isMobile?"wrap":"nowrap"}}>
+              <div style={{background:"#fff",borderRadius:C.rSm,border:`1px solid ${C.b}`,borderLeft:`3px solid ${health.color}`,boxShadow:C.sh,overflow:"hidden"}}>
+                <div onClick={()=>setExpandedId(expanded?null:p.id)} style={{padding:"7px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:10,flexWrap:isMobile?"wrap":"nowrap"}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                      <span title={health.label} style={{width:9,height:9,borderRadius:99,background:health.color,flexShrink:0,animation:health.blink?"projHealthBlink 1.1s ease-in-out infinite":"none"}}/>
-                      {p.oppId&&<span style={{fontSize:10.5,fontFamily:"monospace",color:C.t3,background:"#F1F5F9",padding:"2px 7px",borderRadius:5}}>{p.oppId}</span>}
-                      <span style={{fontWeight:700,fontSize:13.5,color:C.t1}}>{p.name||p.description?.slice(0,40)||"Sans nom"}</span>
-                      <span style={{fontSize:10,fontWeight:700,color:phaseMeta.color,background:phaseMeta.bg,padding:"2px 8px",borderRadius:99}}>{p.phase}</span>
-                      <span style={{fontSize:10,fontWeight:700,color:statusMeta.color,background:statusMeta.bg,padding:"2px 8px",borderRadius:99}}>{p.status}</span>
-                      {!p.ongoing&&<span style={{fontSize:10,fontWeight:700,color:C.t3,background:"#F1F5F9",padding:"2px 8px",borderRadius:99}}>CLÔTURÉ</span>}
-                      {p.archived&&<span style={{fontSize:10,fontWeight:700,color:"#fff",background:C.t3,padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:3}}><i className="ti ti-archive" style={{fontSize:9}} aria-hidden="true"/>ARCHIVÉ</span>}
-                      {p.ongoing&&!upToDate&&<span title="Sans mise à jour récente" style={{fontSize:10,fontWeight:700,color:C.amberDk,background:C.amberL,padding:"2px 8px",borderRadius:99}}><i className="ti ti-alarm" style={{fontSize:10}} aria-hidden="true"/> à relancer</span>}
+                    <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                      <span title={health.label} style={{width:7,height:7,borderRadius:99,background:health.color,flexShrink:0,animation:health.blink?"projHealthBlink 1.1s ease-in-out infinite":"none"}}/>
+                      {p.oppId&&<span style={{fontSize:9.5,fontFamily:"monospace",color:C.t3,background:"#F1F5F9",padding:"1px 6px",borderRadius:4}}>{p.oppId}</span>}
+                      <span style={{fontWeight:700,fontSize:12.5,color:C.t1}}>{p.name||p.description?.slice(0,40)||"Sans nom"}</span>
+                      <span style={{fontSize:9.5,fontWeight:700,color:phaseMeta.color,background:phaseMeta.bg,padding:"1px 7px",borderRadius:99}}>{p.phase}</span>
+                      <span style={{fontSize:9.5,fontWeight:700,color:statusMeta.color,background:statusMeta.bg,padding:"1px 7px",borderRadius:99}}>{p.status}</span>
+                      {!p.ongoing&&<span style={{fontSize:9.5,fontWeight:700,color:C.t3,background:"#F1F5F9",padding:"1px 7px",borderRadius:99}}>CLÔTURÉ</span>}
+                      {p.archived&&<span style={{fontSize:9.5,fontWeight:700,color:"#fff",background:C.t3,padding:"1px 7px",borderRadius:99,display:"flex",alignItems:"center",gap:3}}><i className="ti ti-archive" style={{fontSize:8.5}} aria-hidden="true"/>ARCHIVÉ</span>}
+                      {p.ongoing&&!upToDate&&<span title="Sans mise à jour récente" style={{fontSize:9.5,fontWeight:700,color:C.amberDk,background:C.amberL,padding:"1px 7px",borderRadius:99}}><i className="ti ti-alarm" style={{fontSize:9}} aria-hidden="true"/> à relancer</span>}
                     </div>
-                    <div style={{fontSize:11.5,color:C.t3,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
-                      {p.partyName&&<span><i className="ti ti-building" style={{fontSize:11}} aria-hidden="true"/> {p.partyType} — {p.partyName}</span>}
+                    <div style={{fontSize:10.5,color:C.t3,marginTop:1,display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {p.partyName&&<span><i className="ti ti-building" style={{fontSize:10}} aria-hidden="true"/> {p.partyType} — {p.partyName}</span>}
                       <span>{durationDaysFr(p.processingDate||p.createdAt)}</span>
                     </div>
                   </div>
-                  <div style={{textAlign:"right",minWidth:90}}>
-                    <div style={{fontSize:14,fontWeight:800,color:C.t1}}>{fmtK(+p.offerAmount||0)} €</div>
-                    <div style={{fontSize:10.5,color:C.t3}}>{p.chanceOfSuccess}% chance</div>
+                  <div style={{textAlign:"right",minWidth:80}}>
+                    <div style={{fontSize:13,fontWeight:800,color:C.t1}}>{fmtK(+p.offerAmount||0)} €</div>
+                    <div style={{fontSize:9.5,color:C.t3}}>{p.chanceOfSuccess}% chance</div>
                   </div>
-                  <div style={{display:"flex",gap:6,textAlign:"center"}}>
-                    <div style={{fontSize:9.5,color:C.t3,padding:"3px 7px",borderRadius:6,background:dateBg(orderD)}}>
+                  <div style={{display:"flex",gap:5,textAlign:"center"}}>
+                    <div style={{fontSize:9,color:C.t3,padding:"2px 6px",borderRadius:5,background:dateBg(orderD)}}>
                       <div style={{fontWeight:700,color:dateColor(orderD)}}>{p.expectedOrderDate?fmtD(p.expectedOrderDate):"—"}</div>
                       <div>Commande</div>
                     </div>
-                    <div style={{fontSize:9.5,color:C.t3,padding:"3px 7px",borderRadius:6,background:dateBg(invD)}}>
+                    <div style={{fontSize:9,color:C.t3,padding:"2px 6px",borderRadius:5,background:dateBg(invD)}}>
                       <div style={{fontWeight:700,color:dateColor(invD)}}>{p.expectedInvoiceDate?fmtD(p.expectedInvoiceDate):"—"}</div>
                       <div>Facturation</div>
                     </div>
                   </div>
-                  <i className={`ti ${expanded?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:14,color:C.t3}} aria-hidden="true"/>
+                  <i className={`ti ${expanded?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:13,color:C.t3}} aria-hidden="true"/>
                 </div>
 
                 {expanded&&(
