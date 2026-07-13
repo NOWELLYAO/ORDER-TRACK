@@ -1579,6 +1579,7 @@ function AlertTicker({alerts,lang="fr"}:any){
 // ─── KPI PAGE ────────────────────────────────────────────────────────────────
 function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,selYear,setSelYear,lang="fr",isMobile=false,canExport=true,isAdmin=true}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
+  const[simDso,setSimDso]=useState<number|null>(null);
   const all=getAllOrders();
   const totPO=all.reduce((s:number,o:any)=>s+(+o.amount||0),0);
   const totInv=all.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0),0);
@@ -1614,13 +1615,127 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   // Top clients
   const cStats=clients.map((c:string)=>({name:c,...getStats(c),nbCmds:(data?.[c]||[]).length,acc:configs[c]?.accountNumber||"—",term:PAY_TERMS.find((t:any)=>t.id===(configs[c]?.termId||"net60"))?.label||"—"})).sort((a:any,b:any)=>b.openOrders-a.openOrders);
 
-  // Client risk scores (admin only) — flags clients whose real payment
-  // history (not just today's snapshot) shows recurring lateness
-  const clientRisks=isAdmin?clients
-    .map((c:string)=>({name:c,risk:computeClientRiskScore(data?.[c]||[])}))
-    .filter((r:any)=>r.risk&&r.risk.level!=="low")
-    .sort((a:any,b:any)=>a.risk.score-b.risk.score)
+  // Client intelligence — one pass per client feeding several analyses:
+  // payment risk, RFM segmentation, growth (BCG), order cadence (reorder
+  // prediction) and statistical outlier detection on order amounts.
+  const clientIntel=isAdmin?clients
+    .map((c:string)=>({name:c,intel:computeClientIntelligence(data?.[c]||[]),risk:computeClientRiskScore(data?.[c]||[])}))
+    .filter((c:any)=>c.intel)
     :[];
+  const clientRisks=clientIntel.filter((c:any)=>c.risk&&c.risk.level!=="low")
+    .map((c:any)=>({name:c.name,risk:c.risk})).sort((a:any,b:any)=>a.risk.score-b.risk.score);
+
+  // BCG matrix: growth rate (trailing 6mo vs prior 6mo) × revenue share.
+  // The classic portfolio framework — which clients to invest in, protect,
+  // develop, or requalify.
+  const medianMonetary=(()=>{
+    const vals=clientIntel.map((c:any)=>c.intel.monetary).filter((v:number)=>v>0).sort((a:number,b:number)=>a-b);
+    return vals.length?vals[Math.floor(vals.length/2)]:0;
+  })();
+  const BCG_META:Record<string,{label:string,color:string,bg:string,desc:string}>={
+    star:{label:"Étoiles",color:C.blue,bg:C.blueL,desc:"Forte croissance, fort volume — investir et fidéliser"},
+    cash_cow:{label:"Vaches à lait",color:C.green,bg:C.greenL,desc:"Fort volume, croissance stable — maintenir la relation"},
+    question_mark:{label:"Dilemmes",color:C.amber,bg:C.amberL,desc:"Forte croissance, faible volume — potentiel à développer"},
+    dog:{label:"Poids morts",color:C.t3,bg:"#F1F5F9",desc:"Faible volume, faible croissance — surveiller ou requalifier"},
+  };
+  const bcgClients=clientIntel.map((c:any)=>{
+    const highGrowth=c.intel.growthRate>=10;
+    const highShare=medianMonetary>0&&c.intel.monetary>=medianMonetary;
+    const quadrant=highGrowth&&highShare?"star":!highGrowth&&highShare?"cash_cow":highGrowth&&!highShare?"question_mark":"dog";
+    return{...c,quadrant};
+  });
+
+  // RFM segmentation (quintile scoring on Recency / Frequency / Monetary) —
+  // the standard marketing-analytics framework to spot champions, clients
+  // at risk of churn, and dormant accounts.
+  const rfmScored=(()=>{
+    if(clientIntel.length===0)return[];
+    const byRecencyAsc=[...clientIntel].sort((a:any,b:any)=>a.intel.recencyDays-b.intel.recencyDays);
+    const byFrequencyAsc=[...clientIntel].sort((a:any,b:any)=>a.intel.frequency-b.intel.frequency);
+    const byMonetaryAsc=[...clientIntel].sort((a:any,b:any)=>a.intel.monetary-b.intel.monetary);
+    const scoreOf=(arr:any[],name:string,invert:boolean)=>{
+      const idx=arr.findIndex((c:any)=>c.name===name);
+      const pct=arr.length>1?idx/(arr.length-1):1;
+      const raw=Math.ceil((invert?(1-pct):pct)*5)||1;
+      return Math.min(5,Math.max(1,raw));
+    };
+    return clientIntel.map((c:any)=>{
+      const rScore=scoreOf(byRecencyAsc,c.name,true);
+      const fScore=scoreOf(byFrequencyAsc,c.name,false);
+      const mScore=scoreOf(byMonetaryAsc,c.name,false);
+      let segment="Standard",segColor=C.amber,segBg=C.amberL;
+      if(rScore>=4&&fScore>=4&&mScore>=4){segment="Champions";segColor=C.green;segBg=C.greenL;}
+      else if(fScore>=4&&mScore>=4){segment="Fidèles";segColor=C.blue;segBg=C.blueL;}
+      else if(rScore<=2&&(fScore>=3||mScore>=3)){segment="À risque de churn";segColor=C.red;segBg=C.redL;}
+      else if(rScore>=4&&fScore<=2){segment="Nouveaux / prometteurs";segColor=C.purple;segBg=C.purpleL;}
+      else if(rScore<=2&&fScore<=2&&mScore<=2){segment="Dormants";segColor=C.t3;segBg="#F1F5F9";}
+      return{name:c.name,rScore,fScore,mScore,segment,segColor,segBg};
+    });
+  })();
+
+  // Composite client health score — payment reliability blended with
+  // commercial momentum (growth + order cadence), a single number analog
+  // to an internal NPS per account.
+  const healthScores=clientIntel.map((c:any)=>{
+    const paymentComponent=c.risk?c.risk.score:70;
+    const growthComponent=Math.max(0,Math.min(100,50+c.intel.growthRate));
+    const cadenceComponent=c.intel.reorderStatus==="overdue"?20:c.intel.reorderStatus==="due_soon"?60:c.intel.reorderStatus==="on_track"?100:70;
+    const composite=Math.round(paymentComponent*0.5+growthComponent*0.25+cadenceComponent*0.25);
+    return{name:c.name,composite};
+  }).sort((a:any,b:any)=>a.composite-b.composite);
+
+  // Statistical outliers: orders well above a client's own historical average
+  const anomalyAlerts=clientIntel.flatMap((c:any)=>c.intel.anomalies.map((o:any)=>({...o,_client:c.name})))
+    .sort((a:any,b:any)=>b.multiple-a.multiple).slice(0,10);
+
+  // Next Best Action: clients overdue for reorder relative to their own
+  // historical ordering cadence — a churn-prevention nudge before they go
+  // fully dormant.
+  const reorderAlerts=clientIntel.filter((c:any)=>c.intel.reorderStatus==="overdue")
+    .sort((a:any,b:any)=>b.intel.daysOverdue-a.intel.daysOverdue);
+
+  // DSO — Days Sales Outstanding: standard finance ratio measuring how many
+  // days, on average, it takes to collect payment — normalized so it can be
+  // compared across periods regardless of sales volume.
+  const DSO_PERIOD_DAYS=90;
+  const dsoCutoff=Date.now()-DSO_PERIOD_DAYS*86400000;
+  const salesInDsoPeriod=allInvoices.filter((i:any)=>i.date&&new Date(i.date+"T00:00:00").getTime()>=dsoCutoff).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+  const dso=salesInDsoPeriod>0?Math.round((totUnpaid/salesInDsoPeriod)*DSO_PERIOD_DAYS):null;
+
+  // ── "What-if" simulator: projected cash impact of hitting a target DSO ──
+  const effectiveSimDso=simDso??dso??45;
+  const simulatedAR=salesInDsoPeriod>0?(effectiveSimDso/DSO_PERIOD_DAYS)*salesInDsoPeriod:0;
+  const cashImpact=totUnpaid-simulatedAR;
+
+  // Client concentration (Pareto 80/20) — how much of the business depends
+  // on how few clients. A classic portfolio-risk read for any board review.
+  const revenueByClient=isAdmin?cStats.map((c:any)=>({name:c.name,amount:c.totalPO})).filter((c:any)=>c.amount>0).sort((a:any,b:any)=>b.amount-a.amount):[];
+  const totalRevenueAll=revenueByClient.reduce((s:number,c:any)=>s+c.amount,0);
+  let _cum=0,clientsFor80=0;
+  for(const c of revenueByClient){_cum+=c.amount;clientsFor80++;if(_cum>=totalRevenueAll*0.8)break;}
+  const top1Share=revenueByClient.length>0&&totalRevenueAll>0?Math.round(revenueByClient[0].amount/totalRevenueAll*100):0;
+
+  // Executive summary — facts + recommendations, generated from the exact
+  // same figures already computed above (no separate/duplicated logic).
+  const execSummary=isAdmin?(()=>{
+    const facts:string[]=[];
+    const recs:string[]=[];
+    if(totPO>0)facts.push(`Pipeline commandé de ${fmtK(totPO)} € au total, dont ${fmtK(totOpen)} € encore à facturer.`);
+    if(dso!==null){
+      facts.push(`Délai moyen de recouvrement (DSO) : ${dso} jours.`);
+      if(dso>60)recs.push(`Le DSO dépasse 60 jours — renforcer le suivi des relances sur les comptes les plus en retard.`);
+    }
+    if(echues.length>0){
+      facts.push(`${echues.length} facture${echues.length>1?"s":""} échue${echues.length>1?"s":""} pour ${fmtK(echuesAmt)} €.`);
+      recs.push(`Prioriser le recouvrement des ${fmtK(echuesAmt)} € de factures échues${echues[0]?._client?`, en particulier chez ${echues[0]._client}`:""}.`);
+    } else {
+      facts.push(`Aucune facture échue à ce jour.`);
+    }
+    if(top1Share>=30&&revenueByClient[0])recs.push(`${revenueByClient[0].name} représente ${top1Share}% du chiffre d'affaires commandé — une concentration élevée qui mérite une diversification du portefeuille client.`);
+    if(clientRisks.length>0)facts.push(`${clientRisks.length} client${clientRisks.length>1?"s présentent":" présente"} un profil de paiement à risque.`);
+    if(recs.length===0)recs.push(`Aucune alerte majeure — la situation commerciale et le recouvrement sont sains sur la période.`);
+    return{facts,recs};
+  })():null;
 
   // Monthly — filtered by selYear
   const monthly=MONTHS.map((_,mi)=>{let po=0,inv=0,paid=0;all.forEach((o:any)=>{
@@ -1661,13 +1776,45 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </div>
       </div>
 
+      {/* Résumé exécutif (admin uniquement) */}
+      {execSummary&&(
+        <div style={{background:"linear-gradient(135deg,#0D1B2A,#1E3A5F)",borderRadius:C.rLg,padding:"20px 24px",boxShadow:C.shMd}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#93C5FD",textTransform:"uppercase",letterSpacing:".08em",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
+            <i className="ti ti-report-analytics" style={{fontSize:14}} aria-hidden="true"/> Résumé exécutif
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:20}}>
+            <div>
+              <div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>Constat</div>
+              <ul style={{margin:0,padding:0,listStyle:"none",display:"flex",flexDirection:"column",gap:6}}>
+                {execSummary.facts.map((f:string,i:number)=>(
+                  <li key={i} style={{fontSize:12.5,color:"#E5EAF0",lineHeight:1.5,display:"flex",gap:8}}>
+                    <span style={{color:"#60A5FA"}}>•</span>{f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>Recommandation{execSummary.recs.length>1?"s":""}</div>
+              <ul style={{margin:0,padding:0,listStyle:"none",display:"flex",flexDirection:"column",gap:6}}>
+                {execSummary.recs.map((r:string,i:number)=>(
+                  <li key={i} style={{fontSize:12.5,color:"#FDE68A",lineHeight:1.5,display:"flex",gap:8}}>
+                    <i className="ti ti-bulb" style={{fontSize:13,flexShrink:0,marginTop:2}} aria-hidden="true"/>{r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KPI row */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":isAdmin?"repeat(6,1fr)":"repeat(3,1fr)",gap:isMobile?10:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":isAdmin?"repeat(4,1fr)":"repeat(3,1fr)",gap:isMobile?10:14}}>
         <Kpi icon="ti-building-store" label={tr("kpi_clients")} val={clients.length} sub={`${clients.filter((c:string)=>(data?.[c]||[]).length>0).length} ${tr("kpi_active")}`} c={C.purple} bg={C.purpleL}/>
         <Kpi icon="ti-clipboard-list" label={tr("kpi_orders")} val={nbCmds} sub={`${noInv.length} ${tr("kpi_no_invoice")}`} c={C.blue} bg={C.blueL}/>
         {isAdmin&&<Kpi icon="ti-file-invoice" label={tr("kpi_po")} val={`${fmtK(totPO)} €`} sub={tr("commanded")} c={C.t2} bg="#F1F5F9"/>}
         {isAdmin&&<Kpi icon="ti-check" label={tr("kpi_invoiced")} val={`${fmtK(totInv)} €`} sub={`${txFact.toFixed(1)}% ${tr("kpi_invoiced_pct")}`} c={C.teal} bg={C.tealL}/>}
         {isAdmin&&<Kpi icon="ti-coin" label={tr("kpi_collected")} val={`${fmtK(totPaid)} €`} sub={`${txPay.toFixed(1)}% ${tr("kpi_collected_pct")}`} c={C.green} bg={C.greenL}/>}
+        {isAdmin&&dso!==null&&<Kpi icon="ti-calendar-stats" label="DSO (délai recouvrement)" val={`${dso} j`} sub={dso<=45?"Sain":dso<=60?"À surveiller":"Élevé"} c={dso<=45?C.green:dso<=60?C.amber:C.red} bg={dso<=45?C.greenL:dso<=60?C.amberL:C.redL}/>}
         <Kpi icon="ti-hourglass-low" label="Factures en cours" val={`${fmtK(totUnpaid)} €`} sub={echues.length>0?`⚠ ${echues.length} échu${echues.length>1?"es":"e"}${upcoming.length>0?` · ${upcoming.length} à venir`:""}`:upcoming.length>0?`${upcoming.length} échéance${upcoming.length>1?"s":""} à venir`:"Aucune alerte"} c={echues.length>0?C.red:upcoming.length>0?C.amber:C.t3} bg={echues.length>0?C.redL:upcoming.length>0?C.amberL:"#F8FAFC"}/>
       </div>
 
@@ -1824,6 +1971,182 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
             ))}
           </div>
         </Card>
+      )}
+
+      {/* Concentration client — Pareto 80/20 (admin uniquement) */}
+      {revenueByClient.length>=3&&(
+        <Card title="Concentration client (règle des 80/20)" icon="ti-chart-pie"
+          badge={top1Share>=30?{n:`${top1Share}%`,color:C.red}:undefined}>
+          <div style={{display:"flex",gap:20,flexWrap:"wrap",marginBottom:16}}>
+            <div>
+              <div style={{fontSize:22,fontWeight:800,color:C.t1}}>{clientsFor80}<span style={{fontSize:13,color:C.t3,fontWeight:600}}> / {revenueByClient.length} clients</span></div>
+              <div style={{fontSize:11,color:C.t3}}>génèrent 80% du chiffre d'affaires commandé</div>
+            </div>
+            <div>
+              <div style={{fontSize:22,fontWeight:800,color:top1Share>=30?C.redDk:C.t1}}>{top1Share}%</div>
+              <div style={{fontSize:11,color:C.t3}}>part du 1er client ({revenueByClient[0]?.name})</div>
+            </div>
+          </div>
+          {top1Share>=30&&(
+            <div style={{display:"flex",alignItems:"center",gap:8,background:C.redL,borderRadius:C.rSm,padding:"8px 12px",marginBottom:14,fontSize:11.5,color:C.redDk}}>
+              <i className="ti ti-alert-triangle" style={{fontSize:14,flexShrink:0}} aria-hidden="true"/>
+              Concentration élevée sur un seul client — risque de dépendance stratégique.
+            </div>
+          )}
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {revenueByClient.slice(0,8).map((c:any,i:number)=>{
+              const pct=totalRevenueAll>0?(c.amount/totalRevenueAll*100):0;
+              const isIn80=i<clientsFor80;
+              return(
+                <div key={c.name} onClick={()=>setPage(c.name)} style={{cursor:"pointer"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,marginBottom:3}}>
+                    <span style={{fontWeight:600,color:C.t1}}>{c.name}</span>
+                    <span style={{color:C.t3}}>{fmtK(c.amount)} € · {pct.toFixed(1)}%</span>
+                  </div>
+                  <div style={{height:6,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                    <div style={{width:`${pct}%`,height:"100%",background:isIn80?C.blue:C.b,borderRadius:99}}/>
+                  </div>
+                </div>
+              );
+            })}
+            {revenueByClient.length>8&&<div style={{fontSize:11,color:C.t3,marginTop:2}}>+ {revenueByClient.length-8} autres clients</div>}
+          </div>
+        </Card>
+      )}
+
+      {/* Simulateur "What-if" — impact trésorerie d'un objectif de DSO */}
+      {dso!==null&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+            <i className="ti ti-adjustments" style={{fontSize:15}} aria-hidden="true"/> Simulateur "What-if" — Trésorerie
+          </div>
+          <div style={{fontSize:10.5,color:C.t3,marginBottom:16}}>DSO actuel : {dso} jours. Ajustez l'objectif pour estimer l'impact sur la trésorerie disponible.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <input type="range" min={15} max={Math.max(120,dso+20)} step={1} value={effectiveSimDso}
+              onChange={(e:any)=>setSimDso(+e.target.value)}
+              style={{width:"100%",accentColor:C.blue}}/>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.t3}}>
+              <span>15j</span><span>Objectif : <strong style={{color:C.t1,fontSize:13}}>{effectiveSimDso}j</strong></span><span>{Math.max(120,dso+20)}j</span>
+            </div>
+          </div>
+          <div style={{marginTop:16,background:cashImpact>=0?C.greenL:C.redL,borderRadius:C.rSm,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
+            <i className={`ti ${cashImpact>=0?"ti-cash":"ti-trending-down"}`} style={{fontSize:20,color:cashImpact>=0?C.greenDk:C.redDk}} aria-hidden="true"/>
+            <div>
+              <div style={{fontSize:17,fontWeight:800,color:cashImpact>=0?C.greenDk:C.redDk}}>{cashImpact>=0?"+":""}{fmtK(cashImpact)} €</div>
+              <div style={{fontSize:11,color:cashImpact>=0?C.greenDk:C.redDk}}>{cashImpact>=0?"de trésorerie libérée":"de trésorerie supplémentaire immobilisée"} en atteignant {effectiveSimDso} jours de DSO</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Matrice BCG des clients */}
+      {bcgClients.length>=3&&(
+        <Card title="Matrice BCG des clients" icon="ti-grid-dots">
+          <div style={{fontSize:10.5,color:C.t3,marginBottom:14}}>Croissance des commandes (6 derniers mois vs 6 mois précédents) × poids dans le chiffre d'affaires.</div>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
+            {["star","cash_cow","question_mark","dog"].map(q=>{
+              const meta=BCG_META[q];
+              const list=bcgClients.filter((c:any)=>c.quadrant===q).sort((a:any,b:any)=>b.intel.monetary-a.intel.monetary);
+              return(
+                <div key={q} style={{background:meta.bg,borderRadius:C.rSm,padding:"10px 12px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                    <span style={{fontSize:12,fontWeight:800,color:meta.color}}>{meta.label}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:meta.color}}>{list.length}</span>
+                  </div>
+                  <div style={{fontSize:10,color:C.t3,marginBottom:8}}>{meta.desc}</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:3,maxHeight:110,overflowY:"auto"}}>
+                    {list.slice(0,6).map((c:any)=>(
+                      <div key={c.name} onClick={()=>setPage(c.name)} style={{display:"flex",justifyContent:"space-between",fontSize:11,cursor:"pointer",background:"#fff",borderRadius:4,padding:"3px 8px"}}>
+                        <span style={{fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:110}}>{c.name}</span>
+                        <span style={{color:C.t3}}>{fmtK(c.intel.monetary)} €</span>
+                      </div>
+                    ))}
+                    {list.length===0&&<div style={{fontSize:10.5,color:C.t3,fontStyle:"italic"}}>Aucun client</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* Segmentation RFM + Score de santé composite */}
+      {(rfmScored.length>=3||healthScores.length>=3)&&(
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
+          {rfmScored.length>=3&&(
+            <Card title="Segmentation RFM" icon="ti-users-group">
+              <div style={{fontSize:10.5,color:C.t3,marginBottom:12}}>Récence · Fréquence · Montant (score 1-5 par client, sur 12 mois glissants)</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {["Champions","Fidèles","Nouveaux / prometteurs","Standard","À risque de churn","Dormants"].map(seg=>{
+                  const list=rfmScored.filter((c:any)=>c.segment===seg);
+                  if(list.length===0)return null;
+                  const meta=list[0];
+                  return(
+                    <div key={seg} style={{background:meta.segBg,borderRadius:C.rSm,padding:"8px 12px"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                        <span style={{fontSize:11.5,fontWeight:800,color:meta.segColor}}>{seg}</span>
+                        <span style={{fontSize:11,fontWeight:700,color:meta.segColor}}>{list.length}</span>
+                      </div>
+                      <div style={{fontSize:10.5,color:C.t2}}>{list.slice(0,5).map((c:any)=>c.name).join(", ")}{list.length>5?` +${list.length-5}`:""}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+          {healthScores.length>=3&&(
+            <Card title="Score de santé client composite" icon="ti-heart-rate-monitor">
+              <div style={{fontSize:10.5,color:C.t3,marginBottom:12}}>Fiabilité de paiement (50%) + dynamique commerciale (25%) + cadence de commande (25%)</div>
+              <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                {healthScores.slice(0,8).map((h:any)=>(
+                  <div key={h.name} onClick={()=>setPage(h.name)} style={{cursor:"pointer"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                      <span style={{fontWeight:600,color:C.t1}}>{h.name}</span>
+                      <span style={{fontWeight:700,color:h.composite>=70?C.greenDk:h.composite>=45?C.amberDk:C.redDk}}>{h.composite}/100</span>
+                    </div>
+                    <div style={{height:6,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                      <div style={{width:`${h.composite}%`,height:"100%",background:h.composite>=70?C.green:h.composite>=45?C.amber:C.red,borderRadius:99}}/>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Anomalies & Next Best Action */}
+      {(anomalyAlerts.length>0||reorderAlerts.length>0)&&(
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
+          {anomalyAlerts.length>0&&(
+            <Card title="Anomalies détectées" icon="ti-alert-octagon" badge={{n:anomalyAlerts.length,color:C.red}}>
+              <div style={{fontSize:10.5,color:C.t3,marginBottom:10}}>Commandes anormalement élevées vs l'historique du client (≥3× la moyenne, mini. 5 000 €)</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {anomalyAlerts.map((a:any,i:number)=>(
+                  <div key={i} onClick={()=>setPage(a._client)} style={{display:"flex",alignItems:"center",gap:8,background:C.redL,borderRadius:C.rSm,padding:"7px 10px",cursor:"pointer",flexWrap:"wrap"}}>
+                    <span style={{fontWeight:700,fontSize:11.5,color:C.t1,minWidth:100}}>{a._client}</span>
+                    <span style={{fontSize:11,color:C.t2}}>{fmt(+a.amount||0)} € le {fmtD(a.date)}</span>
+                    <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:800,color:C.redDk,background:"#fff",padding:"2px 8px",borderRadius:99}}>×{a.multiple} la moyenne</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+          {reorderAlerts.length>0&&(
+            <Card title="Relances recommandées (Next Best Action)" icon="ti-phone-outgoing" badge={{n:reorderAlerts.length,color:C.amber}}>
+              <div style={{fontSize:10.5,color:C.t3,marginBottom:10}}>Clients en retard par rapport à leur propre rythme de commande habituel</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {reorderAlerts.slice(0,8).map((c:any)=>(
+                  <div key={c.name} onClick={()=>setPage(c.name)} style={{display:"flex",alignItems:"center",gap:8,background:C.amberL,borderRadius:C.rSm,padding:"7px 10px",cursor:"pointer",flexWrap:"wrap"}}>
+                    <span style={{fontWeight:700,fontSize:11.5,color:C.t1,minWidth:100}}>{c.name}</span>
+                    <span style={{fontSize:11,color:C.t2}}>commande habituellement tous les {Math.round(c.intel.avgDaysBetween||0)}j</span>
+                    <span style={{marginLeft:"auto",fontSize:10.5,fontWeight:800,color:C.amberDk,background:"#fff",padding:"2px 8px",borderRadius:99}}>{c.intel.daysOverdue}j de retard</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* Row 3 : graphiques */}
@@ -2283,6 +2606,54 @@ function computeClientRiskScore(orders:any[]){
   }
 
   return{score,level,levelLabel,levelColor,levelBg,avgLateDays:Math.round(avgLateDays),pctLate:Math.round(pctLate*100),currentOverdueCount,trend,settledCount};
+}
+
+// ── Client intelligence engine ──────────────────────────────────────────
+// One pass over a client's order history feeding several analyses at once:
+// RFM (recency/frequency/monetary), growth trend (BCG), order cadence
+// (for reorder prediction), and statistical outlier detection.
+function computeClientIntelligence(orders:any[]){
+  const sorted=[...(orders||[])].filter((o:any)=>o.date).sort((a:any,b:any)=>a.date.localeCompare(b.date));
+  if(sorted.length===0)return null;
+  const now=Date.now();
+  const lastOrderDate=sorted[sorted.length-1].date;
+  const recencyDays=Math.floor((now-new Date(lastOrderDate+"T00:00:00").getTime())/86400000);
+
+  const cutoff12mo=now-365*86400000;
+  const recent12mo=sorted.filter((o:any)=>new Date(o.date+"T00:00:00").getTime()>=cutoff12mo);
+  const frequency=recent12mo.length;
+  const monetary=recent12mo.reduce((s:number,o:any)=>s+(+o.amount||0),0);
+
+  let avgDaysBetween:number|null=null;
+  if(sorted.length>=2){
+    const gaps:number[]=[];
+    for(let i=1;i<sorted.length;i++){
+      gaps.push((new Date(sorted[i].date+"T00:00:00").getTime()-new Date(sorted[i-1].date+"T00:00:00").getTime())/86400000);
+    }
+    avgDaysBetween=gaps.reduce((a,b)=>a+b,0)/gaps.length;
+  }
+
+  // Growth: trailing 6 months vs the 6 months before that
+  const cutoff6mo=now-180*86400000,cutoff12moPrior=now-360*86400000;
+  const last6mo=sorted.filter((o:any)=>new Date(o.date+"T00:00:00").getTime()>=cutoff6mo).reduce((s:number,o:any)=>s+(+o.amount||0),0);
+  const prior6mo=sorted.filter((o:any)=>{const tt=new Date(o.date+"T00:00:00").getTime();return tt>=cutoff12moPrior&&tt<cutoff6mo;}).reduce((s:number,o:any)=>s+(+o.amount||0),0);
+  const growthRate=prior6mo>0?Math.round(((last6mo-prior6mo)/prior6mo)*100):(last6mo>0?100:0);
+
+  // Statistical outliers: orders well above this client's own average
+  const avgOrderAmount=sorted.reduce((s:number,o:any)=>s+(+o.amount||0),0)/sorted.length;
+  const anomalies=sorted.filter((o:any)=>avgOrderAmount>0&&(+o.amount||0)>avgOrderAmount*3&&(+o.amount||0)>5000)
+    .map((o:any)=>({...o,multiple:Math.round(((+o.amount||0)/avgOrderAmount)*10)/10}));
+
+  // Reorder prediction: is the client overdue relative to their own cadence?
+  let reorderStatus:"on_track"|"due_soon"|"overdue"|"unknown"="unknown";
+  let daysOverdue=0;
+  if(avgDaysBetween!==null&&avgDaysBetween>0&&sorted.length>=3){
+    if(recencyDays>avgDaysBetween*1.5){reorderStatus="overdue";daysOverdue=Math.round(recencyDays-avgDaysBetween);}
+    else if(recencyDays>avgDaysBetween*1.1)reorderStatus="due_soon";
+    else reorderStatus="on_track";
+  }
+
+  return{recencyDays,frequency,monetary,avgDaysBetween,growthRate,avgOrderAmount,anomalies,reorderStatus,daysOverdue,totalOrders:sorted.length,lastOrderDate};
 }
 
 function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true}:any){
@@ -5514,7 +5885,7 @@ function priceChangeInfo(prices:any[]){
 
 function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any){
   const catReadOnly=!!restrictedClient||!isAdmin;
-  const[tab,setTab]=useState<"upload"|"catalogue"|"devis"|"search">(catReadOnly?"catalogue":"devis");
+  const[tab,setTab]=useState<"upload"|"catalogue"|"devis"|"search"|"abc">(catReadOnly?"catalogue":"devis");
   useEffect(()=>{if(catReadOnly&&tab!=="catalogue")setTab("catalogue");},[catReadOnly,tab]);
   const[quoteSearch,setQuoteSearch]=useState("");
   const[products,setProducts]=useState<any[]>([]);
@@ -6532,6 +6903,38 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
 
   const productsTyped=products.map((p:any)=>({...p,_type:detectProductType(p.pn,p.description),_priceChange:priceChangeInfo(p.prices)}));
   const priceAlerts=productsTyped.filter((p:any)=>p._priceChange).sort((a:any,b:any)=>Math.abs(b._priceChange.pct)-Math.abs(a._priceChange.pct));
+
+  // ── ABC Analysis (Pareto applied to the catalogue) ──────────────────────
+  // Ranks products by their contribution to total quoted value, based on
+  // the last 50 saved devis (quotes are the closest proxy to real commercial
+  // interest we track — orders don't carry line-item detail).
+  const abcAnalysis=(()=>{
+    const byPn:Record<string,{pn:string,desc:string,value:number,qty:number}>={};
+    quotes.forEach((q:any)=>{
+      (q.lines||[]).forEach((l:any)=>{
+        if(!l.pn)return;
+        if(!byPn[l.pn])byPn[l.pn]={pn:l.pn,desc:l.desc||"",value:0,qty:0};
+        byPn[l.pn].value+=(+l.qty||0)*(+l.unitPrice||0);
+        byPn[l.pn].qty+=(+l.qty||0);
+      });
+    });
+    const arr=Object.values(byPn).sort((a:any,b:any)=>b.value-a.value);
+    const total=arr.reduce((s:number,p:any)=>s+p.value,0);
+    let cum=0;
+    return arr.map((p:any)=>{
+      cum+=p.value;
+      const cumPct=total>0?cum/total*100:0;
+      const cls=cumPct<=80?"A":cumPct<=95?"B":"C";
+      return{...p,pct:total>0?p.value/total*100:0,cumPct,cls};
+    });
+  })();
+  const abcCounts={
+    A:abcAnalysis.filter((p:any)=>p.cls==="A").length,
+    B:abcAnalysis.filter((p:any)=>p.cls==="B").length,
+    C:abcAnalysis.filter((p:any)=>p.cls==="C").length,
+  };
+  const abcTotal=abcAnalysis.reduce((s:number,p:any)=>s+p.value,0);
+
   const typeStats=(()=>{
     const map:Record<string,{code:string,label:string,count:number}>={};
     productsTyped.forEach((p:any)=>{
@@ -6621,6 +7024,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
     {id:"devis",label:"New devis",icon:"ti-file-plus"},
     {id:"search",label:"Recherche devis",icon:"ti-search"},
     {id:"catalogue",label:"Catalogue",icon:"ti-database"},
+    {id:"abc",label:"Analyse ABC",icon:"ti-chart-histogram"},
     {id:"upload",label:"Importer prix",icon:"ti-upload"},
   ];
 
@@ -7322,6 +7726,60 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── TAB: ABC ANALYSIS ─────────────────────────────────────────────── */}
+      {tab==="abc"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{fontSize:12,color:C.t3}}>
+            Classement des articles selon leur contribution à la valeur cumulée des {quotes.length} derniers devis enregistrés — permet de prioriser stock et effort commercial sur les références qui comptent vraiment.
+          </div>
+          {abcAnalysis.length===0?(
+            <div style={{background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.rLg,padding:40,textAlign:"center",color:C.t3}}>
+              Aucun devis enregistré pour le moment — l'analyse ABC se construira au fil des devis créés.
+            </div>
+          ):(
+            <>
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10}}>
+                {[["A",C.green,C.greenL,"Priorité maximale (≤80% de la valeur)"],["B",C.amber,C.amberL,"Priorité modérée (80-95%)"],["C",C.t3,"#F1F5F9","Faible priorité (95-100%)"]].map(([cls,color,bg,desc])=>(
+                  <div key={cls as string} style={{background:bg as string,borderRadius:C.rLg,padding:"14px 16px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                      <span style={{width:26,height:26,borderRadius:6,background:color as string,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13}}>{cls}</span>
+                      <span style={{fontSize:18,fontWeight:800,color:color as string}}>{(abcCounts as any)[cls as string]}</span>
+                      <span style={{fontSize:11,color:C.t3}}>article{(abcCounts as any)[cls as string]>1?"s":""}</span>
+                    </div>
+                    <div style={{fontSize:10.5,color:C.t3}}>{desc as string}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:600}}>
+                  <thead><tr style={{background:"#0D1B2A"}}>
+                    {["Classe","Part Number","Description","Qté cumulée","Valeur cumulée","% de la valeur totale"].map(h=>(
+                      <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {abcAnalysis.map((p:any,i:number)=>{
+                      const clsColor=p.cls==="A"?C.greenDk:p.cls==="B"?C.amberDk:C.t3;
+                      const clsBg=p.cls==="A"?C.greenL:p.cls==="B"?C.amberL:"#F1F5F9";
+                      return(
+                        <tr key={p.pn} style={{borderBottom:`1px solid ${C.b}`,background:i%2===0?"#fff":"#FAFBFD"}}>
+                          <td style={{padding:"8px 12px"}}><span style={{background:clsBg,color:clsColor,padding:"2px 8px",borderRadius:99,fontWeight:800,fontSize:10}}>{p.cls}</span></td>
+                          <td style={{padding:"8px 12px",fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{p.pn}</td>
+                          <td style={{padding:"8px 12px",color:C.t1,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.desc||"—"}</td>
+                          <td style={{padding:"8px 12px",color:C.t2}}>{p.qty}</td>
+                          <td style={{padding:"8px 12px",color:C.t1,fontWeight:700}}>{fmt(p.value)} €</td>
+                          <td style={{padding:"8px 12px",color:C.t3}}>{p.pct.toFixed(1)}% <span style={{opacity:.6}}>(cum. {p.cumPct.toFixed(0)}%)</span></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -8510,6 +8968,53 @@ function ProjectsPage({isMobile}:any){
   const phaseVelocity=computePhaseVelocity(projects);
   const maxPhaseVelocity=Math.max(1,...phaseVelocity.map(d=>d.avgDays));
 
+  // ── Full conversion funnel ── how many opportunities ever reached each
+  // phase (not just what's currently there), reconstructed from the phase
+  // audit trail, plus the stage-to-stage conversion rate.
+  const PHASE_INDEX:Record<string,number>=Object.fromEntries(PHASES.map((ph,i)=>[ph,i]));
+  const maxPhaseReached=(p:any)=>{
+    let maxIdx=PHASE_INDEX[p.phase]??0;
+    (p.history||[]).filter((h:any)=>h.label==="Phase").forEach((h:any)=>{
+      if(h.from&&PHASE_INDEX[h.from]!==undefined)maxIdx=Math.max(maxIdx,PHASE_INDEX[h.from]);
+      if(h.to&&PHASE_INDEX[h.to]!==undefined)maxIdx=Math.max(maxIdx,PHASE_INDEX[h.to]);
+    });
+    return maxIdx;
+  };
+  const funnel=PHASES.map((ph,i)=>({phase:ph,count:projects.filter((p:any)=>maxPhaseReached(p)>=i).length}));
+  const funnelWithConversion=funnel.map((f,i)=>({
+    ...f,
+    conversionFromPrev:i>0&&funnel[i-1].count>0?Math.round(f.count/funnel[i-1].count*100):null,
+    conversionFromStart:funnel[0].count>0?Math.round(f.count/funnel[0].count*100):null,
+  }));
+
+  // ── Win-Loss Analysis ──────────────────────────────────────────────────
+  const wonAmount=wonP.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0);
+  const lostAmount=lostP.reduce((s:number,p:any)=>s+(+p.offerAmount||0),0);
+  const lossReasons=(()=>{
+    const map:Record<string,number>={};
+    lostP.forEach((p:any)=>{
+      const r=(p.reason||"Non renseigné").trim()||"Non renseigné";
+      map[r]=(map[r]||0)+1;
+    });
+    return Object.entries(map).map(([reason,count])=>({reason,count:count as number}))
+      .sort((a,b)=>b.count-a.count);
+  })();
+  const maxLossReasonCount=Math.max(1,...lossReasons.map(r=>r.count));
+  const winByPumpType=(()=>{
+    const map:Record<string,{won:number,lost:number}>={};
+    closedP.forEach((p:any)=>{
+      (p.pumpTypes||[]).forEach((ptId:string)=>{
+        if(!map[ptId])map[ptId]={won:0,lost:0};
+        if(WON_STATUSES.includes(p.status))map[ptId].won++;
+        else if(LOST_STATUSES.includes(p.status))map[ptId].lost++;
+      });
+    });
+    return Object.entries(map).map(([ptId,v]:[string,any])=>({
+      ptId,label:PUMP_TYPES.find(pt=>pt.id===ptId)?.label||ptId,
+      ...v,total:v.won+v.lost,rate:v.won+v.lost>0?Math.round(v.won/(v.won+v.lost)*100):0,
+    })).filter((t:any)=>t.total>0).sort((a:any,b:any)=>b.total-a.total);
+  })();
+
   // status distribution (count, all)
   const statusDist=PROJECT_STATUS.map(st=>({status:st,count:projects.filter((p:any)=>p.status===st).length}));
   const maxStatusCount=Math.max(1,...statusDist.map(d=>d.count));
@@ -8907,6 +9412,94 @@ function ProjectsPage({isMobile}:any){
           </div>
         </div>
       </div>
+
+      {/* Funnel de conversion complet */}
+      {funnelWithConversion[0]?.count>0&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 20px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:4}}>🔀 Funnel de conversion complet</div>
+          <div style={{fontSize:10,color:C.t3,marginBottom:14}}>Nombre d'opportunités ayant atteint chaque étape au moins une fois, et taux de passage d'une étape à l'autre</div>
+          <div style={{display:"flex",flexDirection:"column",gap:2}}>
+            {funnelWithConversion.map((f:any,i:number)=>{
+              const widthPct=funnelWithConversion[0].count>0?(f.count/funnelWithConversion[0].count*100):0;
+              const meta=PHASE_META[f.phase];
+              return(
+                <div key={f.phase} style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:isMobile?90:150,fontSize:11,fontWeight:600,color:C.t2,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.phase}</div>
+                  <div style={{flex:1,position:"relative",height:26}}>
+                    <div style={{position:"absolute",inset:0,background:"#F8FAFC",borderRadius:5}}/>
+                    <div style={{position:"absolute",top:0,bottom:0,left:0,width:`${widthPct}%`,background:meta.color,borderRadius:5,transition:"width .4s",display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:8}}>
+                      {widthPct>15&&<span style={{fontSize:11,fontWeight:800,color:"#fff"}}>{f.count}</span>}
+                    </div>
+                    {widthPct<=15&&<span style={{position:"absolute",top:"50%",left:`calc(${widthPct}% + 8px)`,transform:"translateY(-50%)",fontSize:11,fontWeight:800,color:C.t1}}>{f.count}</span>}
+                  </div>
+                  <div style={{width:70,fontSize:10.5,color:C.t3,textAlign:"right",flexShrink:0}}>
+                    {f.conversionFromPrev!==null?`${f.conversionFromPrev}% →`:"—"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Win-Loss Analysis */}
+      {closedP.length>0&&(
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
+          <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:4}}>🏆 Analyse Gagné / Perdu</div>
+            <div style={{fontSize:10,color:C.t3,marginBottom:12}}>{closedP.length} opportunité{closedP.length>1?"s":""} clôturée{closedP.length>1?"s":""} · {winRate}% de réussite</div>
+            <div style={{display:"flex",gap:10,marginBottom:16}}>
+              <div style={{flex:1,background:C.greenL,borderRadius:C.rSm,padding:"10px 12px"}}>
+                <div style={{fontSize:10,color:C.greenDk,fontWeight:700,textTransform:"uppercase"}}>Gagné</div>
+                <div style={{fontSize:17,fontWeight:800,color:C.greenDk}}>{wonP.length}</div>
+                <div style={{fontSize:10.5,color:C.greenDk}}>{fmtK(wonAmount)} €</div>
+              </div>
+              <div style={{flex:1,background:C.redL,borderRadius:C.rSm,padding:"10px 12px"}}>
+                <div style={{fontSize:10,color:C.redDk,fontWeight:700,textTransform:"uppercase"}}>Perdu</div>
+                <div style={{fontSize:17,fontWeight:800,color:C.redDk}}>{lostP.length}</div>
+                <div style={{fontSize:10.5,color:C.redDk}}>{fmtK(lostAmount)} €</div>
+              </div>
+            </div>
+            {lossReasons.length>0&&(
+              <>
+                <div style={{fontSize:10.5,fontWeight:700,color:C.t3,textTransform:"uppercase",letterSpacing:".04em",marginBottom:8}}>Principales raisons de perte</div>
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  {lossReasons.slice(0,6).map((r:any)=>(
+                    <div key={r.reason}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                        <span style={{color:C.t2,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{r.reason}</span>
+                        <span style={{color:C.t3}}>{r.count} ({Math.round(r.count/lostP.length*100)}%)</span>
+                      </div>
+                      <div style={{height:6,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                        <div style={{width:`${r.count/maxLossReasonCount*100}%`,height:"100%",background:C.red,borderRadius:99}}/>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {winByPumpType.length>0&&(
+            <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
+              <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:12}}>🔧 Taux de réussite par type de pompe</div>
+              <div style={{display:"flex",flexDirection:"column",gap:9}}>
+                {winByPumpType.map((t:any)=>(
+                  <div key={t.ptId}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                      <span style={{color:C.t2,fontWeight:600}}>{t.label}</span>
+                      <span style={{color:t.rate>=60?C.greenDk:t.rate>=40?C.amberDk:C.redDk,fontWeight:700}}>{t.rate}% ({t.won}/{t.total})</span>
+                    </div>
+                    <div style={{height:6,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                      <div style={{width:`${t.rate}%`,height:"100%",background:t.rate>=60?C.green:t.rate>=40?C.amber:C.red,borderRadius:99}}/>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {topParties.length>0&&(
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
