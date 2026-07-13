@@ -1694,6 +1694,48 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   const reorderAlerts=clientIntel.filter((c:any)=>c.intel.reorderStatus==="overdue")
     .sort((a:any,b:any)=>b.intel.daysOverdue-a.intel.daysOverdue);
 
+  // Settled invoices with their actual settlement lateness — shared base
+  // for both the Kaizen tracker and the SLA compliance widget below.
+  const settledInvoicesWithLateness=isAdmin?allInvoices.map((i:any)=>{
+    const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+    if(!i.dueDate||paid<(+i.amount||0)*0.999)return null;
+    const lastPay=(i.payments||[]).map((p:any)=>p.date).filter(Boolean).sort().pop();
+    if(!lastPay)return null;
+    const lateDays=Math.max(0,Math.round((new Date(lastPay+"T00:00:00").getTime()-new Date(i.dueDate+"T00:00:00").getTime())/86400000));
+    return{lateDays,payDate:lastPay};
+  }).filter(Boolean) as any[]:[];
+
+  // ── Kaizen — continuous improvement tracker ──────────────────────────────
+  // Current 90-day window vs the prior 90-day window, on two operational
+  // health indicators — the point isn't the absolute number, it's whether
+  // we're incrementally better than last time.
+  const kaizenCutoffCur=Date.now()-90*86400000;
+  const kaizenCutoffPrev=Date.now()-180*86400000;
+  const kaizenCur=settledInvoicesWithLateness.filter((x:any)=>new Date(x.payDate+"T00:00:00").getTime()>=kaizenCutoffCur);
+  const kaizenPrev=settledInvoicesWithLateness.filter((x:any)=>{const tt=new Date(x.payDate+"T00:00:00").getTime();return tt>=kaizenCutoffPrev&&tt<kaizenCutoffCur;});
+  const kaizenCurAvg=kaizenCur.length?Math.round(kaizenCur.reduce((s:number,x:any)=>s+x.lateDays,0)/kaizenCur.length):null;
+  const kaizenPrevAvg=kaizenPrev.length?Math.round(kaizenPrev.reduce((s:number,x:any)=>s+x.lateDays,0)/kaizenPrev.length):null;
+  const kaizenLatenessDelta=(kaizenCurAvg!==null&&kaizenPrevAvg!==null)?kaizenCurAvg-kaizenPrevAvg:null;
+
+  const anomaliesCurCount=clientIntel.reduce((s:number,c:any)=>s+c.intel.anomalies.filter((a:any)=>a.date&&new Date(a.date+"T00:00:00").getTime()>=kaizenCutoffCur).length,0);
+  const anomaliesPrevCount=clientIntel.reduce((s:number,c:any)=>s+c.intel.anomalies.filter((a:any)=>{if(!a.date)return false;const tt=new Date(a.date+"T00:00:00").getTime();return tt>=kaizenCutoffPrev&&tt<kaizenCutoffCur;}).length,0);
+  const anomaliesDelta=anomaliesCurCount-anomaliesPrevCount;
+
+  // ── Suivi SLA — engagements de service mesurables ────────────────────────
+  const INVOICING_SLA_DAYS=15,COLLECTION_SLA_DAYS=15;
+  const invoicingLeadTimes=all.filter((o:any)=>o.date&&(o.invoices||[]).length>0).map((o:any)=>{
+    const firstInvDate=[...(o.invoices||[])].map((i:any)=>i.date).filter(Boolean).sort()[0];
+    if(!firstInvDate)return null;
+    return Math.round((new Date(firstInvDate+"T00:00:00").getTime()-new Date(o.date+"T00:00:00").getTime())/86400000);
+  }).filter((d:any)=>d!==null&&d>=0) as number[];
+  const avgInvoicingLead=invoicingLeadTimes.length?Math.round(invoicingLeadTimes.reduce((a:number,b:number)=>a+b,0)/invoicingLeadTimes.length):null;
+  const invoicingSlaCompliance=invoicingLeadTimes.length?Math.round(invoicingLeadTimes.filter((d:number)=>d<=INVOICING_SLA_DAYS).length/invoicingLeadTimes.length*100):null;
+  const collectionSlaCompliance=settledInvoicesWithLateness.length?Math.round(settledInvoicesWithLateness.filter((x:any)=>x.lateDays<=COLLECTION_SLA_DAYS).length/settledInvoicesWithLateness.length*100):null;
+
+  // ── Jugaad — efficacité frugale : valeur générée par transaction ─────────
+  const jugaadRanking=[...clientIntel].filter((c:any)=>c.intel.totalOrders>=2)
+    .sort((a:any,b:any)=>b.intel.avgOrderAmount-a.intel.avgOrderAmount);
+
   // DSO — Days Sales Outstanding: standard finance ratio measuring how many
   // days, on average, it takes to collect payment — normalized so it can be
   // compared across periods regardless of sales volume.
@@ -2039,6 +2081,68 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </div>
       )}
 
+      {/* Kaizen — amélioration continue & Suivi SLA */}
+      {(kaizenCurAvg!==null||invoicingSlaCompliance!==null)&&(
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
+          {kaizenCurAvg!==null&&(
+            <Card title="Kaizen — Amélioration continue" icon="ti-refresh-dot">
+              <div style={{fontSize:10.5,color:C.t3,marginBottom:14}}>90 derniers jours vs les 90 jours précédents — l'esprit Kaizen : de petites améliorations constantes plutôt qu'un grand changement ponctuel.</div>
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#F8FAFC",borderRadius:C.rSm,padding:"10px 14px"}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:600,color:C.t2}}>Retard moyen de règlement</div>
+                    <div style={{fontSize:17,fontWeight:800,color:C.t1}}>{kaizenCurAvg}j</div>
+                  </div>
+                  {kaizenLatenessDelta!==null&&(
+                    <span style={{display:"flex",alignItems:"center",gap:4,fontSize:12,fontWeight:800,color:kaizenLatenessDelta<=0?C.greenDk:C.redDk,background:kaizenLatenessDelta<=0?C.greenL:C.redL,padding:"4px 10px",borderRadius:99}}>
+                      <i className={`ti ${kaizenLatenessDelta<=0?"ti-trending-down":"ti-trending-up"}`} style={{fontSize:14}} aria-hidden="true"/>
+                      {kaizenLatenessDelta<=0?"":"+"}{kaizenLatenessDelta}j
+                    </span>
+                  )}
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#F8FAFC",borderRadius:C.rSm,padding:"10px 14px"}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:600,color:C.t2}}>Anomalies détectées</div>
+                    <div style={{fontSize:17,fontWeight:800,color:C.t1}}>{anomaliesCurCount}</div>
+                  </div>
+                  <span style={{display:"flex",alignItems:"center",gap:4,fontSize:12,fontWeight:800,color:anomaliesDelta<=0?C.greenDk:C.redDk,background:anomaliesDelta<=0?C.greenL:C.redL,padding:"4px 10px",borderRadius:99}}>
+                    <i className={`ti ${anomaliesDelta<=0?"ti-trending-down":"ti-trending-up"}`} style={{fontSize:14}} aria-hidden="true"/>
+                    {anomaliesDelta<=0?"":"+"}{anomaliesDelta}
+                  </span>
+                </div>
+              </div>
+            </Card>
+          )}
+          {invoicingSlaCompliance!==null&&(
+            <Card title="Suivi SLA — Engagements de service" icon="ti-clipboard-check">
+              <div style={{fontSize:10.5,color:C.t3,marginBottom:14}}>Objectifs internes mesurables, à la manière des SLA de l'industrie des services.</div>
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,marginBottom:4}}>
+                    <span style={{fontWeight:600,color:C.t2}}>Facturation sous {INVOICING_SLA_DAYS}j après commande {avgInvoicingLead!==null?`(moy. ${avgInvoicingLead}j)`:""}</span>
+                    <span style={{fontWeight:800,color:invoicingSlaCompliance>=80?C.greenDk:invoicingSlaCompliance>=60?C.amberDk:C.redDk}}>{invoicingSlaCompliance}%</span>
+                  </div>
+                  <div style={{height:8,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                    <div style={{width:`${invoicingSlaCompliance}%`,height:"100%",background:invoicingSlaCompliance>=80?C.green:invoicingSlaCompliance>=60?C.amber:C.red,borderRadius:99}}/>
+                  </div>
+                </div>
+                {collectionSlaCompliance!==null&&(
+                  <div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,marginBottom:4}}>
+                      <span style={{fontWeight:600,color:C.t2}}>Recouvrement sous {COLLECTION_SLA_DAYS}j après échéance</span>
+                      <span style={{fontWeight:800,color:collectionSlaCompliance>=80?C.greenDk:collectionSlaCompliance>=60?C.amberDk:C.redDk}}>{collectionSlaCompliance}%</span>
+                    </div>
+                    <div style={{height:8,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                      <div style={{width:`${collectionSlaCompliance}%`,height:"100%",background:collectionSlaCompliance>=80?C.green:collectionSlaCompliance>=60?C.amber:C.red,borderRadius:99}}/>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
       {/* Matrice BCG des clients */}
       {bcgClients.length>=3&&(
         <Card title="Matrice BCG des clients" icon="ti-grid-dots">
@@ -2112,6 +2216,40 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
               </div>
             </Card>
           )}
+        </div>
+      )}
+
+      {/* Profondeur relationnelle (Guanxi) & Jugaad — efficacité frugale */}
+      {(clientIntel.length>=3)&&(
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
+          <Card title="Profondeur relationnelle" icon="ti-heart-handshake">
+            <div style={{fontSize:10.5,color:C.t3,marginBottom:12}}>Inspiré du 关系 (guanxi) — ancienneté et régularité de la relation, au-delà du seul volume transactionnel.</div>
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              {[...clientIntel].sort((a:any,b:any)=>b.intel.guanxiScore-a.intel.guanxiScore).slice(0,6).map((c:any)=>(
+                <div key={c.name} onClick={()=>setPage(c.name)} style={{cursor:"pointer"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                    <span style={{fontWeight:600,color:C.t1}}>{c.name}</span>
+                    <span style={{color:C.t3}}>{Math.round(c.intel.tenureDays/365*10)/10} an{c.intel.tenureDays>=730?"s":""} · <strong style={{color:C.t1}}>{c.intel.guanxiScore}/100</strong></span>
+                  </div>
+                  <div style={{height:6,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                    <div style={{width:`${c.intel.guanxiScore}%`,height:"100%",background:C.purple,borderRadius:99}}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <Card title="Jugaad — Efficacité frugale" icon="ti-bulb-filled">
+            <div style={{fontSize:10.5,color:C.t3,marginBottom:12}}>Valeur générée par transaction — repérer les relations les plus "efficientes" (peu de commandes, forte valeur), dans l'esprit indien du "faire plus avec moins".</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {jugaadRanking.slice(0,6).map((c:any)=>(
+                <div key={c.name} onClick={()=>setPage(c.name)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#F8FAFC",borderRadius:C.rSm,padding:"7px 12px",cursor:"pointer"}}>
+                  <span style={{fontWeight:600,fontSize:11.5,color:C.t1}}>{c.name}</span>
+                  <span style={{fontSize:11.5,fontWeight:800,color:C.blueDk}}>{fmtK(c.intel.avgOrderAmount)} € / commande</span>
+                </div>
+              ))}
+              {jugaadRanking.length===0&&<div style={{fontSize:11,color:C.t3,fontStyle:"italic"}}>Pas assez de données (min. 2 commandes par client)</div>}
+            </div>
+          </Card>
         </div>
       )}
 
@@ -2617,7 +2755,9 @@ function computeClientIntelligence(orders:any[]){
   if(sorted.length===0)return null;
   const now=Date.now();
   const lastOrderDate=sorted[sorted.length-1].date;
+  const firstOrderDate=sorted[0].date;
   const recencyDays=Math.floor((now-new Date(lastOrderDate+"T00:00:00").getTime())/86400000);
+  const tenureDays=Math.floor((now-new Date(firstOrderDate+"T00:00:00").getTime())/86400000);
 
   const cutoff12mo=now-365*86400000;
   const recent12mo=sorted.filter((o:any)=>new Date(o.date+"T00:00:00").getTime()>=cutoff12mo);
@@ -2625,8 +2765,8 @@ function computeClientIntelligence(orders:any[]){
   const monetary=recent12mo.reduce((s:number,o:any)=>s+(+o.amount||0),0);
 
   let avgDaysBetween:number|null=null;
+  const gaps:number[]=[];
   if(sorted.length>=2){
-    const gaps:number[]=[];
     for(let i=1;i<sorted.length;i++){
       gaps.push((new Date(sorted[i].date+"T00:00:00").getTime()-new Date(sorted[i-1].date+"T00:00:00").getTime())/86400000);
     }
@@ -2653,7 +2793,27 @@ function computeClientIntelligence(orders:any[]){
     else reorderStatus="on_track";
   }
 
-  return{recencyDays,frequency,monetary,avgDaysBetween,growthRate,avgOrderAmount,anomalies,reorderStatus,daysOverdue,totalOrders:sorted.length,lastOrderDate};
+  // Relationship depth (inspired by 关系/guanxi) — tenure blended with the
+  // regularity of the relationship (low variance in order cadence reads as
+  // a steady, relational pattern rather than opportunistic one-offs).
+  const tenureScore=Math.min(100,Math.round(tenureDays/1095*100)); // 3 years = 100
+  let regularityScore=50;
+  if(avgDaysBetween!==null&&avgDaysBetween>0&&gaps.length>=2){
+    const variance=gaps.reduce((s,g)=>s+Math.pow(g-(avgDaysBetween as number),2),0)/gaps.length;
+    const cv=Math.sqrt(variance)/avgDaysBetween;
+    regularityScore=Math.max(0,Math.min(100,Math.round(100-cv*60)));
+  }
+  const guanxiScore=Math.round(tenureScore*0.5+regularityScore*0.5);
+
+  // Portfolio coverage — % of months since the first order that actually
+  // saw at least one order. An honest proxy for "share of wallet" given
+  // we don't track per-order product lines to measure true cross-sell.
+  const monthsSinceFirst=Math.max(1,Math.ceil(tenureDays/30.44));
+  const uniqueMonthsActive=new Set(sorted.map((o:any)=>o.date.slice(0,7))).size;
+  const monthsCoverage=Math.min(100,Math.round(uniqueMonthsActive/monthsSinceFirst*100));
+
+  return{recencyDays,frequency,monetary,avgDaysBetween,growthRate,avgOrderAmount,anomalies,reorderStatus,daysOverdue,
+    totalOrders:sorted.length,lastOrderDate,tenureDays,guanxiScore,regularityScore,monthsCoverage};
 }
 
 function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true}:any){
@@ -8390,6 +8550,7 @@ const emptyProject=()=>({
   pumpTypes:[] as string[], pumpTypeOther:"",
   chanceOfSuccess:50, offerAmount:"",
   ongoing:true, phase:PHASES[0], status:PROJECT_STATUS[0], reason:"",
+  fiveWhys:["","","","",""] as string[],
   processingDate:todayStr(), expectedOrderDate:"", expectedInvoiceDate:"",
   createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(),
   comments:"",
@@ -8670,6 +8831,9 @@ function ProjectModal({project,otherProjects,onSave,onClose}:any){
   const isMobile=window.innerWidth<768;
   const canSave=f.name.trim()||f.description.trim();
   const needsReason=!f.ongoing||f.status==="Inactive";
+  const isLost=LOST_STATUSES.includes(f.status);
+  const[show5Whys,setShow5Whys]=useState(()=>(f.fiveWhys||[]).some((w:string)=>w));
+  const setWhy=(idx:number,val:string)=>setF((p:any)=>{const w=[...(p.fiveWhys||["","","","",""])];w[idx]=val;return{...p,fiveWhys:w};});
   const duplicates=findDuplicatesOf(f,otherProjects||[]);
   const dateError=
     (f.expectedOrderDate&&f.processingDate&&f.expectedOrderDate<f.processingDate)
@@ -8750,6 +8914,28 @@ function ProjectModal({project,otherProjects,onSave,onClose}:any){
             {needsReason
               ?<Fld label="Raison (clôture / inactivité)" value={f.reason} onChange={(v:any)=>s("reason",v)} placeholder="ex: Perdu face à un concurrent, budget annulé…"/>
               :<div/>}
+            {isLost&&(
+              <div style={{gridColumn:"span 2"}}>
+                <button type="button" onClick={()=>setShow5Whys(!show5Whys)}
+                  style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",color:C.purple,fontSize:12,fontWeight:700,cursor:"pointer",padding:0,marginBottom:show5Whys?10:0}}>
+                  <i className={`ti ${show5Whys?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:13}} aria-hidden="true"/>
+                  <i className="ti ti-search" style={{fontSize:13}} aria-hidden="true"/> Analyse 5 Pourquoi (cause racine) {show5Whys?"":"— optionnel"}
+                </button>
+                {show5Whys&&(
+                  <div style={{background:"#F3E8FF",borderRadius:C.rSm,padding:"12px 14px",display:"flex",flexDirection:"column",gap:8}}>
+                    <div style={{fontSize:10.5,color:"#6D28D9",marginBottom:2}}>Méthode Toyota — chaque réponse nourrit le "pourquoi" suivant, pour remonter jusqu'à la cause racine plutôt que le simple symptôme.</div>
+                    {[0,1,2,3,4].map(i=>(
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:11,fontWeight:800,color:"#7C3AED",width:20,flexShrink:0}}>{i+1}.</span>
+                        <input value={f.fiveWhys?.[i]||""} onChange={(e:any)=>setWhy(i,e.target.value)}
+                          placeholder={i===0?"Pourquoi avons-nous perdu ce projet ?":`Pourquoi (suite ${i+1}) ?`}
+                          style={{flex:1,padding:"6px 10px",border:"1px solid #DDD6FE",borderRadius:5,fontSize:12,fontFamily:"inherit"}}/>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <Fld label="Date de traitement du projet" type="date" value={f.processingDate} onChange={(v:any)=>s("processingDate",v)}/>
             <div/>
@@ -9625,6 +9811,14 @@ function ProjectsPage({isMobile}:any){
                       </div>
                     )}
                     {p.reason&&(!p.ongoing||p.status==="Inactive")&&<div style={{background:C.redL,border:`1px solid ${C.red}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.redDk,marginBottom:12}}><strong>Raison :</strong> {p.reason}</div>}
+                    {LOST_STATUSES.includes(p.status)&&(p.fiveWhys||[]).some((w:string)=>w)&&(
+                      <div style={{background:"#F3E8FF",border:"1px solid #DDD6FE",borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:"#6D28D9",marginBottom:12}}>
+                        <strong style={{display:"flex",alignItems:"center",gap:5,marginBottom:5}}><i className="ti ti-search" style={{fontSize:12}} aria-hidden="true"/> Analyse 5 Pourquoi</strong>
+                        <ol style={{margin:0,paddingLeft:18,display:"flex",flexDirection:"column",gap:2}}>
+                          {p.fiveWhys.filter((w:string)=>w).map((w:string,i:number)=><li key={i}>{w}</li>)}
+                        </ol>
+                      </div>
+                    )}
                     {p.comments&&<div style={{background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"9px 12px",fontSize:12,color:C.t2,marginBottom:12,whiteSpace:"pre-wrap"}}>{p.comments}</div>}
                     {p.history&&p.history.length>0&&(
                       <div style={{marginBottom:12}}>
