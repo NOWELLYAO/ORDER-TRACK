@@ -6145,7 +6145,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
   // Build quote lines directly from checked catalogue products (with their
   // latest known price pre-selected) instead of retyping each Part Number.
   const createQuoteFromSelection=()=>{
-    const selected=productsTyped.filter((p:any)=>selectedIds.has(p.id||p.pn));
+    const selected=getSelectedProductsInOrder();
     if(selected.length===0)return;
     const newLines=selected.map((p:any)=>{
       const opts=(p.prices||[]).map((pr:any)=>({...pr,pn:p.pn,desc:p.description})).sort((a:any,b:any)=>new Date(b.date).getTime()-new Date(a.date).getTime());
@@ -6553,6 +6553,11 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
     if(allSelected){const n=new Set(prev);visibleIds.forEach((id:string)=>n.delete(id));return n;}
     return new Set([...prev,...visibleIds]);
   });
+  // Products in the order they were checked (Set preserves insertion order),
+  // not the table's display order — so a quote/export reflects click order.
+  const getSelectedProductsInOrder=()=>Array.from(selectedIds)
+    .map((id:string)=>productsTyped.find((p:any)=>(p.id||p.pn)===id))
+    .filter(Boolean);
 
   const printCatalogueList=(list:any[],title:string)=>{
     const w=window.open("","_blank","width=1000,height=800");
@@ -7230,11 +7235,11 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
                   style={{display:"flex",alignItems:"center",gap:5,background:C.blue,color:"#fff",border:"none",borderRadius:6,padding:"6px 12px",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
                   <i className="ti ti-file-text" style={{fontSize:13}} aria-hidden="true"/> Créer un devis
                 </button>}
-                <button onClick={()=>printCatalogueList(productsTyped.filter((p:any)=>selectedIds.has(p.id||p.pn)),"Catalogue — Sélection")}
+                <button onClick={()=>printCatalogueList(getSelectedProductsInOrder(),"Catalogue — Sélection")}
                   style={{display:"flex",alignItems:"center",gap:5,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:6,padding:"6px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
                   <i className="ti ti-file-download" style={{fontSize:13}} aria-hidden="true"/> Exporter PDF
                 </button>
-                <button onClick={()=>exportCatalogueExcel(productsTyped.filter((p:any)=>selectedIds.has(p.id||p.pn)),`catalogue_selection_${new Date().toISOString().slice(0,10)}.xlsx`)}
+                <button onClick={()=>exportCatalogueExcel(getSelectedProductsInOrder(),`catalogue_selection_${new Date().toISOString().slice(0,10)}.xlsx`)}
                   style={{display:"flex",alignItems:"center",gap:5,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:6,padding:"6px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
                   <i className="ti ti-file-spreadsheet" style={{fontSize:13}} aria-hidden="true"/> Exporter Excel
                 </button>
@@ -7263,7 +7268,14 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
                     {filteredProducts.map((p:any,i:number)=>(
                       <tr key={p.id||i} style={{borderBottom:`1px solid ${C.b}`,background:selectedIds.has(p.id||p.pn)?C.blueL:i%2===0?"#fff":"#FAFBFD"}}>
                         <td style={{padding:"8px 10px",textAlign:"center"}}>
-                          <input type="checkbox" checked={selectedIds.has(p.id||p.pn)} onChange={()=>toggleSelect(p.id||p.pn)} style={{cursor:"pointer"}}/>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                            <input type="checkbox" checked={selectedIds.has(p.id||p.pn)} onChange={()=>toggleSelect(p.id||p.pn)} style={{cursor:"pointer"}}/>
+                            {selectedIds.has(p.id||p.pn)&&(
+                              <span title="Ordre de sélection" style={{fontSize:9,fontWeight:800,color:"#fff",background:C.blue,borderRadius:99,minWidth:15,height:15,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px"}}>
+                                {Array.from(selectedIds).indexOf(p.id||p.pn)+1}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td style={{padding:"8px 12px",fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{p.pn}</td>
                         <td style={{padding:"8px 12px",color:C.t1,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description||"—"}</td>
