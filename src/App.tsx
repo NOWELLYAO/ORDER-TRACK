@@ -5315,6 +5315,55 @@ function CatEditModal({product,onSave,onClose}:any){
 }
 
 // ─── CATALOGUE PAGE ───────────────────────────────────────────────────────────
+// ── Product range auto-classification (SP, SQ, CR, NB…) ──────────────────
+// Grundfos part numbers are usually plain numeric codes, so the series is
+// detected from the description (and PN as a fallback), matching whole
+// tokens against known series prefixes — longest prefix first so "CRN"
+// isn't mis-classified as "CR", etc.
+const PRODUCT_TYPE_RULES=[
+  {code:"SQE",  label:"SQE — Submersible pilotée"},
+  {code:"SQ",   label:"SQ — Pompes submersibles"},
+  {code:"SP",   label:"SP — Pompes submersibles"},
+  {code:"CRN",  label:"CRN — Multicellulaire verticale Inox"},
+  {code:"CRE",  label:"CRE — Multicellulaire électronique"},
+  {code:"CR",   label:"CR — Multicellulaire verticale"},
+  {code:"NBE",  label:"NBE — Monocellulaire électronique"},
+  {code:"NB",   label:"NB — Pompes monocellulaires"},
+  {code:"NK",   label:"NK — Monocellulaire longue"},
+  {code:"TPE",  label:"TPE — Circulateur in-line électronique"},
+  {code:"TP",   label:"TP — Circulateurs in-line"},
+  {code:"MAGNA",label:"MAGNA — Circulateurs"},
+  {code:"ALPHA",label:"ALPHA — Circulateurs"},
+  {code:"UPS",  label:"UPS — Circulateurs"},
+  {code:"CME",  label:"CME — Multicellulaire horizontale électronique"},
+  {code:"CM",   label:"CM — Multicellulaire horizontale"},
+  {code:"MQ",   label:"MQ — Groupe hydrophore compact"},
+  {code:"DME",  label:"DME — Doseuse électromagnétique"},
+  {code:"DMI",  label:"DMI — Pompe doseuse"},
+  {code:"DMX",  label:"DMX — Pompe doseuse"},
+  {code:"SBA",  label:"SBA — Surpression"},
+  {code:"SB",   label:"SB — Surpression"},
+  {code:"HYDRO",label:"HYDRO — Système de surpression"},
+  {code:"MPC",  label:"MPC — Contrôleur de surpression"},
+  {code:"SEG",  label:"SEG — Relevage broyeuse"},
+  {code:"SLV",  label:"SLV — Relevage vortex"},
+  {code:"SL",   label:"SL — Relevage"},
+  {code:"AMD",  label:"AMD — Broyeuse"},
+  {code:"AMG",  label:"AMG — Broyeuse"},
+].sort((a,b)=>b.code.length-a.code.length);
+const UNCLASSIFIED_TYPE={code:"AUTRE",label:"Autres / non classé"};
+
+function detectProductType(pn:string,description:string){
+  const text=`${description||""} ${pn||""}`.toUpperCase();
+  const tokens=text.split(/[^A-Z0-9]+/).filter(Boolean);
+  for(const rule of PRODUCT_TYPE_RULES){
+    for(const tok of tokens){
+      if(tok===rule.code||new RegExp(`^${rule.code}\\d`).test(tok))return rule;
+    }
+  }
+  return UNCLASSIFIED_TYPE;
+}
+
 function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any){
   const catReadOnly=!!restrictedClient||!isAdmin;
   const[tab,setTab]=useState<"upload"|"catalogue"|"devis"|"search">(catReadOnly?"catalogue":"devis");
@@ -5334,6 +5383,8 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
   const[colMap,setColMap]=useState<any>({pn:-1,desc:-1,price:-1,qty:-1,customer:-1,avail:-1});
   const[pendingFile,setPendingFile]=useState<string>("");
   const[catSearch,setCatSearch]=useState("");
+  const[typeFilter,setTypeFilter]=useState<string|null>(null);
+  const[selectedIds,setSelectedIds]=useState<Set<string>>(new Set());
   const[catEditProduct,setCatEditProduct]=useState<any>(null);
   const fileRef=useRef<HTMLInputElement>(null);
 
@@ -6310,10 +6361,84 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
     w.document.close();
   };
 
-  const filteredProducts=products.filter((p:any)=>
-    !catSearch||p.pn.toLowerCase().includes(catSearch.toLowerCase())||
-    (p.description||"").toLowerCase().includes(catSearch.toLowerCase())
+  const productsTyped=products.map((p:any)=>({...p,_type:detectProductType(p.pn,p.description)}));
+  const typeStats=(()=>{
+    const map:Record<string,{code:string,label:string,count:number}>={};
+    productsTyped.forEach((p:any)=>{
+      const k=p._type.code;
+      if(!map[k])map[k]={code:k,label:p._type.label,count:0};
+      map[k].count++;
+    });
+    return Object.values(map).sort((a:any,b:any)=>b.count-a.count);
+  })();
+  const filteredProducts=productsTyped.filter((p:any)=>
+    (!catSearch||p.pn.toLowerCase().includes(catSearch.toLowerCase())||
+    (p.description||"").toLowerCase().includes(catSearch.toLowerCase()))&&
+    (!typeFilter||p._type.code===typeFilter)
   );
+  const toggleSelect=(id:string)=>setSelectedIds(prev=>{const n=new Set(prev);if(n.has(id))n.delete(id);else n.add(id);return n;});
+  const toggleSelectAllVisible=()=>setSelectedIds(prev=>{
+    const visibleIds=filteredProducts.map((p:any)=>p.id||p.pn);
+    const allSelected=visibleIds.every((id:string)=>prev.has(id));
+    if(allSelected){const n=new Set(prev);visibleIds.forEach((id:string)=>n.delete(id));return n;}
+    return new Set([...prev,...visibleIds]);
+  });
+
+  const printCatalogueList=(list:any[],title:string)=>{
+    const w=window.open("","_blank","width=1000,height=800");
+    if(!w)return;
+    const rows=list.map((p:any)=>{
+      const prices=(p.prices||[]).slice(0,3).map((pr:any)=>`${fmt(pr.price)} € (${pr.date})`).join(" · ")||"—";
+      return `<tr>
+        <td style="font-family:monospace;font-weight:700;color:#1D4ED8">${p.pn}</td>
+        <td>${p.description||"—"}</td>
+        <td><span style="background:#EDE9FE;color:#7C3AED;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${p._type?.code||"AUTRE"}</span></td>
+        <td style="font-size:11px">${prices}</td>
+        <td>${p.lastUpdated||"—"}</td>
+      </tr>`;
+    }).join("");
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:28px 32px}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:16px;border-bottom:3px solid #0D1B2A}
+      .logo{font-size:20px;font-weight:800;color:#2563EB}
+      h1{font-size:16px;font-weight:700;margin-bottom:4px}
+      .meta{text-align:right;font-size:11px;color:#8FA0B3}
+      table{width:100%;border-collapse:collapse;font-size:11px}
+      th{background:#0D1B2A;color:#fff;padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+      td{padding:7px 10px;border-bottom:1px solid #E5EAF0}
+      tr:nth-child(even){background:#F8FAFC}
+      @media print{.no-print{display:none!important}}
+    </style></head><body>
+    <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px">
+      <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-weight:700;cursor:pointer">🖨️ Print / PDF</button>
+      <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer">✕</button>
+    </div>
+    <div class="header">
+      <div><div class="logo">OrderTrack</div><h1>${title}</h1></div>
+      <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR")}<br/>${list.length} article${list.length>1?"s":""}</div>
+    </div>
+    <table><thead><tr><th>Part Number</th><th>Description</th><th>Gamme</th><th>Prix</th><th>Mise à jour</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="5" style="text-align:center;color:#8FA0B3;padding:16px">Aucun article</td></tr>'}</tbody></table>
+    </body></html>`);
+    w.document.close();
+  };
+
+  const exportCatalogueExcel=async(list:any[],filename:string)=>{
+    const headers=["Part Number","Description","Gamme","Prix 1","Date 1","Prix 2","Date 2","Prix 3","Date 3","Dernière mise à jour"];
+    const rows=list.map((p:any)=>{
+      const pr=p.prices||[];
+      return[
+        p.pn,p.description||"",p._type?.code||"AUTRE",
+        pr[0]?.price??"",pr[0]?.date??"",
+        pr[1]?.price??"",pr[1]?.date??"",
+        pr[2]?.price??"",pr[2]?.date??"",
+        p.lastUpdated||"",
+      ];
+    });
+    await exportToExcel([headers,...rows],filename,"Catalogue");
+  };
 
   const TABS=catReadOnly?[
     {id:"catalogue",label:"Catalogue",icon:"ti-database"},
@@ -6855,26 +6980,89 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
               style={{background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
               <i className="ti ti-refresh" style={{fontSize:13}} aria-hidden="true"/> Sync
             </button>
+            <button onClick={()=>printCatalogueList(filteredProducts,typeFilter?`Catalogue — ${typeStats.find((t:any)=>t.code===typeFilter)?.label||typeFilter}`:"Catalogue complet")}
+              disabled={filteredProducts.length===0} title="Imprimer la vue actuelle (PDF)"
+              style={{background:"#fff",color:C.t2,border:`1px solid ${C.b}`,borderRadius:5,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:filteredProducts.length?"pointer":"not-allowed",display:"flex",alignItems:"center",gap:4,opacity:filteredProducts.length?1:.5}}>
+              <i className="ti ti-file-download" style={{fontSize:13}} aria-hidden="true"/> PDF
+            </button>
+            <button onClick={()=>exportCatalogueExcel(filteredProducts,`catalogue_${typeFilter||"complet"}_${new Date().toISOString().slice(0,10)}.xlsx`)}
+              disabled={filteredProducts.length===0} title="Exporter la vue actuelle (Excel)"
+              style={{background:"#fff",color:C.t2,border:`1px solid ${C.b}`,borderRadius:5,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:filteredProducts.length?"pointer":"not-allowed",display:"flex",alignItems:"center",gap:4,opacity:filteredProducts.length?1:.5}}>
+              <i className="ti ti-file-spreadsheet" style={{fontSize:13}} aria-hidden="true"/> Excel
+            </button>
             {!catReadOnly&&<button onClick={async()=>{if(window.confirm("Supprimer tout le catalogue ?"))await saveProducts([]);}}
               style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,padding:"6px 10px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
               <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/> Vider
             </button>}
           </div>
+
+          {/* ── Gammes de produits (classification automatique) ── */}
+          {typeStats.length>0&&(
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:11,color:C.t3,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
+                <i className="ti ti-category" style={{fontSize:13}} aria-hidden="true"/> Gammes :
+              </span>
+              <button onClick={()=>setTypeFilter(null)}
+                style={{background:!typeFilter?C.blue:"#F1F5F9",color:!typeFilter?"#fff":C.t2,border:"none",borderRadius:99,padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                Toutes ({products.length})
+              </button>
+              {typeStats.map((t:any)=>(
+                <button key={t.code} onClick={()=>setTypeFilter(typeFilter===t.code?null:t.code)}
+                  title={t.label}
+                  style={{background:typeFilter===t.code?C.purple:"#F3E8FF",color:typeFilter===t.code?"#fff":"#7C3AED",border:"none",borderRadius:99,padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+                  {t.code} <span style={{opacity:.75,fontWeight:500}}>({t.count})</span>
+                  {typeFilter===t.code&&<i className="ti ti-printer" style={{fontSize:12}} onClick={(e:any)=>{e.stopPropagation();printCatalogueList(filteredProducts,`Catalogue — ${t.label}`);}} title="Imprimer cette gamme" aria-hidden="true"/>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── Barre de sélection / export ── */}
+          {selectedIds.size>0&&(
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:C.blueL,border:`1px solid ${C.blue}`,borderRadius:C.r,padding:"9px 14px",flexWrap:"wrap",gap:10}}>
+              <span style={{fontSize:12,fontWeight:700,color:C.blueDk}}>{selectedIds.size} article{selectedIds.size>1?"s":""} sélectionné{selectedIds.size>1?"s":""}</span>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button onClick={()=>printCatalogueList(productsTyped.filter((p:any)=>selectedIds.has(p.id||p.pn)),"Catalogue — Sélection")}
+                  style={{display:"flex",alignItems:"center",gap:5,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:6,padding:"6px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
+                  <i className="ti ti-file-download" style={{fontSize:13}} aria-hidden="true"/> Exporter PDF
+                </button>
+                <button onClick={()=>exportCatalogueExcel(productsTyped.filter((p:any)=>selectedIds.has(p.id||p.pn)),`catalogue_selection_${new Date().toISOString().slice(0,10)}.xlsx`)}
+                  style={{display:"flex",alignItems:"center",gap:5,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:6,padding:"6px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
+                  <i className="ti ti-file-spreadsheet" style={{fontSize:13}} aria-hidden="true"/> Exporter Excel
+                </button>
+                <button onClick={()=>setSelectedIds(new Set())}
+                  style={{background:"none",border:"none",color:C.blueDk,fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
+                  Désélectionner
+                </button>
+              </div>
+            </div>
+          )}
           <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
             {loading?<div style={{padding:32,textAlign:"center",color:C.t3}}>Chargement…</div>:
             filteredProducts.length===0?<div style={{padding:32,textAlign:"center",color:C.t3}}>Aucun produit — importez des prix depuis l'onglet "Importer prix"</div>:(
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:600}}>
                   <thead><tr style={{background:"#0D1B2A"}}>
-                    {(catReadOnly?["Part Number","Description","Prix disponibles","Dernière mise à jour"]:["Part Number","Description","Prix disponibles","Dernière mise à jour","Actions"]).map((h,i)=>(
+                    <th style={{padding:"8px 10px",width:32}}>
+                      <input type="checkbox" checked={filteredProducts.length>0&&filteredProducts.every((p:any)=>selectedIds.has(p.id||p.pn))} onChange={toggleSelectAllVisible}
+                        style={{cursor:"pointer"}}/>
+                    </th>
+                    {(catReadOnly?["Part Number","Description","Gamme","Prix disponibles","Dernière mise à jour"]:["Part Number","Description","Gamme","Prix disponibles","Dernière mise à jour","Actions"]).map((h,i)=>(
                       <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
                     {filteredProducts.map((p:any,i:number)=>(
-                      <tr key={p.id||i} style={{borderBottom:`1px solid ${C.b}`,background:i%2===0?"#fff":"#FAFBFD"}}>
+                      <tr key={p.id||i} style={{borderBottom:`1px solid ${C.b}`,background:selectedIds.has(p.id||p.pn)?C.blueL:i%2===0?"#fff":"#FAFBFD"}}>
+                        <td style={{padding:"8px 10px",textAlign:"center"}}>
+                          <input type="checkbox" checked={selectedIds.has(p.id||p.pn)} onChange={()=>toggleSelect(p.id||p.pn)} style={{cursor:"pointer"}}/>
+                        </td>
                         <td style={{padding:"8px 12px",fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{p.pn}</td>
                         <td style={{padding:"8px 12px",color:C.t1,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description||"—"}</td>
+                        <td style={{padding:"8px 12px"}}>
+                          <span title={p._type.label} style={{background:p._type.code==="AUTRE"?"#F1F5F9":"#F3E8FF",color:p._type.code==="AUTRE"?C.t3:"#7C3AED",padding:"2px 8px",borderRadius:99,fontSize:10,fontWeight:700,cursor:"pointer"}}
+                            onClick={()=>setTypeFilter(p._type.code)}>{p._type.code}</span>
+                        </td>
                         <td style={{padding:"8px 12px"}}>
                           <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                             {(p.prices||[]).slice(0,3).map((pr:any,j:number)=>(
