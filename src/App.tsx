@@ -1614,6 +1614,14 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   // Top clients
   const cStats=clients.map((c:string)=>({name:c,...getStats(c),nbCmds:(data?.[c]||[]).length,acc:configs[c]?.accountNumber||"—",term:PAY_TERMS.find((t:any)=>t.id===(configs[c]?.termId||"net60"))?.label||"—"})).sort((a:any,b:any)=>b.openOrders-a.openOrders);
 
+  // Client risk scores (admin only) — flags clients whose real payment
+  // history (not just today's snapshot) shows recurring lateness
+  const clientRisks=isAdmin?clients
+    .map((c:string)=>({name:c,risk:computeClientRiskScore(data?.[c]||[])}))
+    .filter((r:any)=>r.risk&&r.risk.level!=="low")
+    .sort((a:any,b:any)=>a.risk.score-b.risk.score)
+    :[];
+
   // Monthly — filtered by selYear
   const monthly=MONTHS.map((_,mi)=>{let po=0,inv=0,paid=0;all.forEach((o:any)=>{
     const od=o.date?new Date(o.date+"T00:00:00"):null;
@@ -1798,6 +1806,25 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
           )}
         </Card>
       </div>
+
+      {/* Clients à risque (admin uniquement) */}
+      {clientRisks.length>0&&(
+        <Card title="Clients à risque de paiement" icon="ti-shield-exclamation" badge={{n:clientRisks.length,color:clientRisks.some((r:any)=>r.risk.level==="high")?C.red:C.amber}}>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {clientRisks.map((r:any)=>(
+              <div key={r.name} onClick={()=>setPage(r.name)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:r.risk.levelBg,borderRadius:C.rSm,cursor:"pointer",flexWrap:"wrap"}}>
+                <i className="ti ti-building-store" style={{fontSize:14,color:r.risk.levelColor}} aria-hidden="true"/>
+                <span style={{fontWeight:700,fontSize:12.5,color:C.t1,minWidth:120}}>{r.name}</span>
+                <span style={{fontSize:11,fontWeight:700,color:r.risk.levelColor}}>{r.risk.levelLabel} ({r.risk.score}/100)</span>
+                <span style={{fontSize:11,color:C.t3}}>{r.risk.avgLateDays}j de retard moyen · {r.risk.pctLate}% des factures réglées en retard</span>
+                {r.risk.currentOverdueCount>0&&<span style={{fontSize:10.5,fontWeight:700,color:C.redDk,background:"#fff",padding:"2px 8px",borderRadius:99}}>{r.risk.currentOverdueCount} échue{r.risk.currentOverdueCount>1?"s":""} actuellement</span>}
+                {r.risk.trend==="worsening"&&<i className="ti ti-trending-down" title="Tendance en dégradation" style={{fontSize:14,color:C.redDk,marginLeft:"auto"}} aria-hidden="true"/>}
+                {r.risk.trend==="improving"&&<i className="ti ti-trending-up" title="Tendance en amélioration" style={{fontSize:14,color:C.greenDk,marginLeft:"auto"}} aria-hidden="true"/>}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Row 3 : graphiques */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:isMobile?12:16}}>
@@ -2196,6 +2223,68 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
 }
 
 // ─── CLIENT PAGE ─────────────────────────────────────────────────────────────
+// ── Client risk score ─────────────────────────────────────────────────────
+// Scores a client's payment reliability from real history: how late invoices
+// were actually settled vs their due date, how many are currently overdue,
+// and whether the trend over the last 90 days is improving or worsening —
+// rather than just looking at today's snapshot.
+function computeClientRiskScore(orders:any[]){
+  const withDue=orders.flatMap((o:any)=>o.invoices||[]).filter((i:any)=>i.dueDate);
+  if(withDue.length===0)return null;
+
+  const now=Date.now();
+  const cutoff=now-90*86400000;
+  let lateDaysSum=0,lateCount=0,settledCount=0,currentOverdueCount=0;
+  const recentLate:number[]=[],olderLate:number[]=[];
+
+  withDue.forEach((i:any)=>{
+    const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+    const amount=+i.amount||0;
+    const fullyPaid=paid>=amount*0.999;
+    const dueTime=new Date(i.dueDate+"T00:00:00").getTime();
+    if(fullyPaid){
+      const lastPayDate=(i.payments||[]).map((p:any)=>p.date).filter(Boolean).sort().pop();
+      if(lastPayDate){
+        const payTime=new Date(lastPayDate+"T00:00:00").getTime();
+        const lateDays=Math.round((payTime-dueTime)/86400000);
+        settledCount++;
+        lateDaysSum+=Math.max(0,lateDays);
+        if(lateDays>0){
+          lateCount++;
+          if(payTime>=cutoff)recentLate.push(lateDays);else olderLate.push(lateDays);
+        }
+      }
+    } else if(dueTime<now){
+      currentOverdueCount++;
+    }
+  });
+
+  if(settledCount===0&&currentOverdueCount===0)return null;
+
+  const avgLateDays=settledCount>0?lateDaysSum/settledCount:0;
+  const pctLate=settledCount>0?lateCount/settledCount:0;
+  let score=100;
+  score-=Math.min(50,avgLateDays*1.2);
+  score-=pctLate*30;
+  score-=Math.min(20,currentOverdueCount*7);
+  score=Math.max(0,Math.min(100,Math.round(score)));
+
+  const level=score>=80?"low":score>=50?"medium":"high";
+  const levelLabel=score>=80?"Faible risque":score>=50?"Risque modéré":"Risque élevé";
+  const levelColor=score>=80?C.green:score>=50?C.amber:C.red;
+  const levelBg=score>=80?C.greenL:score>=50?C.amberL:C.redL;
+
+  const recentAvg=recentLate.length?recentLate.reduce((a,b)=>a+b,0)/recentLate.length:null;
+  const olderAvg=olderLate.length?olderLate.reduce((a,b)=>a+b,0)/olderLate.length:null;
+  let trend:"improving"|"worsening"|"stable"="stable";
+  if(recentAvg!==null&&olderAvg!==null){
+    if(recentAvg>olderAvg+3)trend="worsening";
+    else if(recentAvg<olderAvg-3)trend="improving";
+  }
+
+  return{score,level,levelLabel,levelColor,levelBg,avgLateDays:Math.round(avgLateDays),pctLate:Math.round(pctLate*100),currentOverdueCount,trend,settledCount};
+}
+
 function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
@@ -2215,16 +2304,26 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
   const txPay=stats.totalInv>0?(stats.totalPaid/stats.totalInv*100):0;
   const lateOrders=orders.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
   const overduePayments=orders.reduce((s:any[],o:any)=>s.concat((o.invoices||[]).filter((i:any)=>["overdue","ov_part","today","soon"].includes(payStatus(i).key)).map((i:any)=>({...i,_po:o.poNumber}))),[]);
+  const riskScore=isAdmin?computeClientRiskScore(orders):null;
   return(
     <>
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
         <div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,flexWrap:"wrap"}}>
             <h1 style={{margin:0,fontSize:22,fontWeight:700,color:C.t1}}>{client}</h1>
             {cfg.accountNumber&&<span style={{background:C.blueL,color:C.blueDk,padding:"3px 10px",borderRadius:5,fontSize:12,fontWeight:600,fontFamily:"monospace"}}>{cfg.accountNumber}</span>}
             <span style={{background:C.purpleL,color:C.purple,padding:"3px 10px",borderRadius:5,fontSize:11,fontWeight:600}}>{term.label}</span>
+            {riskScore&&(
+              <span title={`Score ${riskScore.score}/100 · ${riskScore.avgLateDays}j de retard moyen · ${riskScore.pctLate}% de factures réglées en retard${riskScore.currentOverdueCount>0?` · ${riskScore.currentOverdueCount} échue(s) actuellement`:""}`}
+                style={{background:riskScore.levelBg,color:riskScore.levelColor,padding:"3px 10px",borderRadius:5,fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:5,cursor:"help"}}>
+                <i className="ti ti-shield-half-filled" style={{fontSize:13}} aria-hidden="true"/>
+                {riskScore.levelLabel} ({riskScore.score})
+                {riskScore.trend==="worsening"&&<i className="ti ti-trending-down" title="Tendance en dégradation (90j)" style={{fontSize:13}} aria-hidden="true"/>}
+                {riskScore.trend==="improving"&&<i className="ti ti-trending-up" title="Tendance en amélioration (90j)" style={{fontSize:13}} aria-hidden="true"/>}
+              </span>
+            )}
           </div>
           <p style={{margin:0,color:C.t3,fontSize:13}}>Gestion des commandes 2026</p>
           {(lateOrders.length>0||overduePayments.length>0)&&<div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap"}}>
@@ -4022,6 +4121,37 @@ tr:nth-child(even) td{background:#F8FAFC;}
     );
     const validPlannedInvoices=plannedInvoices.filter((p:any)=>openOrderKeys.has(p.key));
 
+    // ── Auto-generated narrative summary — highlights the week's key facts
+    // from the same data already driving the tables below, instead of a
+    // blank page the user has to interpret from raw numbers alone. ──
+    const byClientAmt:Record<string,number>={};
+    recentOrders.forEach((o:any)=>{byClientAmt[o._client]=(byClientAmt[o._client]||0)+(+o.amount||0);});
+    const topClientEntry=Object.entries(byClientAmt).sort((a:any,b:any)=>b[1]-a[1])[0];
+    const biggestOrder=[...recentOrders].sort((a:any,b:any)=>(+b.amount||0)-(+a.amount||0))[0];
+    const invoiceTrendPct=invoicedPrevMonth>0?Math.round(((invoicedThisMonth-invoicedPrevMonth)/invoicedPrevMonth)*100):null;
+    const weekOverdue=allInvoices.filter((i:any)=>["overdue","ov_part"].includes(payStatus(i).key));
+    const weekOverdueAmt=weekOverdue.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
+
+    const summaryParts:string[]=[];
+    if(recentOrders.length>0){
+      summaryParts.push(`${recentOrders.length} new order${recentOrders.length>1?"s":""} received over the past ${periodLabel} totaling <b>${fmtK(recentOrdersAmt)} €</b>.`);
+      if(topClientEntry)summaryParts.push(`<b>${topClientEntry[0]}</b> was the top contributor with ${fmtK(topClientEntry[1])} €.`);
+      if(biggestOrder&&recentOrders.length>1)summaryParts.push(`Largest single order: ${biggestOrder._client} (${fmtK(+biggestOrder.amount||0)} €).`);
+    } else {
+      summaryParts.push(`No new orders were received over the past ${periodLabel}.`);
+    }
+    if(invoiceTrendPct!==null){
+      summaryParts.push(`Invoicing this month is <b style="color:${invoiceTrendPct>=0?"#059669":"#DC2626"}">${invoiceTrendPct>=0?"up":"down"} ${Math.abs(invoiceTrendPct)}%</b> vs ${prevMonthName} (${fmtK(invoicedThisMonth)} € vs ${fmtK(invoicedPrevMonth)} €).`);
+    } else if(invoicedThisMonth>0){
+      summaryParts.push(`${fmtK(invoicedThisMonth)} € invoiced so far this month.`);
+    }
+    if(weekOverdue.length>0){
+      summaryParts.push(`⚠ <b style="color:#DC2626">${weekOverdue.length} invoice${weekOverdue.length>1?"s are":" is"} currently overdue</b>, totaling ${fmtK(weekOverdueAmt)} €.`);
+    } else {
+      summaryParts.push(`No overdue invoices at this time.`);
+    }
+    const autoSummaryHtml=summaryParts.join(" ");
+
     const w=window.open("","_blank","width=1200,height=900");
     if(!w)return;
     w.document.write(`<!DOCTYPE html><html><head>
@@ -4161,6 +4291,11 @@ tr:nth-child(even) td{background:#F8FAFC;}
       <div class="kpi-val" style="color:#059669">${fmtK(allOrders.reduce((s:number,o:any)=>{const d=o.date?new Date(o.date+"T00:00:00"):null;return d&&d.getFullYear()===thisYear?s+(+o.amount||0):s;},0))} €</div>
       <div class="kpi-sub">Since January 1st, ${year}</div>
     </div>
+  </div>
+
+  <div style="background:#F8FAFC;border:1px solid #E5EAF0;border-left:4px solid #2563EB;border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:12px;line-height:1.7;color:#374151">
+    <div style="font-size:10px;font-weight:700;color:#2563EB;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">📝 Summary — ${weekLabel}</div>
+    ${autoSummaryHtml}
   </div>
 
   <div class="two-col">
@@ -5338,6 +5473,7 @@ const PRODUCT_TYPE_RULES=[
   {code:"CME",  label:"CME — Multicellulaire horizontale électronique"},
   {code:"CM",   label:"CM — Multicellulaire horizontale"},
   {code:"MQ",   label:"MQ — Groupe hydrophore compact"},
+  {code:"DMH",  label:"DMH — Doseuse hydraulique à membrane"},
   {code:"DME",  label:"DME — Doseuse électromagnétique"},
   {code:"DMI",  label:"DMI — Pompe doseuse"},
   {code:"DMX",  label:"DMX — Pompe doseuse"},
@@ -5364,6 +5500,18 @@ function detectProductType(pn:string,description:string){
   return UNCLASSIFIED_TYPE;
 }
 
+const PRICE_ALERT_THRESHOLD=5; // % change vs previous recorded price to flag as significant
+function priceChangeInfo(prices:any[]){
+  if(!prices||prices.length<2)return null;
+  const sorted=[...prices].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+  const prev=sorted[sorted.length-2],latest=sorted[sorted.length-1];
+  const prevPrice=+prev.price||0,latestPrice=+latest.price||0;
+  if(prevPrice<=0)return null;
+  const pct=((latestPrice-prevPrice)/prevPrice)*100;
+  if(Math.abs(pct)<PRICE_ALERT_THRESHOLD)return null;
+  return{pct,up:pct>0,prevPrice,latestPrice,prevDate:prev.date,latestDate:latest.date};
+}
+
 function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any){
   const catReadOnly=!!restrictedClient||!isAdmin;
   const[tab,setTab]=useState<"upload"|"catalogue"|"devis"|"search">(catReadOnly?"catalogue":"devis");
@@ -5384,6 +5532,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
   const[pendingFile,setPendingFile]=useState<string>("");
   const[catSearch,setCatSearch]=useState("");
   const[typeFilter,setTypeFilter]=useState<string|null>(null);
+  const[showPriceAlerts,setShowPriceAlerts]=useState(true);
   const[selectedIds,setSelectedIds]=useState<Set<string>>(new Set());
   const[catEditProduct,setCatEditProduct]=useState<any>(null);
   const fileRef=useRef<HTMLInputElement>(null);
@@ -5986,7 +6135,27 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
   };
 
   const addLine=()=>setQLines(l=>[...l,{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1}]);
+  const insertLineAt=(idx:number)=>setQLines(l=>{
+    const copy=[...l];
+    copy.splice(idx,0,{pn:"",desc:"",qty:1,unitPrice:0,avail:"",priceOptions:[],selectedPriceIdx:-1});
+    return copy;
+  });
   const removeLine=(i:number)=>setQLines(l=>l.filter((_:any,j:number)=>j!==i));
+
+  // Build quote lines directly from checked catalogue products (with their
+  // latest known price pre-selected) instead of retyping each Part Number.
+  const createQuoteFromSelection=()=>{
+    const selected=productsTyped.filter((p:any)=>selectedIds.has(p.id||p.pn));
+    if(selected.length===0)return;
+    const newLines=selected.map((p:any)=>{
+      const opts=(p.prices||[]).map((pr:any)=>({...pr,pn:p.pn,desc:p.description})).sort((a:any,b:any)=>new Date(b.date).getTime()-new Date(a.date).getTime());
+      return{pn:p.pn,desc:p.description||"",qty:1,unitPrice:opts[0]?.price||0,avail:"",priceOptions:opts,selectedPriceIdx:opts.length>0?0:-1};
+    });
+    const isEmptyDraft=qLines.length===1&&!qLines[0].pn&&!qLines[0].desc;
+    setQLines(isEmptyDraft?newLines:[...qLines,...newLines]);
+    setSelectedIds(new Set());
+    setTab("devis");
+  };
   const totalHT=qLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
 
   // ── Generate DRAFT quote (no header) ────────────────────────────────────────
@@ -6361,7 +6530,8 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
     w.document.close();
   };
 
-  const productsTyped=products.map((p:any)=>({...p,_type:detectProductType(p.pn,p.description)}));
+  const productsTyped=products.map((p:any)=>({...p,_type:detectProductType(p.pn,p.description),_priceChange:priceChangeInfo(p.prices)}));
+  const priceAlerts=productsTyped.filter((p:any)=>p._priceChange).sort((a:any,b:any)=>Math.abs(b._priceChange.pct)-Math.abs(a._priceChange.pct));
   const typeStats=(()=>{
     const map:Record<string,{code:string,label:string,count:number}>={};
     productsTyped.forEach((p:any)=>{
@@ -6659,9 +6829,15 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
                         {fmt((+line.qty||0)*(+line.unitPrice||0))} €
                       </td>
                       <td style={{padding:"8px 8px",verticalAlign:"top"}}>
-                        {qLines.length>1&&<button onClick={()=>removeLine(idx)} style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-                          <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/>
-                        </button>}
+                        <div style={{display:"flex",gap:4}}>
+                          <button onClick={()=>insertLineAt(idx+1)} title="Insérer une ligne ici"
+                            style={{background:C.blueL,color:C.blueDk,border:"none",borderRadius:4,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                            <i className="ti ti-row-insert-bottom" style={{fontSize:12}} aria-hidden="true"/>
+                          </button>
+                          {qLines.length>1&&<button onClick={()=>removeLine(idx)} title="Supprimer cette ligne" style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                            <i className="ti ti-trash" style={{fontSize:12}} aria-hidden="true"/>
+                          </button>}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -6996,6 +7172,34 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
             </button>}
           </div>
 
+          {/* ── Alertes de variation de prix ── */}
+          {priceAlerts.length>0&&(
+            <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.amber}`,boxShadow:C.sh,overflow:"hidden"}}>
+              <button onClick={()=>setShowPriceAlerts(!showPriceAlerts)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:C.amberL,border:"none",cursor:"pointer"}}>
+                <span style={{display:"flex",alignItems:"center",gap:8,fontSize:12.5,fontWeight:700,color:C.amberDk}}>
+                  <i className="ti ti-trending-up" style={{fontSize:15}} aria-hidden="true"/>
+                  {priceAlerts.length} variation{priceAlerts.length>1?"s":""} de prix significative{priceAlerts.length>1?"s":""} (≥{PRICE_ALERT_THRESHOLD}%)
+                </span>
+                <i className={`ti ${showPriceAlerts?"ti-chevron-up":"ti-chevron-down"}`} style={{fontSize:14,color:C.amberDk}} aria-hidden="true"/>
+              </button>
+              {showPriceAlerts&&(
+                <div style={{maxHeight:200,overflowY:"auto"}}>
+                  {priceAlerts.map((p:any,i:number)=>(
+                    <div key={i} onClick={()=>{setCatSearch(p.pn);setTypeFilter(null);}} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderTop:`1px solid ${C.b}`,cursor:"pointer",fontSize:11.5,flexWrap:"wrap"}}>
+                      <span style={{fontFamily:"monospace",fontWeight:700,color:C.blue,minWidth:80}}>{p.pn}</span>
+                      <span style={{color:C.t2,flex:1,minWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description||"—"}</span>
+                      <span style={{color:C.t3}}>{fmt(p._priceChange.prevPrice)} € → {fmt(p._priceChange.latestPrice)} €</span>
+                      <span style={{display:"flex",alignItems:"center",gap:3,fontWeight:800,color:p._priceChange.up?C.redDk:C.greenDk,background:p._priceChange.up?C.redL:C.greenL,padding:"2px 8px",borderRadius:99}}>
+                        <i className={`ti ${p._priceChange.up?"ti-arrow-up-right":"ti-arrow-down-right"}`} style={{fontSize:12}} aria-hidden="true"/>
+                        {Math.abs(p._priceChange.pct).toFixed(1)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Gammes de produits (classification automatique) ── */}
           {typeStats.length>0&&(
             <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
@@ -7022,6 +7226,10 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:C.blueL,border:`1px solid ${C.blue}`,borderRadius:C.r,padding:"9px 14px",flexWrap:"wrap",gap:10}}>
               <span style={{fontSize:12,fontWeight:700,color:C.blueDk}}>{selectedIds.size} article{selectedIds.size>1?"s":""} sélectionné{selectedIds.size>1?"s":""}</span>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {!catReadOnly&&<button onClick={createQuoteFromSelection}
+                  style={{display:"flex",alignItems:"center",gap:5,background:C.blue,color:"#fff",border:"none",borderRadius:6,padding:"6px 12px",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
+                  <i className="ti ti-file-text" style={{fontSize:13}} aria-hidden="true"/> Créer un devis
+                </button>}
                 <button onClick={()=>printCatalogueList(productsTyped.filter((p:any)=>selectedIds.has(p.id||p.pn)),"Catalogue — Sélection")}
                   style={{display:"flex",alignItems:"center",gap:5,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:6,padding:"6px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
                   <i className="ti ti-file-download" style={{fontSize:13}} aria-hidden="true"/> Exporter PDF
@@ -7072,6 +7280,13 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
                             ))}
                             {(p.prices||[]).length>3&&<span style={{color:C.t3,fontSize:10}}>+{p.prices.length-3}</span>}
                             {(!p.prices||p.prices.length===0)&&<span style={{color:C.t3,fontSize:10}}>Aucun prix</span>}
+                            {p._priceChange&&(
+                              <span title={`${fmt(p._priceChange.prevPrice)} € → ${fmt(p._priceChange.latestPrice)} €`}
+                                style={{display:"flex",alignItems:"center",gap:2,fontSize:10,fontWeight:800,color:p._priceChange.up?C.redDk:C.greenDk,background:p._priceChange.up?C.redL:C.greenL,padding:"2px 6px",borderRadius:99}}>
+                                <i className={`ti ${p._priceChange.up?"ti-arrow-up-right":"ti-arrow-down-right"}`} style={{fontSize:11}} aria-hidden="true"/>
+                                {Math.abs(p._priceChange.pct).toFixed(1)}%
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td style={{padding:"8px 12px",color:C.t3}}>{p.lastUpdated||"—"}</td>
