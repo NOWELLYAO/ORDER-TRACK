@@ -440,6 +440,29 @@ const calcDueDate=(invDate:string,termId:string,customDays:number)=>{
   return addDays(invDate,termId==="custom"?customDays:(term.days||0));
 };
 
+// ─── ORDER↔INVOICE LINE-LEVEL COVERAGE ───────────────────────────────────────
+// For an order with detailed lines (order.lines), sums how much of each PN
+// has been invoiced so far (across invoice.lines), and what remains.
+// excludeInvId lets the invoice being edited ignore its own previous values
+// so the "remaining" figure reflects what OTHER invoices already cover.
+const orderLineCoverage=(order:any,excludeInvId?:string)=>{
+  const invoiced:Record<string,number>={};
+  (order?.invoices||[]).forEach((inv:any)=>{
+    if(excludeInvId&&inv.id===excludeInvId)return;
+    (inv.lines||[]).forEach((l:any)=>{
+      if(!l.pn)return;
+      invoiced[l.pn]=(invoiced[l.pn]||0)+(+l.qtyInvoiced||+l.qty||0);
+    });
+  });
+  return(order?.lines||[]).map((l:any)=>{
+    const ordered=+l.qty||0;
+    const inv=invoiced[l.pn]||0;
+    const remaining=Math.max(0,ordered-inv);
+    return{...l,qtyOrdered:ordered,qtyInvoiced:inv,qtyRemaining:remaining,
+      status:inv<=0?"none":remaining<=0?"complete":"partial"};
+  });
+};
+
 const payStatus=(inv:any)=>{
   const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
   const total=+inv.amount||0;
@@ -1222,8 +1245,8 @@ export default function App(){
     // auto-calc dueDate from client config
     const cfg=configs[client]||{};
     const dueDate=f.dueDate||calcDueDate(f.date,cfg.termId||"net60",cfg.customDays||0);
-    const inv={...f,dueDate,payments:f.payments||[]};
-    if(f.id){const ii=invs.findIndex((i:any)=>i.id===f.id);if(ii>=0)invs[ii]={...invs[ii],...inv};}
+    const inv={...f,dueDate,payments:f.payments||[],attachments:f.attachments||[]};
+    if(f.id){const ii=invs.findIndex((i:any)=>i.id===f.id);if(ii>=0)invs[ii]={...invs[ii],...inv};else invs.push({...inv,id:f.id});}
     else invs.push({...inv,id:Date.now().toString()});
     orders[idx]={...orders[idx],invoices:invs};
     persist(null,{...data,[client]:orders},null);setModal(null);
@@ -1612,6 +1635,37 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   // Commandes en retard livraison
   const lateDelivery=all.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
 
+  // ── OTIF (On Time In Full) — standard supply-chain KPI ────────────────────
+  // Eligible = has a promised date, not cancelled, AND already resolvable
+  // (either the promised date has passed, or it's already fully invoiced —
+  // otherwise it's still "pending" and shouldn't count as success or failure).
+  // Success = fully invoiced (≥99% of PO) AND last invoice date ≤ promised date.
+  const todayMid=(()=>{const d=new Date();d.setHours(0,0,0,0);return d;})();
+  const otifEligible=all.filter((o:any)=>{
+    if(!o.expectedDate||o.status==="annule")return false;
+    const invAmt=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+    const inFullNow=invAmt>=(+o.amount||0)*0.99;
+    const pastDue=new Date(o.expectedDate+"T00:00:00")<todayMid;
+    return inFullNow||pastDue; // resolved one way or another
+  });
+  const otifSuccess=otifEligible.filter((o:any)=>{
+    const invAmt=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+    const inFull=invAmt>=(+o.amount||0)*0.99;
+    if(!inFull)return false;
+    const lastInvDate=(o.invoices||[]).reduce((mx:string,i:any)=>i.date&&i.date>mx?i.date:mx,"");
+    return!lastInvDate||lastInvDate<=o.expectedDate;
+  });
+  const otifPct=otifEligible.length>0?(otifSuccess.length/otifEligible.length*100):null;
+
+  // ── Fill Rate — % of ordered quantity actually invoiced, at article level ──
+  // Only meaningful for orders with imported line-item detail (order.lines).
+  const ordersWithLines=all.filter((o:any)=>(o.lines||[]).length>0);
+  const fillTotals=ordersWithLines.reduce((acc:{ordered:number,invoiced:number},o:any)=>{
+    orderLineCoverage(o).forEach((l:any)=>{acc.ordered+=l.qtyOrdered;acc.invoiced+=Math.min(l.qtyInvoiced,l.qtyOrdered);});
+    return acc;
+  },{ordered:0,invoiced:0});
+  const fillRatePct=fillTotals.ordered>0?(fillTotals.invoiced/fillTotals.ordered*100):null;
+
   // Top clients
   const cStats=clients.map((c:string)=>({name:c,...getStats(c),nbCmds:(data?.[c]||[]).length,acc:configs[c]?.accountNumber||"—",term:PAY_TERMS.find((t:any)=>t.id===(configs[c]?.termId||"net60"))?.label||"—"})).sort((a:any,b:any)=>b.openOrders-a.openOrders);
 
@@ -1858,6 +1912,12 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         {isAdmin&&<Kpi icon="ti-coin" label={tr("kpi_collected")} val={`${fmtK(totPaid)} €`} sub={`${txPay.toFixed(1)}% ${tr("kpi_collected_pct")}`} c={C.green} bg={C.greenL}/>}
         {isAdmin&&dso!==null&&<Kpi icon="ti-calendar-stats" label="DSO (délai recouvrement)" val={`${dso} j`} sub={dso<=45?"Sain":dso<=60?"À surveiller":"Élevé"} c={dso<=45?C.green:dso<=60?C.amber:C.red} bg={dso<=45?C.greenL:dso<=60?C.amberL:C.redL}/>}
         <Kpi icon="ti-hourglass-low" label="Factures en cours" val={`${fmtK(totUnpaid)} €`} sub={echues.length>0?`⚠ ${echues.length} échu${echues.length>1?"es":"e"}${upcoming.length>0?` · ${upcoming.length} à venir`:""}`:upcoming.length>0?`${upcoming.length} échéance${upcoming.length>1?"s":""} à venir`:"Aucune alerte"} c={echues.length>0?C.red:upcoming.length>0?C.amber:C.t3} bg={echues.length>0?C.redL:upcoming.length>0?C.amberL:"#F8FAFC"}/>
+        {isAdmin&&(otifPct===null
+          ?<Kpi icon="ti-truck-delivery" label="OTIF" val="—" sub="Aucune commande évaluable (renseigne les dates de livraison prévue)" c={C.t3} bg="#F8FAFC"/>
+          :<Kpi icon="ti-truck-delivery" label="OTIF (On Time In Full)" val={`${otifPct.toFixed(1)}%`} sub={`${otifSuccess.length}/${otifEligible.length} commande${otifEligible.length>1?"s":""} livrée${otifEligible.length>1?"s":""} à temps & complètes`} c={otifPct>=95?C.green:otifPct>=85?C.amber:C.red} bg={otifPct>=95?C.greenL:otifPct>=85?C.amberL:C.redL}/>)}
+        {isAdmin&&(fillRatePct===null
+          ?<Kpi icon="ti-packages" label="Fill Rate" val="—" sub="Aucun article détaillé importé (bon de commande PDF)" c={C.t3} bg="#F8FAFC"/>
+          :<Kpi icon="ti-packages" label="Fill Rate (articles)" val={`${fillRatePct.toFixed(1)}%`} sub={`${fillTotals.invoiced}/${fillTotals.ordered} unités facturées sur ${ordersWithLines.length} commande${ordersWithLines.length>1?"s":""} détaillée${ordersWithLines.length>1?"s":""}`} c={fillRatePct>=95?C.green:fillRatePct>=85?C.amber:C.red} bg={fillRatePct>=95?C.greenL:fillRatePct>=85?C.amberL:C.redL}/>)}
       </div>
 
       {/* Row 2 : jauges + alertes paiements */}
@@ -3149,7 +3209,8 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const term=PAY_TERMS.find(t=>t.id===(cfg?.termId||"net60"))||PAY_TERMS[5];
   const autoDate=(d:string)=>calcDueDate(d,cfg?.termId||"net60",cfg?.customDays||0);
-  const[f,setF]=useState({invoiceNumber:invoice?.invoiceNumber||"",date:invoice?.date||todayStr(),amount:invoice?.amount||"",shippingMode:invoice?.shippingMode||"Transitaire FCA",dueDate:invoice?.dueDate||autoDate(invoice?.date||todayStr()),overrideDueDate:!!invoice?.dueDate,notes:invoice?.notes||"",id:invoice?.id,payments:invoice?.payments||[]});
+  const invoiceIdRef=useRef(invoice?.id||Date.now().toString());
+  const[f,setF]=useState({invoiceNumber:invoice?.invoiceNumber||"",date:invoice?.date||todayStr(),amount:invoice?.amount||"",shippingMode:invoice?.shippingMode||"Transitaire FCA",dueDate:invoice?.dueDate||autoDate(invoice?.date||todayStr()),overrideDueDate:!!invoice?.dueDate,notes:invoice?.notes||"",id:invoiceIdRef.current,payments:invoice?.payments||[],attachments:invoice?.attachments||[],lines:invoice?.lines||[]});
   const s=(k:string,v:any)=>setF(p=>({...p,[k]:v}));
   const already=(order.invoices||[]).filter((i:any)=>i.id!==invoice?.id).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);
   const remaining=Math.max(0,(+order.amount||0)-already);
@@ -3185,6 +3246,14 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
         </div>
         <Fld label="Notes" value={f.notes} onChange={(v:any)=>s("notes",v)} placeholder="Détails de l'expédition…" span={2} rows={2}/>
       </div>
+      <InvoiceLinesPanel order={order} invoiceId={f.id} lines={f.lines} onChange={(lines:any[])=>s("lines",lines)}/>
+      <FileAttachments
+        files={f.attachments}
+        entityId={f.id}
+        entityType="invoice"
+        onAdd={(file:any)=>s("attachments",[...(f.attachments||[]),file])}
+        onDel={(idx:number)=>{const a=[...(f.attachments||[])];a.splice(idx,1);s("attachments",a);}}
+      />
     </Modal>
   );
 }
@@ -3339,7 +3408,10 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
                     <tr key={inv.id} style={{borderBottom:`1px solid ${C.b}`,background:ii%2===0?"#fff":"#FAFBFD",transition:"background .12s"}}
                       onMouseEnter={(e:any)=>e.currentTarget.style.background="#F0F9FF"}
                       onMouseLeave={(e:any)=>e.currentTarget.style.background=ii%2===0?"#fff":"#FAFBFD"}>
-                      <td style={{padding:"8px 10px",fontWeight:700,color:C.purple,whiteSpace:"nowrap"}}>{inv.invoiceNumber||"—"}</td>
+                      <td style={{padding:"8px 10px",fontWeight:700,color:C.purple,whiteSpace:"nowrap"}}>
+                        {inv.invoiceNumber||"—"}
+                        {inv.attachments?.length>0&&<i className="ti ti-paperclip" title={`${inv.attachments.length} pièce(s) jointe(s)`} style={{fontSize:12,color:C.t3,marginLeft:5}} aria-hidden="true"/>}
+                      </td>
                       <td style={{padding:"8px 10px",fontSize:11,color:C.t2,fontFamily:"monospace"}}>{inv._po||"—"}</td>
                       <td style={{padding:"8px 10px",color:C.t2,whiteSpace:"nowrap"}}>{fmtD(inv.date)}</td>
                       <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:C.teal,whiteSpace:"nowrap"}}>{fmt(+inv.amount||0)} €</td>
@@ -3639,6 +3711,11 @@ function PoLinesPanel({order,onSave,canEdit}:any){
         <h4 style={{margin:0,fontSize:13,fontWeight:700,color:C.t1,display:"flex",alignItems:"center",gap:6}}>
           <i className="ti ti-list-details" style={{fontSize:14}} aria-hidden="true"/> Articles commandés
           {existingLines.length>0&&<span style={{background:C.blueL,color:C.blueDk,borderRadius:99,fontSize:10,padding:"1px 7px",fontWeight:700}}>{existingLines.length}</span>}
+          {existingLines.length>0&&(()=>{const cov=orderLineCoverage(order);const complete=cov.filter((l:any)=>l.status==="complete").length;const allDone=complete===cov.length;return(
+            <span style={{background:allDone?C.greenL:C.amberL,color:allDone?C.greenDk:C.amberDk,borderRadius:99,fontSize:10,padding:"1px 8px",fontWeight:700,display:"flex",alignItems:"center",gap:3}}>
+              <i className={`ti ${allDone?"ti-circle-check":"ti-clock"}`} style={{fontSize:11}} aria-hidden="true"/> {complete}/{cov.length} facturés
+            </span>
+          );})()}
         </h4>
         {canEdit&&!draftLines&&(
           <>
@@ -3672,30 +3749,192 @@ function PoLinesPanel({order,onSave,canEdit}:any){
             <button onClick={()=>{setDraftLines(null);setImportMsg("");}} style={{background:"none",border:"none",color:C.t3,fontSize:11,cursor:"pointer"}}>Annuler</button>
           </div>
         </div>
-      ):existingLines.length>0?(
+      ):existingLines.length>0?(()=>{
+        const cov=orderLineCoverage(order);
+        const statusInfo=(st:string)=>st==="complete"?{label:"✓ Facturé",c:C.greenDk,bg:C.greenL}:st==="partial"?{label:"Partiel",c:C.amberDk,bg:C.amberL}:{label:"Non facturé",c:C.t3,bg:"#F1F5F9"};
+        return(
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead><tr style={{background:"#F8FAFC"}}>
-              {["Part Number","Description","Qté","Prix unit.","Total"].map(h=>(
+              {["Part Number","Description","Qté","Prix unit.","Total","Facturé","Restant","Statut"].map(h=>(
                 <th key={h} style={{padding:"5px 8px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",borderBottom:`1px solid ${C.b}`}}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
-              {existingLines.map((l:any,i:number)=>(
+              {cov.map((l:any,i:number)=>{
+                const si=statusInfo(l.status);
+                return(
                 <tr key={i} style={{borderBottom:`1px solid ${C.b}`}}>
                   <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}</td>
                   <td style={{padding:"5px 8px",color:C.t2}}>{l.desc||"—"}</td>
                   <td style={{padding:"5px 8px",color:C.t2}}>{l.qty}</td>
                   <td style={{padding:"5px 8px",color:C.t2}}>{fmt(l.unitPrice)} €</td>
                   <td style={{padding:"5px 8px",color:C.t1,fontWeight:700}}>{fmt((+l.qty||0)*(+l.unitPrice||0))} €</td>
+                  <td style={{padding:"5px 8px",color:C.t2}}>{l.qtyInvoiced}</td>
+                  <td style={{padding:"5px 8px",color:l.qtyRemaining>0?C.amberDk:C.t3,fontWeight:l.qtyRemaining>0?700:400}}>{l.qtyRemaining}</td>
+                  <td style={{padding:"5px 8px"}}><span style={{background:si.bg,color:si.c,padding:"2px 8px",borderRadius:99,fontSize:10,fontWeight:700}}>{si.label}</span></td>
+                </tr>
+              );})}
+            </tbody>
+          </table>
+        </div>
+      );})():(
+        <div style={{fontSize:11,color:C.t3,fontStyle:"italic"}}>Aucun détail ligne par ligne pour cette commande — importe le bon de commande PDF pour activer les analyses par article.</div>
+      )}
+    </div>
+  );
+}
+
+// ─── INVOICE LINE-ITEM ALLOCATION (link invoice ↔ order lines) ──────────────
+// Lets a user allocate, per article, how much this specific invoice covers —
+// either by quick-filling the remaining quantity per PN, or by importing the
+// facture PDF itself (same extraction engine as the PO import), always with
+// an editable review step before it's merged in.
+function InvoiceLinesPanel({order,invoiceId,lines,onChange}:any){
+  const[importing,setImporting]=useState(false);
+  const[importMsg,setImportMsg]=useState("");
+  const[draftLines,setDraftLines]=useState<any[]|null>(null);
+  const fileRef=useRef<HTMLInputElement>(null);
+  const orderHasLines=(order?.lines||[]).length>0;
+  const coverage=orderLineCoverage(order,invoiceId); // remaining excludes THIS invoice's own prior values
+  const byPn:Record<string,any>=Object.fromEntries((lines||[]).map((l:any)=>[l.pn,l]));
+
+  const setQty=(pn:string,desc:string,unitPrice:number,qty:number)=>{
+    const q=Math.max(0,qty||0);
+    const rest=(lines||[]).filter((l:any)=>l.pn!==pn);
+    onChange(q>0?[...rest,{pn,desc,unitPrice,qtyInvoiced:q}]:rest);
+  };
+  const fillAllRemaining=()=>{
+    onChange(coverage.filter((l:any)=>l.qtyRemaining>0).map((l:any)=>({pn:l.pn,desc:l.desc,unitPrice:l.unitPrice,qtyInvoiced:l.qtyRemaining})));
+  };
+
+  const handleFile=async(e:any)=>{
+    const file=e.target.files?.[0];
+    if(e.target)e.target.value="";
+    if(!file)return;
+    setImporting(true);setImportMsg("Extraction en cours…");
+    try{
+      const extracted=await extractInvoiceLinesFromPdf(file);
+      setImportMsg(extracted.length>0?`${extracted.length} ligne(s) détectée(s) — vérifie et corrige avant de valider.`:"Aucune ligne détectée automatiquement — ajoute-les manuellement ci-dessous.");
+      setDraftLines(extracted.length>0?extracted:[{pn:"",desc:"",qtyInvoiced:1,unitPrice:0}]);
+    }catch(err){
+      console.warn("[Invoice PDF import]",err);
+      setImportMsg("Extraction impossible sur ce fichier — ajoute les lignes manuellement.");
+      setDraftLines([{pn:"",desc:"",qtyInvoiced:1,unitPrice:0}]);
+    }
+    setImporting(false);
+  };
+  const updateDraft=(idx:number,field:string,val:any)=>setDraftLines((prev:any)=>prev.map((l:any,i:number)=>i===idx?{...l,[field]:val}:l));
+  const addDraftLine=()=>setDraftLines((prev:any)=>[...(prev||[]),{pn:"",desc:"",qtyInvoiced:1,unitPrice:0}]);
+  const removeDraftLine=(idx:number)=>setDraftLines((prev:any)=>prev.filter((_:any,i:number)=>i!==idx));
+  const confirmImport=()=>{
+    const clean=(draftLines||[]).filter((l:any)=>l.pn);
+    const merged=[...(lines||[]).filter((l:any)=>!clean.some((c:any)=>c.pn===l.pn)),...clean];
+    onChange(merged);
+    setDraftLines(null);setImportMsg("");
+  };
+
+  if(!orderHasLines&&!(lines||[]).length&&!draftLines){
+    return(
+      <div style={{marginBottom:16,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"12px 14px"}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.t1,display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+          <i className="ti ti-link" style={{fontSize:14,color:C.t3}} aria-hidden="true"/> Articles facturés
+        </div>
+        <div style={{fontSize:11,color:C.t3,fontStyle:"italic"}}>La commande n'a pas de détail ligne par ligne (importe d'abord son bon de commande) — impossible de lier cette facture aux articles pour l'instant.</div>
+      </div>
+    );
+  }
+
+  return(
+    <div style={{marginBottom:16,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"12px 14px"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:8}}>
+        <span style={{fontSize:12,fontWeight:600,color:C.t1,display:"flex",alignItems:"center",gap:6}}>
+          <i className="ti ti-link" style={{fontSize:14,color:C.t3}} aria-hidden="true"/> Articles facturés
+          {(lines||[]).length>0&&<span style={{background:C.blueL,color:C.blueDk,borderRadius:99,fontSize:10,padding:"1px 7px",fontWeight:700}}>{lines.length}</span>}
+        </span>
+        {!draftLines&&(
+          <div style={{display:"flex",gap:6}}>
+            {orderHasLines&&<button onClick={fillAllRemaining} style={{background:C.greenL,color:C.greenDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>Solder tout le restant</button>}
+            <input ref={fileRef} type="file" accept=".pdf" style={{display:"none"}} onChange={handleFile}/>
+            <button onClick={()=>fileRef.current?.click()} disabled={importing}
+              style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:importing?"wait":"pointer"}}>
+              <i className={`ti ${importing?"ti-loader-2":"ti-file-upload"}`} style={{fontSize:12}} aria-hidden="true"/> {importing?"Extraction…":"Importer cette facture (PDF)"}
+            </button>
+          </div>
+        )}
+      </div>
+      {importMsg&&!draftLines&&<div style={{fontSize:11,color:C.amberDk,marginBottom:8}}>{importMsg}</div>}
+
+      {draftLines?(
+        <div style={{background:C.blueL,border:`1px solid ${C.blue}`,borderRadius:C.rSm,padding:12}}>
+          <div style={{fontSize:11,color:C.blueDk,marginBottom:10}}>{importMsg} L'extraction automatique n'est jamais fiable à 100% — relis chaque ligne avant de valider.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+            {draftLines.map((l:any,i:number)=>(
+              <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center"}}>
+                <input value={l.pn} onChange={(e:any)=>updateDraft(i,"pn",e.target.value)} placeholder="PN" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,fontFamily:"monospace",width:"100%",boxSizing:"border-box"}}/>
+                <input value={l.desc} onChange={(e:any)=>updateDraft(i,"desc",e.target.value)} placeholder="Description" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                <input type="number" value={l.qtyInvoiced} onChange={(e:any)=>updateDraft(i,"qtyInvoiced",+e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                <input type="number" value={l.unitPrice} onChange={(e:any)=>updateDraft(i,"unitPrice",+e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                <button onClick={()=>removeDraftLine(i)} style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:26,height:26,cursor:"pointer"}}>✕</button>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={addDraftLine} style={{background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:5,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Ligne</button>
+            <button onClick={confirmImport} style={{background:C.blue,color:"#fff",border:"none",borderRadius:5,padding:"6px 14px",fontSize:11,fontWeight:700,cursor:"pointer"}}>✓ Valider l'import</button>
+            <button onClick={()=>{setDraftLines(null);setImportMsg("");}} style={{background:"none",border:"none",color:C.t3,fontSize:11,cursor:"pointer"}}>Annuler</button>
+          </div>
+        </div>
+      ):orderHasLines?(
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead><tr style={{background:"#F8FAFC"}}>
+              {["Part Number","Description","Commandé","Déjà facturé (autres)","Restant","Facturé ici"].map(h=>(
+                <th key={h} style={{padding:"5px 8px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",borderBottom:`1px solid ${C.b}`}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {coverage.map((l:any,i:number)=>{
+                const current=byPn[l.pn]?.qtyInvoiced||0;
+                return(
+                  <tr key={i} style={{borderBottom:`1px solid ${C.b}`}}>
+                    <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}</td>
+                    <td style={{padding:"5px 8px",color:C.t2}}>{l.desc||"—"}</td>
+                    <td style={{padding:"5px 8px",color:C.t2}}>{l.qtyOrdered}</td>
+                    <td style={{padding:"5px 8px",color:C.t3}}>{l.qtyInvoiced}</td>
+                    <td style={{padding:"5px 8px",color:l.qtyRemaining>0?C.amberDk:C.greenDk,fontWeight:600}}>{l.qtyRemaining}</td>
+                    <td style={{padding:"5px 8px"}}>
+                      <input type="number" min={0} value={current}
+                        onChange={(e:any)=>setQty(l.pn,l.desc,l.unitPrice,+e.target.value)}
+                        style={{width:70,padding:"4px 6px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11}}/>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ):(lines||[]).length>0?(
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead><tr style={{background:"#F8FAFC"}}>
+              {["Part Number","Description","Qté facturée","Prix unit."].map(h=>(
+                <th key={h} style={{padding:"5px 8px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",borderBottom:`1px solid ${C.b}`}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {lines.map((l:any,i:number)=>(
+                <tr key={i} style={{borderBottom:`1px solid ${C.b}`}}>
+                  <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}</td>
+                  <td style={{padding:"5px 8px",color:C.t2}}>{l.desc||"—"}</td>
+                  <td style={{padding:"5px 8px",color:C.t2}}>{l.qtyInvoiced}</td>
+                  <td style={{padding:"5px 8px",color:C.t2}}>{fmt(l.unitPrice)} €</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      ):(
-        <div style={{fontSize:11,color:C.t3,fontStyle:"italic"}}>Aucun détail ligne par ligne pour cette commande — importe le bon de commande PDF pour activer les analyses par article.</div>
-      )}
+      ):null}
     </div>
   );
 }
@@ -6214,6 +6453,13 @@ function parsePoLinesFromRows(rows:string[][]){
 async function extractOrderLinesFromPdf(file:File){
   const rows=await extractPdfRows(file);
   return parsePoLinesFromRows(rows);
+}
+
+// Same extraction engine as the PO import — a facture and a bon de commande
+// share the same tabular layout (PN / desc / qty / unit price per row).
+async function extractInvoiceLinesFromPdf(file:File){
+  const rows=await extractPdfRows(file);
+  return parsePoLinesFromRows(rows).map(l=>({pn:l.pn,desc:l.desc,qtyInvoiced:l.qty,unitPrice:l.unitPrice}));
 }
 
 const PRICE_ALERT_THRESHOLD=5; // % change vs previous recorded price to flag as significant
