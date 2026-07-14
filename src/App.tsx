@@ -3836,11 +3836,28 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange}:any){
     if(!file)return;
     setImporting(true);setImportMsg("Extraction en cours…");
     try{
-      const extracted=await extractInvoiceLinesFromPdf(file);
+      let extracted:any[]=[];
+      if(file.name.toLowerCase().endsWith(".pdf")){
+        extracted=await extractInvoiceLinesFromPdf(file);
+      } else {
+        const rows=await parseExcel(file);
+        // Same name-based column detection as the PO import — a facture and
+        // a bon de commande/devis rarely share the same column order.
+        const{headerIdx,colMap}=findHeaderRow(rows);
+        extracted=rows.slice(headerIdx+1)
+          .filter((r:any[])=>r.some((x:any)=>x!==null&&x!==undefined&&x!==""))
+          .map((r:any[])=>({
+            pn:String(colMap.pn>=0?r[colMap.pn]:"").trim(),
+            desc:String(colMap.desc>=0?r[colMap.desc]:"").trim(),
+            qtyInvoiced:colMap.qty>=0?(+r[colMap.qty]||1):1,
+            unitPrice:colMap.price>=0?(+r[colMap.price]||0):0,
+          }))
+          .filter((l:any)=>l.pn);
+      }
       setImportMsg(extracted.length>0?`${extracted.length} ligne(s) détectée(s) — vérifie et corrige avant de valider.`:"Aucune ligne détectée automatiquement — ajoute-les manuellement ci-dessous.");
       setDraftLines(extracted.length>0?extracted:[{pn:"",desc:"",qtyInvoiced:1,unitPrice:0}]);
     }catch(err){
-      console.warn("[Invoice PDF import]",err);
+      console.warn("[Invoice import]",err);
       setImportMsg("Extraction impossible sur ce fichier — ajoute les lignes manuellement.");
       setDraftLines([{pn:"",desc:"",qtyInvoiced:1,unitPrice:0}]);
     }
@@ -3877,10 +3894,10 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange}:any){
         {!draftLines&&(
           <div style={{display:"flex",gap:6}}>
             {orderHasLines&&<button onClick={fillAllRemaining} style={{background:C.greenL,color:C.greenDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>Solder tout le restant</button>}
-            <input ref={fileRef} type="file" accept=".pdf" style={{display:"none"}} onChange={handleFile}/>
+            <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv" style={{display:"none"}} onChange={handleFile}/>
             <button onClick={()=>fileRef.current?.click()} disabled={importing}
               style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:importing?"wait":"pointer"}}>
-              <i className={`ti ${importing?"ti-loader-2":"ti-file-upload"}`} style={{fontSize:12}} aria-hidden="true"/> {importing?"Extraction…":"Importer cette facture (PDF)"}
+              <i className={`ti ${importing?"ti-loader-2":"ti-file-upload"}`} style={{fontSize:12}} aria-hidden="true"/> {importing?"Extraction…":"Importer cette facture (PDF/Excel)"}
             </button>
           </div>
         )}
