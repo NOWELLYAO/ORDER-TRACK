@@ -220,6 +220,7 @@ const T:Record<Lang,Record<string,string>>={
     s_expediee:"Expédiée", s_exp_fact:"Expédiée + Facturée",
     s_fact_non_exp:"Facturée non expédiée", s_livree:"Livrée",
     s_livree_part:"Livrée (partielle)", s_annule:"Annulée",
+    s_fact_partielle:"Facturée (partielle)", s_closed:"Closed",
     // Search
     search_placeholder:"Rechercher un PO #, S/O, facture, référence…",
     search_hint:"Tapez au moins 2 caractères pour rechercher",
@@ -352,6 +353,7 @@ const T:Record<Lang,Record<string,string>>={
     s_expediee:"Shipped", s_exp_fact:"Shipped + Invoiced",
     s_fact_non_exp:"Invoiced, not shipped", s_livree:"Delivered",
     s_livree_part:"Delivered (partial)", s_annule:"Cancelled",
+    s_fact_partielle:"Invoiced (partial)", s_closed:"Closed",
     // Search
     search_placeholder:"Search PO #, SO, invoice, reference…",
     search_hint:"Type at least 2 characters to search",
@@ -388,6 +390,8 @@ const ORDER_STATUSES = [
   {id:"fact_non_exp",  label:"Facturée non expédiée",      icon:"ti-alert-circle",      step:5, alert:true,  desc:"⚠ Facture émise mais marchandise non encore expédiée"},
   {id:"livree",        label:"Livrée",                     icon:"ti-checks",            step:7, alert:false, desc:"Livraison confirmée chez le client"},
   {id:"livree_part",   label:"Livrée (partielle)",          icon:"ti-check",             step:7, alert:false, desc:"Livraison partielle — reliquat en attente"},
+  {id:"fact_partielle",label:"Facturée (partielle)",        icon:"ti-file-percent",      step:6, alert:true,  desc:"Facturée partiellement — reliquat à facturer"},
+  {id:"closed",        label:"Closed",                      icon:"ti-square-check",      step:9, alert:false, desc:"Commande intégralement facturée — clôturée"},
   {id:"annule",        label:"Annulée",                     icon:"ti-x",                 step:0, alert:false, desc:"Commande annulée"},
 ];
 const STATUSES = ORDER_STATUSES.map(s=>s.id);
@@ -503,6 +507,8 @@ const SS:Record<string,any>={
   "fact_non_exp": {c:C.redDk,bg:C.redL,alert:true},
   "livree":       {c:"#065F46",bg:"#ECFDF5",alert:false},
   "livree_part":  {c:"#0D9488",bg:"#CCFBF1",alert:false},
+  "fact_partielle":{c:C.amberDk,bg:C.amberL,alert:true},
+  "closed":       {c:"#065F46",bg:"#D1FAE5",alert:false},
   "annule":       {c:C.t3,bg:"#F1F5F9",alert:false},
 };
 const getStatusMeta=(id:string,lang:Lang="fr")=>{
@@ -510,6 +516,28 @@ const getStatusMeta=(id:string,lang:Lang="fr")=>{
   const labelKey=("s_"+id) as string;
   const label=T[lang][labelKey]||base.label;
   return{...base,label};
+};
+
+// ── Auto status transition on invoicing ─────────────────────────────────────
+// Invoicing (partial or complete) is reflected in the order's status
+// automatically — no need to remember to update it by hand:
+// - Invoice exists but doesn't cover the full PO amount → "fact_partielle"
+//   (Facturée partielle) — there's still a reliquat to bill.
+// - Invoice(s) cover ≥99% of the PO amount → "closed" — fully invoiced.
+// - No invoices left (e.g. last one deleted) → revert an auto-set status
+//   back to "en_cours" so it doesn't linger wrongly.
+// - "annule" is the only status never touched automatically — a cancelled
+//   order stays cancelled regardless of what happens to its invoices.
+const autoAdvanceOrderStatus=(order:any):any=>{
+  if(!order||order.status==="annule")return order;
+  const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+  const pct=+order.amount>0?invoiced/+order.amount:0;
+  if(invoiced<=0){
+    if(["fact_partielle","closed","fact_non_exp"].includes(order.status))return{...order,status:"en_cours"};
+    return order;
+  }
+  if(pct>=0.99)return{...order,status:"closed"};
+  return{...order,status:"fact_partielle"};
 };
 
 // ─── APP ────────────────────────────────────────────────────────────────────
@@ -1239,7 +1267,23 @@ export default function App(){
   const delOrder=(client:string,id:string)=>persist(null,{...data,[client]:getOrders(client).filter((o:any)=>o.id!==id)},null);
 
   // INVOICE CRUD
+  // Blocks saving an invoice whose number is already used elsewhere in the
+  // system (supplier invoice numbers must be unique regardless of client).
+  const findDuplicateInvoiceNumber=(invoiceNumber:string,excludeId?:string):{client:string,po:string}|null=>{
+    const num=(invoiceNumber||"").trim().toLowerCase();
+    if(!num)return null;
+    for(const c of clients){
+      for(const o of (getOrders(c)||[])){
+        for(const inv of (o.invoices||[])){
+          if(inv.id!==excludeId&&(inv.invoiceNumber||"").trim().toLowerCase()===num)return{client:c,po:o.poNumber};
+        }
+      }
+    }
+    return null;
+  };
   const saveInvoice=(client:string,oid:string,f:any)=>{
+    const dup=findDuplicateInvoiceNumber(f.invoiceNumber,f.id);
+    if(dup){alert(`Le numéro de facture "${f.invoiceNumber}" existe déjà sur la commande ${dup.po} (${dup.client}). Vérifiez qu'il ne s'agit pas d'un doublon avant d'enregistrer.`);return;}
     const orders=[...getOrders(client)];const idx=orders.findIndex((o:any)=>o.id===oid);if(idx<0)return;
     const invs=[...(orders[idx].invoices||[])];
     // auto-calc dueDate from client config
@@ -1248,10 +1292,10 @@ export default function App(){
     const inv={...f,dueDate,payments:f.payments||[],attachments:f.attachments||[]};
     if(f.id){const ii=invs.findIndex((i:any)=>i.id===f.id);if(ii>=0)invs[ii]={...invs[ii],...inv};else invs.push({...inv,id:f.id});}
     else invs.push({...inv,id:Date.now().toString()});
-    orders[idx]={...orders[idx],invoices:invs};
+    orders[idx]=autoAdvanceOrderStatus({...orders[idx],invoices:invs});
     persist(null,{...data,[client]:orders},null);setModal(null);
   };
-  const delInvoice=(client:string,oid:string,iid:string)=>{const orders=[...getOrders(client)];const idx=orders.findIndex((o:any)=>o.id===oid);if(idx<0)return;orders[idx]={...orders[idx],invoices:orders[idx].invoices.filter((i:any)=>i.id!==iid)};persist(null,{...data,[client]:orders},null);};
+  const delInvoice=(client:string,oid:string,iid:string)=>{const orders=[...getOrders(client)];const idx=orders.findIndex((o:any)=>o.id===oid);if(idx<0)return;orders[idx]=autoAdvanceOrderStatus({...orders[idx],invoices:orders[idx].invoices.filter((i:any)=>i.id!==iid)});persist(null,{...data,[client]:orders},null);};
 
   // PAYMENT CRUD
   const savePayment=(client:string,oid:string,iid:string,p:any)=>{
