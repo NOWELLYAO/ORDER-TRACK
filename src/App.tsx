@@ -3686,7 +3686,19 @@ function PoLinesPanel({order,onSave,canEdit}:any){
         lines=await extractOrderLinesFromPdf(file);
       } else {
         const rows=await parseExcel(file);
-        lines=rows.slice(1).map((r:any[])=>({pn:String(r[0]||"").trim(),desc:String(r[1]||"").trim(),qty:+r[2]||1,unitPrice:+r[3]||0})).filter((l:any)=>l.pn);
+        // Locate the real header row and map columns by NAME (not fixed
+        // position) — different suppliers/devis put PN, Qté, Prix in
+        // different column orders, so a fixed index silently corrupts data.
+        const{headerIdx,colMap}=findHeaderRow(rows);
+        lines=rows.slice(headerIdx+1)
+          .filter((r:any[])=>r.some((x:any)=>x!==null&&x!==undefined&&x!==""))
+          .map((r:any[])=>({
+            pn:String(colMap.pn>=0?r[colMap.pn]:"").trim(),
+            desc:String(colMap.desc>=0?r[colMap.desc]:"").trim(),
+            qty:colMap.qty>=0?(+r[colMap.qty]||1):1,
+            unitPrice:colMap.price>=0?(+r[colMap.price]||0):0,
+          }))
+          .filter((l:any)=>l.pn);
       }
       setImportMsg(lines.length>0?`${lines.length} ligne(s) détectée(s) — vérifie et corrige avant de valider.`:"Aucune ligne détectée automatiquement — ajoute-les manuellement ci-dessous.");
       setDraftLines(lines.length>0?lines:[{pn:"",desc:"",qty:1,unitPrice:0}]);
@@ -3718,13 +3730,19 @@ function PoLinesPanel({order,onSave,canEdit}:any){
           );})()}
         </h4>
         {canEdit&&!draftLines&&(
-          <>
+          <div style={{display:"flex",gap:6}}>
+            {existingLines.length>0&&(
+              <button onClick={()=>{setDraftLines(existingLines.map((l:any)=>({...l})));setImportMsg("Modifie, ajoute ou supprime des lignes puis valide.");}}
+                style={{display:"flex",alignItems:"center",gap:5,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                <i className="ti ti-edit" style={{fontSize:12}} aria-hidden="true"/> Modifier
+              </button>
+            )}
             <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv" style={{display:"none"}} onChange={handleFile}/>
             <button onClick={()=>fileRef.current?.click()} disabled={importing}
               style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:importing?"wait":"pointer"}}>
               <i className={`ti ${importing?"ti-loader-2":"ti-file-upload"}`} style={{fontSize:12}} aria-hidden="true"/> {importing?"Extraction…":"Importer bon de commande (PDF)"}
             </button>
-          </>
+          </div>
         )}
       </div>
       {importMsg&&!draftLines&&<div style={{fontSize:11,color:C.amberDk,marginBottom:8}}>{importMsg}</div>}
@@ -3745,7 +3763,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button onClick={addDraftLine} style={{background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:5,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Ligne</button>
-            <button onClick={confirmImport} style={{background:C.blue,color:"#fff",border:"none",borderRadius:5,padding:"6px 14px",fontSize:11,fontWeight:700,cursor:"pointer"}}>✓ Valider l'import</button>
+            <button onClick={confirmImport} style={{background:C.blue,color:"#fff",border:"none",borderRadius:5,padding:"6px 14px",fontSize:11,fontWeight:700,cursor:"pointer"}}>✓ {existingLines.length>0?"Enregistrer les modifications":"Valider l'import"}</button>
             <button onClick={()=>{setDraftLines(null);setImportMsg("");}} style={{background:"none",border:"none",color:C.t3,fontSize:11,cursor:"pointer"}}>Annuler</button>
           </div>
         </div>
@@ -3756,7 +3774,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead><tr style={{background:"#F8FAFC"}}>
-              {["Part Number","Description","Qté","Prix unit.","Total","Facturé","Restant","Statut"].map(h=>(
+              {["Part Number","Description","Qté","Prix unit.","Total","Facturé","Restant","Statut",...(canEdit?[""]:[])].map(h=>(
                 <th key={h} style={{padding:"5px 8px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",borderBottom:`1px solid ${C.b}`}}>{h}</th>
               ))}
             </tr></thead>
@@ -3773,6 +3791,10 @@ function PoLinesPanel({order,onSave,canEdit}:any){
                   <td style={{padding:"5px 8px",color:C.t2}}>{l.qtyInvoiced}</td>
                   <td style={{padding:"5px 8px",color:l.qtyRemaining>0?C.amberDk:C.t3,fontWeight:l.qtyRemaining>0?700:400}}>{l.qtyRemaining}</td>
                   <td style={{padding:"5px 8px"}}><span style={{background:si.bg,color:si.c,padding:"2px 8px",borderRadius:99,fontSize:10,fontWeight:700}}>{si.label}</span></td>
+                  {canEdit&&<td style={{padding:"5px 8px"}}>
+                    <button onClick={()=>{if(window.confirm(`Supprimer la ligne ${l.pn} ?`))onSave(existingLines.filter((_:any,idx:number)=>idx!==i));}}
+                      style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:22,height:22,cursor:"pointer",fontSize:11}}>✕</button>
+                  </td>}
                 </tr>
               );})}
             </tbody>
@@ -6026,7 +6048,7 @@ const detectColumns=(headers:string[])=>{
   return{
     pn:find("pn","part number","p/n","référence","reference","sku","code article"),
     desc:find("product","description","libellé","designation","désignation","produit","name","nom","article","label","wording","intitulé","désign"),
-    price:find("up (€)","up (eur)","up","unit price","prix unitaire","price","prix","tarif","cost"),
+    price:find("p.u","up (€)","up (eur)","up","unit price","prix unitaire","price","prix","tarif","cost"),
     qty:find("qty","quantité","quantite","stock","qté","disponible","quantity"),
     customer:find("customer","client","compte"),
     avail:find("avail","dispo","lead","délai","delai"),
