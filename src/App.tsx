@@ -1443,7 +1443,7 @@ export default function App(){
         {page==="dashboard"&&<CompilPage getStats={getStats} clients={visibleClients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} isAdmin={isAdmin}/>}
         {page==="tresorerie"&&<TresoreriePage getAllOrders={getAllOrdersScoped} clients={visibleClients} lang={lang} isMobile={isMobile}/>}
         {page==="rapport"&&!restrictedClient&&perms.canViewReports&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
-        {page==="catalogue"&&<CataloguePage clients={visibleClients} restrictedClient={restrictedClient} isAdmin={isAdmin} lang={lang} isMobile={isMobile}/>}
+        {page==="catalogue"&&<CataloguePage clients={visibleClients} restrictedClient={restrictedClient} isAdmin={isAdmin} getAllOrders={getAllOrdersScoped} lang={lang} isMobile={isMobile}/>}
         {page==="documents"&&!restrictedClient&&<DocumentsPage isMobile={isMobile}/>}
         {page==="projects"&&!restrictedClient&&<ProjectsPage isMobile={isMobile}/>}
         {page==="logs"&&<ActivityLogsPage session={session}/>}
@@ -3526,6 +3526,10 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
             onAdd={(f:any)=>{const upd={...order,attachments:[...(order.attachments||[]),f]};if(onSaveOrder)onSaveOrder(upd);else onEditOrder(upd);}}
             onDel={(idx:number)=>{const a=[...(order.attachments||[])];a.splice(idx,1);const upd={...order,attachments:a};if(onSaveOrder)onSaveOrder(upd);else onEditOrder(upd);}}
           />
+          {/* ── Articles commandés (import bon de commande) ── */}
+          <PoLinesPanel order={order} canEdit={perms?.canEdit}
+            onSave={(lines:any[])=>{const upd={...order,lines};if(onSaveOrder)onSaveOrder(upd);else onEditOrder(upd);}}
+          />
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
             <h4 style={{margin:0,fontSize:13,fontWeight:700,color:C.t1}}>Expéditions & Factures</h4>
             {perms?.canEdit&&<Btn icon="ti-plus" label="Ajouter facture" onClick={()=>onAddInv(order)} variant="success" small/>}
@@ -3583,6 +3587,114 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PURCHASE ORDER LINE-ITEM IMPORT ─────────────────────────────────────────
+// Upload a PDF (or Excel/CSV) purchase order, extract candidate line items,
+// and let the user review/correct every field before anything is saved —
+// automated PDF extraction across many supplier layouts is never perfect.
+function PoLinesPanel({order,onSave,canEdit}:any){
+  const[importing,setImporting]=useState(false);
+  const[importMsg,setImportMsg]=useState("");
+  const[draftLines,setDraftLines]=useState<any[]|null>(null);
+  const fileRef=useRef<HTMLInputElement>(null);
+  const existingLines=order.lines||[];
+
+  const handleFile=async(e:any)=>{
+    const file=e.target.files?.[0];
+    if(e.target)e.target.value="";
+    if(!file)return;
+    setImporting(true);setImportMsg("Extraction en cours…");
+    try{
+      let lines:any[]=[];
+      if(file.name.toLowerCase().endsWith(".pdf")){
+        lines=await extractOrderLinesFromPdf(file);
+      } else {
+        const rows=await parseExcel(file);
+        lines=rows.slice(1).map((r:any[])=>({pn:String(r[0]||"").trim(),desc:String(r[1]||"").trim(),qty:+r[2]||1,unitPrice:+r[3]||0})).filter((l:any)=>l.pn);
+      }
+      setImportMsg(lines.length>0?`${lines.length} ligne(s) détectée(s) — vérifie et corrige avant de valider.`:"Aucune ligne détectée automatiquement — ajoute-les manuellement ci-dessous.");
+      setDraftLines(lines.length>0?lines:[{pn:"",desc:"",qty:1,unitPrice:0}]);
+    }catch(err){
+      console.warn("[PO import]",err);
+      setImportMsg("Extraction impossible sur ce fichier — ajoute les lignes manuellement.");
+      setDraftLines([{pn:"",desc:"",qty:1,unitPrice:0}]);
+    }
+    setImporting(false);
+  };
+  const updateDraft=(idx:number,field:string,val:any)=>setDraftLines((prev:any)=>prev.map((l:any,i:number)=>i===idx?{...l,[field]:val}:l));
+  const addDraftLine=()=>setDraftLines((prev:any)=>[...(prev||[]),{pn:"",desc:"",qty:1,unitPrice:0}]);
+  const removeDraftLine=(idx:number)=>setDraftLines((prev:any)=>prev.filter((_:any,i:number)=>i!==idx));
+  const confirmImport=()=>{
+    onSave((draftLines||[]).filter((l:any)=>l.pn));
+    setDraftLines(null);setImportMsg("");
+  };
+
+  return(
+    <div style={{marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:8}}>
+        <h4 style={{margin:0,fontSize:13,fontWeight:700,color:C.t1,display:"flex",alignItems:"center",gap:6}}>
+          <i className="ti ti-list-details" style={{fontSize:14}} aria-hidden="true"/> Articles commandés
+          {existingLines.length>0&&<span style={{background:C.blueL,color:C.blueDk,borderRadius:99,fontSize:10,padding:"1px 7px",fontWeight:700}}>{existingLines.length}</span>}
+        </h4>
+        {canEdit&&!draftLines&&(
+          <>
+            <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv" style={{display:"none"}} onChange={handleFile}/>
+            <button onClick={()=>fileRef.current?.click()} disabled={importing}
+              style={{display:"flex",alignItems:"center",gap:5,background:C.blueL,color:C.blueDk,border:"none",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:600,cursor:importing?"wait":"pointer"}}>
+              <i className={`ti ${importing?"ti-loader-2":"ti-file-upload"}`} style={{fontSize:12}} aria-hidden="true"/> {importing?"Extraction…":"Importer bon de commande (PDF)"}
+            </button>
+          </>
+        )}
+      </div>
+      {importMsg&&!draftLines&&<div style={{fontSize:11,color:C.amberDk,marginBottom:8}}>{importMsg}</div>}
+
+      {draftLines?(
+        <div style={{background:C.blueL,border:`1px solid ${C.blue}`,borderRadius:C.rSm,padding:12}}>
+          <div style={{fontSize:11,color:C.blueDk,marginBottom:10}}>{importMsg}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+            {draftLines.map((l:any,i:number)=>(
+              <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center"}}>
+                <input value={l.pn} onChange={(e:any)=>updateDraft(i,"pn",e.target.value)} placeholder="PN" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,fontFamily:"monospace",width:"100%",boxSizing:"border-box"}}/>
+                <input value={l.desc} onChange={(e:any)=>updateDraft(i,"desc",e.target.value)} placeholder="Description" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                <input type="number" value={l.qty} onChange={(e:any)=>updateDraft(i,"qty",+e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                <input type="number" value={l.unitPrice} onChange={(e:any)=>updateDraft(i,"unitPrice",+e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                <button onClick={()=>removeDraftLine(i)} style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:26,height:26,cursor:"pointer"}}>✕</button>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={addDraftLine} style={{background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:5,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Ligne</button>
+            <button onClick={confirmImport} style={{background:C.blue,color:"#fff",border:"none",borderRadius:5,padding:"6px 14px",fontSize:11,fontWeight:700,cursor:"pointer"}}>✓ Valider l'import</button>
+            <button onClick={()=>{setDraftLines(null);setImportMsg("");}} style={{background:"none",border:"none",color:C.t3,fontSize:11,cursor:"pointer"}}>Annuler</button>
+          </div>
+        </div>
+      ):existingLines.length>0?(
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead><tr style={{background:"#F8FAFC"}}>
+              {["Part Number","Description","Qté","Prix unit.","Total"].map(h=>(
+                <th key={h} style={{padding:"5px 8px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",borderBottom:`1px solid ${C.b}`}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {existingLines.map((l:any,i:number)=>(
+                <tr key={i} style={{borderBottom:`1px solid ${C.b}`}}>
+                  <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}</td>
+                  <td style={{padding:"5px 8px",color:C.t2}}>{l.desc||"—"}</td>
+                  <td style={{padding:"5px 8px",color:C.t2}}>{l.qty}</td>
+                  <td style={{padding:"5px 8px",color:C.t2}}>{fmt(l.unitPrice)} €</td>
+                  <td style={{padding:"5px 8px",color:C.t1,fontWeight:700}}>{fmt((+l.qty||0)*(+l.unitPrice||0))} €</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ):(
+        <div style={{fontSize:11,color:C.t3,fontStyle:"italic"}}>Aucun détail ligne par ligne pour cette commande — importe le bon de commande PDF pour activer les analyses par article.</div>
       )}
     </div>
   );
@@ -6031,6 +6143,79 @@ function detectProductType(pn:string,description:string){
   return UNCLASSIFIED_TYPE;
 }
 
+// ── PDF purchase-order import ─────────────────────────────────────────────
+// Loads PDF.js from CDN, reconstructs visual "rows" by clustering text
+// fragments with similar vertical position (the standard trick for pulling
+// tabular data out of a PDF that has no real table structure), then applies
+// a best-effort heuristic to spot Part Number / Qty / Unit Price per row.
+// This is never perfect across the many PO layouts different suppliers use
+// — the caller always shows an editable preview before anything is saved.
+const loadPdfJsLib=():Promise<any>=>new Promise((resolve,reject)=>{
+  if((window as any).pdfjsLib){resolve((window as any).pdfjsLib);return;}
+  const s=document.createElement("script");
+  s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+  s.onload=()=>{
+    const lib=(window as any).pdfjsLib;
+    lib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    resolve(lib);
+  };
+  s.onerror=()=>reject(new Error("pdf.js load failed"));
+  document.head.appendChild(s);
+});
+
+async function extractPdfRows(file:File):Promise<string[][]>{
+  const pdfjsLib=await loadPdfJsLib();
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const rows:string[][]=[];
+  for(let pageNum=1;pageNum<=pdf.numPages;pageNum++){
+    const page=await pdf.getPage(pageNum);
+    const content=await page.getTextContent();
+    const items=content.items.map((it:any)=>({str:String(it.str||"").trim(),x:it.transform[4],y:Math.round(it.transform[5])})).filter((it:any)=>it.str);
+    const rowsMap:Record<number,any[]>={};
+    items.forEach((it:any)=>{
+      const existingKey=Object.keys(rowsMap).map(Number).find(k=>Math.abs(k-it.y)<=3);
+      const key=existingKey!==undefined?existingKey:it.y;
+      if(!rowsMap[key])rowsMap[key]=[];
+      rowsMap[key].push(it);
+    });
+    Object.keys(rowsMap).map(Number).sort((a,b)=>b-a).forEach(y=>{
+      rows.push(rowsMap[y].sort((a:any,b:any)=>a.x-b.x).map((it:any)=>it.str));
+    });
+  }
+  return rows;
+}
+
+function parsePoLinesFromRows(rows:string[][]){
+  const lines:{pn:string,desc:string,qty:number,unitPrice:number}[]=[];
+  rows.forEach(row=>{
+    const joined=row.join(" ").replace(/\s+/g," ").trim();
+    const pnMatch=joined.match(/\b\d{6,10}\b/);
+    if(!pnMatch)return;
+    const pn=pnMatch[0];
+    const afterPn=joined.slice(joined.indexOf(pn)+pn.length);
+    const numTokens=(afterPn.match(/[\d][\d.,]*/g)||[]).map(tok=>{
+      let clean=tok.replace(/\s/g,"");
+      if(clean.includes(",")&&clean.includes(".")){clean=clean.replace(/\./g,"").replace(",",".");}
+      else if(clean.includes(","))clean=clean.replace(",",".");
+      return parseFloat(clean);
+    }).filter(n=>!isNaN(n));
+    const descMatch=afterPn.match(/^([^\d]*)/);
+    const desc=(descMatch?descMatch[1]:"").trim().replace(/^[-–:\s]+/,"").slice(0,120);
+    const smallInts=numTokens.filter(n=>Number.isInteger(n)&&n>0&&n<1000);
+    const decimalsFound=numTokens.filter(n=>!Number.isInteger(n)&&n>0);
+    let qty=smallInts.length>0?smallInts[0]:1;
+    let unitPrice=decimalsFound.length>0?decimalsFound[0]:(numTokens.length>0?numTokens[numTokens.length-1]:0);
+    lines.push({pn,desc,qty,unitPrice});
+  });
+  return lines;
+}
+
+async function extractOrderLinesFromPdf(file:File){
+  const rows=await extractPdfRows(file);
+  return parsePoLinesFromRows(rows);
+}
+
 const PRICE_ALERT_THRESHOLD=5; // % change vs previous recorded price to flag as significant
 function priceChangeInfo(prices:any[]){
   if(!prices||prices.length<2)return null;
@@ -6043,7 +6228,7 @@ function priceChangeInfo(prices:any[]){
   return{pct,up:pct>0,prevPrice,latestPrice,prevDate:prev.date,latestDate:latest.date};
 }
 
-function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any){
+function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,isMobile}:any){
   const catReadOnly=!!restrictedClient||!isAdmin;
   const[tab,setTab]=useState<"upload"|"catalogue"|"devis"|"search"|"abc">(catReadOnly?"catalogue":"devis");
   useEffect(()=>{if(catReadOnly&&tab!=="catalogue")setTab("catalogue");},[catReadOnly,tab]);
@@ -7065,18 +7250,20 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
   const priceAlerts=productsTyped.filter((p:any)=>p._priceChange).sort((a:any,b:any)=>Math.abs(b._priceChange.pct)-Math.abs(a._priceChange.pct));
 
   // ── ABC Analysis (Pareto applied to the catalogue) ──────────────────────
-  // Ranks products by their contribution to total quoted value, based on
-  // the last 50 saved devis (quotes are the closest proxy to real commercial
-  // interest we track — orders don't carry line-item detail).
+  // Ranks products by their contribution to total value. Uses real order
+  // line items (from imported bons de commande) whenever available — the
+  // true source of realized business — and only falls back to quoted lines
+  // (the last 50 saved devis) when no order carries line-item detail yet.
+  const allOrdersForAbc=getAllOrders?getAllOrders():[];
+  const orderLinesExist=allOrdersForAbc.some((o:any)=>(o.lines||[]).length>0);
   const abcAnalysis=(()=>{
     const byPn:Record<string,{pn:string,desc:string,value:number,qty:number}>={};
-    quotes.forEach((q:any)=>{
-      (q.lines||[]).forEach((l:any)=>{
-        if(!l.pn)return;
-        if(!byPn[l.pn])byPn[l.pn]={pn:l.pn,desc:l.desc||"",value:0,qty:0};
-        byPn[l.pn].value+=(+l.qty||0)*(+l.unitPrice||0);
-        byPn[l.pn].qty+=(+l.qty||0);
-      });
+    const source=orderLinesExist?allOrdersForAbc.flatMap((o:any)=>o.lines||[]):quotes.flatMap((q:any)=>q.lines||[]);
+    source.forEach((l:any)=>{
+      if(!l.pn)return;
+      if(!byPn[l.pn])byPn[l.pn]={pn:l.pn,desc:l.desc||"",value:0,qty:0};
+      byPn[l.pn].value+=(+l.qty||0)*(+l.unitPrice||0);
+      byPn[l.pn].qty+=(+l.qty||0);
     });
     const arr=Object.values(byPn).sort((a:any,b:any)=>b.value-a.value);
     const total=arr.reduce((s:number,p:any)=>s+p.value,0);
@@ -7892,8 +8079,11 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,lang,isMobile}:any
       {/* ── TAB: ABC ANALYSIS ─────────────────────────────────────────────── */}
       {tab==="abc"&&(
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{fontSize:12,color:C.t3}}>
-            Classement des articles selon leur contribution à la valeur cumulée des {quotes.length} derniers devis enregistrés — permet de prioriser stock et effort commercial sur les références qui comptent vraiment.
+          <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:C.t3,background:orderLinesExist?C.greenL:C.amberL,borderRadius:C.rSm,padding:"9px 12px"}}>
+            <i className={`ti ${orderLinesExist?"ti-circle-check":"ti-info-circle"}`} style={{fontSize:14,color:orderLinesExist?C.greenDk:C.amberDk,flexShrink:0}} aria-hidden="true"/>
+            {orderLinesExist
+              ?<span><strong style={{color:C.greenDk}}>Basé sur les commandes réelles</strong> — {allOrdersForAbc.filter((o:any)=>(o.lines||[]).length>0).length} commande(s) avec détail ligne par ligne importé.</span>
+              :<span><strong style={{color:C.amberDk}}>Basé sur les devis</strong> (aucune commande détaillée importée pour l'instant) — {quotes.length} devis pris en compte. Importe des bons de commande PDF depuis une commande pour basculer sur des données réelles.</span>}
           </div>
           {abcAnalysis.length===0?(
             <div style={{background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.rLg,padding:40,textAlign:"center",color:C.t3}}>
