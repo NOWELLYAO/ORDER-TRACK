@@ -3576,6 +3576,8 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
             );
           })()}
           <div style={{display:"flex",gap:4}} onClick={(e:any)=>e.stopPropagation()}>
+            <IBtn icon="ti-file-type-pdf" title="Rapport PDF" c={C.red} bg={C.redL} onClick={()=>printOrderReport(order,client)}/>
+            <IBtn icon="ti-file-spreadsheet" title="Rapport Excel" c={C.green} bg={C.greenL} onClick={()=>exportOrderExcel(order,client)}/>
             {perms?.canEdit&&<IBtn icon="ti-plus" title="Ajouter facture" c={C.teal} bg={C.tealL} onClick={()=>onAddInv(order)}/>}
             {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditOrder(order)}/>}
             {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_order")))onDelOrder(order.id);}}/>}
@@ -3803,6 +3805,13 @@ function PoLinesPanel({order,onSave,canEdit}:any){
                 </tr>
               );})}
             </tbody>
+            <tfoot><tr style={{borderTop:`2px solid ${C.t1}`,background:"#F8FAFC"}}>
+              <td colSpan={4} style={{padding:"7px 8px",color:C.t1,fontWeight:700,fontSize:11,textAlign:"right"}}>Total commande</td>
+              <td style={{padding:"7px 8px",color:C.t1,fontWeight:800,fontSize:12}}>{fmt(cov.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0))} €</td>
+              <td style={{padding:"7px 8px",color:C.t2,fontWeight:700,fontSize:11}}>{fmt(cov.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0))} €</td>
+              <td style={{padding:"7px 8px",color:C.amberDk,fontWeight:700,fontSize:11}}>{fmt(cov.reduce((s:number,l:any)=>s+(+l.qtyRemaining||0)*(+l.unitPrice||0),0))} €</td>
+              <td colSpan={canEdit?2:1}></td>
+            </tr></tfoot>
           </table>
         </div>
       );})():(
@@ -3931,6 +3940,10 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
                 <button onClick={()=>removeDraftLine(i)} style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:26,height:26,cursor:"pointer"}}>✕</button>
               </div>
             ))}
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:10,paddingTop:8,borderTop:`1px solid ${C.blue}`}}>
+            <span style={{fontSize:11,color:C.blueDk,fontWeight:600}}>Montant total de la facture :</span>
+            <span style={{fontSize:15,color:C.t1,fontWeight:800}}>{fmt(draftLines.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0))} €</span>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button onClick={addDraftLine} style={{background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:5,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Ligne</button>
@@ -10402,6 +10415,176 @@ function ProjectsPage({isMobile}:any){
       )}
     </div>
   );
+}
+
+// ── PDF (print-to-PDF): full order report — articles coverage + invoices ──
+function printOrderReport(order:any,client:string){
+  const w=window.open("","_blank","width=1000,height=1000");
+  if(!w)return;
+  const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+  const remaining=Math.max(0,(+order.amount||0)-invoiced);
+  const pct=+order.amount>0?Math.min(100,(invoiced/+order.amount)*100):0;
+  const totalPaid=(order.invoices||[]).reduce((s:number,i:any)=>s+(i.payments||[]).reduce((ss:number,p:any)=>ss+(+p.amount||0),0),0);
+  const meta=getStatusMeta(order.status);
+  const cov=orderLineCoverage(order);
+  const hasLines=cov.length>0;
+
+  const linesRows=cov.map((l:any)=>{
+    const si=l.status==="complete"?{label:"Facturé",c:"#059669",bg:"#D1FAE5"}:l.status==="partial"?{label:"Partiel",c:"#D97706",bg:"#FEF3C7"}:{label:"Non facturé",c:"#6B7280",bg:"#F1F5F9"};
+    return`<tr><td style="font-family:monospace;color:#2563EB;font-weight:700">${l.pn}</td><td>${l.desc||"—"}</td><td style="text-align:right">${l.qty}</td><td style="text-align:right">${fmt(l.unitPrice)} €</td><td style="text-align:right;font-weight:700">${fmt((+l.qty||0)*(+l.unitPrice||0))} €</td><td style="text-align:right">${l.qtyInvoiced}</td><td style="text-align:right;color:${l.qtyRemaining>0?"#D97706":"#059669"};font-weight:700">${l.qtyRemaining}</td><td><span style="background:${si.bg};color:${si.c};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${si.label}</span></td></tr>`;
+  }).join("");
+  const linesTotalOrdered=cov.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
+  const linesTotalInvoiced=cov.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
+  const linesTotalRemaining=cov.reduce((s:number,l:any)=>s+(+l.qtyRemaining||0)*(+l.unitPrice||0),0);
+
+  const invRows=(order.invoices||[]).map((inv:any)=>{
+    const ps=payStatus(inv);
+    const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+    return`<tr><td style="font-weight:700;color:#7C3AED">${inv.invoiceNumber||"—"}</td><td>${fmtD(inv.date)}</td><td style="text-align:right;font-weight:700">${fmt(inv.amount)} €</td><td>${fmtD(inv.dueDate)}</td><td style="text-align:right;color:#059669">${fmt(paid)} €</td><td style="text-align:right;color:${ps.rem>0?"#DC2626":"#059669"};font-weight:700">${fmt(ps.rem)} €</td><td><span style="background:${ps.bg||"#F1F5F9"};color:${ps.color||"#6B7280"};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${ps.label||ps.key||"—"}</span></td></tr>`;
+  }).join("")||`<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucune facture pour cette commande</td></tr>`;
+
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rapport commande ${order.poNumber||""}</title><style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:28px 32px;}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:16px;border-bottom:3px solid #0D1B2A;}
+    .logo{font-size:20px;font-weight:800;color:#2563EB;letter-spacing:-.02em;}
+    .meta{text-align:right;font-size:11px;color:#8FA0B3;}
+    h1{font-size:17px;font-weight:700;color:#0D1B2A;margin-bottom:2px;}
+    h2{font-size:13px;font-weight:700;color:#0D1B2A;margin:22px 0 8px;display:flex;align-items:center;gap:6px;}
+    .sub{font-size:11px;color:#8FA0B3;margin-bottom:18px;}
+    .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px;}
+    .card{background:#F8FAFC;border:1px solid #E5EAF0;border-radius:8px;padding:10px 12px;}
+    .card .lbl{font-size:9px;color:#8FA0B3;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
+    .card .val{font-size:15px;font-weight:800;color:#0D1B2A;}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px;}
+    th{background:#0D1B2A;color:#fff;padding:7px 9px;text-align:left;font-weight:600;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;}
+    td{padding:6px 9px;border-bottom:1px solid #E5EAF0;}
+    tr:nth-child(even){background:#F8FAFC;}
+    tfoot td{font-weight:800;border-top:2px solid #0D1B2A;background:#F8FAFC;}
+    .footer{margin-top:22px;padding-top:12px;border-top:1px solid #E5EAF0;font-size:10px;color:#8FA0B3;display:flex;justify-content:space-between;}
+    @media print{body{padding:16px;}.no-print{display:none!important}}
+  </style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px">
+    <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
+    <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">✕ Close</button>
+  </div>
+  <div class="header">
+    <div><div class="logo">OrderTrack</div><h1>Rapport de commande — ${order.poNumber||"—"}</h1><div class="sub">Client : ${client} ${order.soNumber?`· S/O : ${order.soNumber}`:""}</div></div>
+    <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Statut : <strong>${meta.label||order.status}</strong></div>
+  </div>
+  <div class="summary">
+    <div class="card"><div class="lbl">Montant PO</div><div class="val" style="color:#2563EB">${fmt(order.amount)} €</div></div>
+    <div class="card"><div class="lbl">Facturé (${pct.toFixed(0)}%)</div><div class="val" style="color:#0D9488">${fmt(invoiced)} €</div></div>
+    <div class="card"><div class="lbl">Restant à facturer</div><div class="val" style="color:${remaining>0?"#D97706":"#059669"}">${fmt(remaining)} €</div></div>
+    <div class="card"><div class="lbl">Encaissé</div><div class="val" style="color:#059669">${fmt(totalPaid)} €</div></div>
+    <div class="card"><div class="lbl">Date commande</div><div class="val" style="font-size:13px">${fmtD(order.date)}</div></div>
+    <div class="card"><div class="lbl">Date livraison prévue</div><div class="val" style="font-size:13px">${order.expectedDate?fmtD(order.expectedDate):"—"}</div></div>
+    <div class="card"><div class="lbl">Mode livraison</div><div class="val" style="font-size:13px">${order.deliveryMode||"—"}</div></div>
+    <div class="card"><div class="lbl">Nb factures</div><div class="val" style="font-size:13px">${(order.invoices||[]).length}</div></div>
+  </div>
+  ${order.notes?`<div class="sub" style="margin-top:6px">Notes : ${order.notes}</div>`:""}
+  ${hasLines?`<h2>📋 Articles commandés (${cov.length})</h2>
+  <table><thead><tr><th>Part Number</th><th>Description</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix unit.</th><th style="text-align:right">Total</th><th style="text-align:right">Facturé</th><th style="text-align:right">Restant</th><th>Statut</th></tr></thead>
+  <tbody>${linesRows}</tbody>
+  <tfoot><tr><td colspan="4" style="text-align:right">TOTAL</td><td style="text-align:right">${fmt(linesTotalOrdered)} €</td><td style="text-align:right">${fmt(linesTotalInvoiced)} €</td><td style="text-align:right">${fmt(linesTotalRemaining)} €</td><td></td></tr></tfoot>
+  </table>`:`<h2>📋 Articles commandés</h2><div class="sub">Aucun détail ligne par ligne importé pour cette commande.</div>`}
+  <h2>🧾 Expéditions & Factures (${(order.invoices||[]).length})</h2>
+  <table><thead><tr><th>Invoice #</th><th>Date</th><th style="text-align:right">Montant</th><th>Échéance</th><th style="text-align:right">Payé</th><th style="text-align:right">Reste dû</th><th>Statut</th></tr></thead>
+  <tbody>${invRows}</tbody></table>
+  <div class="footer"><span>OrderTrack — Rapport confidentiel</span><span>${client} · ${order.poNumber||""}</span></div>
+  </body></html>`);
+  w.document.close();
+}
+
+// ── Excel: full order report (Résumé / Articles / Factures), 3 sheets via ExcelJS ──
+async function exportOrderExcel(order:any,client:string){
+  const loadExcelJS=():Promise<any>=>new Promise((resolve,reject)=>{
+    if((window as any).ExcelJS){resolve((window as any).ExcelJS);return;}
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    s.onload=()=>resolve((window as any).ExcelJS);
+    s.onerror=()=>reject(new Error('ExcelJS load failed'));
+    document.head.appendChild(s);
+  });
+  let ExcelJS:any;
+  try{ExcelJS=await loadExcelJS();}
+  catch{alert('Impossible de charger ExcelJS. Vérifiez votre connexion internet.');return;}
+
+  const wb=new ExcelJS.Workbook();
+  wb.creator="OrderTrack";
+  wb.created=new Date();
+
+  const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+  const remaining=Math.max(0,(+order.amount||0)-invoiced);
+  const totalPaid=(order.invoices||[]).reduce((s:number,i:any)=>s+(i.payments||[]).reduce((ss:number,p:any)=>ss+(+p.amount||0),0),0);
+  const pct=+order.amount>0?Math.min(100,(invoiced/+order.amount)*100):0;
+  const meta=getStatusMeta(order.status);
+  const cov=orderLineCoverage(order);
+
+  // ── Sheet 1: Résumé ──
+  const wsR=wb.addWorksheet("Résumé");
+  wsR.columns=[{width:28},{width:28}];
+  const rTitle=wsR.addRow(["Rapport de commande",order.poNumber||""]);
+  rTitle.font={bold:true,size:14};
+  wsR.addRow([]);
+  const summaryRows:[string,any][]=[
+    ["Client",client],
+    ["PO #",order.poNumber||"—"],
+    ["S/O #",order.soNumber||"—"],
+    ["Statut",meta.label||order.status],
+    ["Date commande",order.date?fmtD(order.date):"—"],
+    ["Date livraison prévue",order.expectedDate?fmtD(order.expectedDate):"—"],
+    ["Mode livraison",order.deliveryMode||"—"],
+    ["Montant PO (€)",+order.amount||0],
+    ["Facturé (€)",invoiced],
+    ["% Facturé",`${pct.toFixed(1)}%`],
+    ["Restant à facturer (€)",remaining],
+    ["Encaissé (€)",totalPaid],
+    ["Nb factures",(order.invoices||[]).length],
+    ["Nb articles",cov.length],
+    ["Notes",order.notes||"—"],
+    ["Généré le",new Date().toLocaleDateString("fr-FR")],
+  ];
+  summaryRows.forEach(([k,v])=>{const r=wsR.addRow([k,v]);r.getCell(1).font={bold:true};});
+
+  // ── Sheet 2: Articles ──
+  const wsA=wb.addWorksheet("Articles");
+  wsA.columns=[{header:"Part Number",width:16},{header:"Description",width:42},{header:"Qté commandée",width:14},
+    {header:"Prix unit. (€)",width:14},{header:"Total (€)",width:14},{header:"Qté facturée",width:13},
+    {header:"Qté restante",width:13},{header:"Statut",width:14}];
+  wsA.getRow(1).font={bold:true};
+  wsA.getRow(1).eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0D1B2A"}};c.font={bold:true,color:{argb:"FFFFFFFF"}};});
+  cov.forEach((l:any)=>{
+    wsA.addRow([l.pn,l.desc||"—",l.qty,+l.unitPrice||0,(+l.qty||0)*(+l.unitPrice||0),l.qtyInvoiced,l.qtyRemaining,
+      l.status==="complete"?"Facturé":l.status==="partial"?"Partiel":"Non facturé"]);
+  });
+  if(cov.length>0){
+    const tot=wsA.addRow(["","TOTAL","",
+      "",cov.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0),
+      cov.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0),
+      cov.reduce((s:number,l:any)=>s+(+l.qtyRemaining||0)*(+l.unitPrice||0),0),""]);
+    tot.font={bold:true};
+  }
+
+  // ── Sheet 3: Factures ──
+  const wsF=wb.addWorksheet("Factures");
+  wsF.columns=[{header:"Invoice #",width:18},{header:"Date",width:12},{header:"Montant (€)",width:13},
+    {header:"Échéance",width:12},{header:"Payé (€)",width:13},{header:"Reste dû (€)",width:13},{header:"Statut",width:22}];
+  wsF.getRow(1).font={bold:true};
+  wsF.getRow(1).eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0D1B2A"}};c.font={bold:true,color:{argb:"FFFFFFFF"}};});
+  (order.invoices||[]).forEach((inv:any)=>{
+    const ps=payStatus(inv);
+    const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+    wsF.addRow([inv.invoiceNumber||"—",inv.date?fmtD(inv.date):"—",+inv.amount||0,inv.dueDate?fmtD(inv.dueDate):"—",paid,ps.rem,ps.label||ps.key||"—"]);
+  });
+
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=`Rapport_${(order.poNumber||"commande").replace(/[^\w\-]/g,"_")}_${new Date().toISOString().slice(0,10)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── PDF (English): single project sheet ──
