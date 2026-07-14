@@ -1532,6 +1532,7 @@ export default function App(){
             onEditOrder={perms.canEdit?(o:any)=>setModal({type:"order",client:page,order:o}):deny}
             onDelOrder={perms.canDelete?(id:string)=>delOrder(page,id):deny}
             onAddInv={perms.canEdit?(o:any)=>setModal({type:"invoice",client:page,order:o,cfg:getConfig(page)}):deny}
+            onAddBulkInv={perms.canEdit?(o:any)=>setModal({type:"bulk_invoice",client:page,order:o,cfg:getConfig(page)}):deny}
             onEditInv={perms.canEdit?(o:any,i:any)=>setModal({type:"invoice",client:page,order:o,invoice:i,cfg:getConfig(page)}):deny}
             onDelInv={perms.canDelete?(oid:string,iid:string)=>delInvoice(page,oid,iid):deny}
             onAddPay={perms.canEdit?(o:any,i:any)=>setModal({type:"payment",client:page,order:o,invoice:i}):deny}
@@ -1550,6 +1551,10 @@ export default function App(){
           {modal.type==="client"&&<CustomerModal name={modal.name} cfg={modal.cfg} defaultTermId={appSettings.defaultTermId} lang={lang} onSave={(n:string,c:any)=>{const ok=modal.name?editCustomer(modal.name,n,c):addCustomer(n,c);if(ok)setModal(null);else alert(lang==="en"?"Invalid or duplicate name.":"Nom invalide ou déjà utilisé.");}} onClose={()=>setModal(null)}/>}
           {modal.type==="order"&&<OrderModal client={modal.client} order={modal.order} lang={lang} onSave={(f:any)=>saveOrder(modal.client,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="invoice"&&<InvoiceModal client={modal.client} order={modal.order} invoice={modal.invoice} cfg={modal.cfg} lang={lang} onSave={(f:any)=>saveInvoice(modal.client,modal.order.id,f)} onClose={()=>setModal(null)}/>}
+          {modal.type==="bulk_invoice"&&<BulkInvoiceModal client={modal.client} order={modal.order} cfg={modal.cfg} lang={lang}
+            checkDuplicate={(num:string)=>findDuplicateInvoiceNumber(num)}
+            onSaveAll={(items:any[])=>{items.forEach((it:any)=>saveInvoice(modal.client,modal.order.id,it));setModal(null);}}
+            onClose={()=>setModal(null)}/>}
           {modal.type==="payment"&&<PaymentModal invoice={modal.invoice} payment={modal.payment} lang={lang} onSave={(f:any)=>savePayment(modal.client,modal.order.id,modal.invoice.id,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="report"&&<ReportModal clients={visibleClients} data={data} configs={configs} lang={lang} isAdmin={isAdmin} onClose={()=>setModal(null)}/>}
         </div>
@@ -2928,7 +2933,7 @@ function computeClientIntelligence(orders:any[]){
     totalOrders:sorted.length,lastOrderDate,tenureDays,guanxiScore,regularityScore,monthsCoverage};
 }
 
-function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true}:any){
+function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onAddBulkInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
   const tgl=(id:string)=>setExp(p=>({...p,[id]:!p[id]}));
@@ -3022,7 +3027,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
 
       {/* Commandes */}
       <OrderTabsPanel client={client} orders={orders} exp={exp} tgl={tgl}
-        onAddInv={onAddInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder}
+        onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder}
         onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay}
         onEditInv={onEditInv} onDelInv={onDelInv}
         focusOrderId={focusOrderId} onClearFocus={onClearFocus} onAdd={onAdd} lang={lang}
@@ -3315,6 +3320,139 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
   );
 }
 
+// ─── BULK INVOICE IMPORT (multiple files → multiple invoices, one order) ────
+// Select several PDF/Excel files at once; each becomes its own invoice with
+// N°/date/lignes/montant auto-detected via the same extraction engine as the
+// single-invoice import — still reviewable/editable per file before creating.
+function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,onClose}:any){
+  const[items,setItems]=useState<any[]>([]);
+  const[processing,setProcessing]=useState(false);
+  const fileRef=useRef<HTMLInputElement>(null);
+
+  const processFiles=async(files:FileList)=>{
+    setProcessing(true);
+    const newItems:any[]=[];
+    for(const file of Array.from(files)){
+      try{
+        let rows:any[][]=[];
+        let lines:any[]=[];
+        if(file.name.toLowerCase().endsWith(".pdf")){
+          rows=await extractPdfRows(file);
+          lines=parsePoLinesFromRows(rows).map(l=>({pn:l.pn,desc:l.desc,qtyInvoiced:l.qty,unitPrice:l.unitPrice}));
+        } else {
+          rows=await parseExcel(file);
+          const{headerIdx,colMap}=findHeaderRow(rows);
+          lines=rows.slice(headerIdx+1)
+            .filter((r:any[])=>r.some((x:any)=>x!==null&&x!==undefined&&x!==""))
+            .map((r:any[])=>({
+              pn:String(colMap.pn>=0?r[colMap.pn]:"").trim(),
+              desc:String(colMap.desc>=0?r[colMap.desc]:"").trim(),
+              qtyInvoiced:colMap.qty>=0?(+r[colMap.qty]||1):1,
+              unitPrice:colMap.price>=0?(+r[colMap.price]||0):0,
+            }))
+            .filter((l:any)=>l.pn&&!isJunkRowLabel(l.pn));
+        }
+        const meta=extractInvoiceMetaFromRows(rows);
+        const amount=lines.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
+        newItems.push({_id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,fileName:file.name,
+          invoiceNumber:meta.invoiceNumber||"",date:meta.date||todayStr(),amount:amount>0?amount:"",lines,error:null});
+      }catch(err){
+        console.warn("[Bulk invoice import]",err);
+        newItems.push({_id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,fileName:file.name,
+          invoiceNumber:"",date:todayStr(),amount:"",lines:[],error:"Extraction impossible — complète manuellement ou retire ce fichier."});
+      }
+    }
+    setItems(prev=>[...prev,...newItems]);
+    setProcessing(false);
+  };
+
+  const handleFiles=(e:any)=>{
+    const files=e.target.files;
+    if(e.target)e.target.value="";
+    if(files&&files.length)processFiles(files);
+  };
+  const updateItem=(id:string,field:string,val:any)=>setItems(prev=>prev.map(it=>it._id===id?{...it,[field]:val}:it));
+  const removeItem=(id:string)=>setItems(prev=>prev.filter(it=>it._id!==id));
+
+  // Duplicate detection: against the rest of the system AND within this same batch
+  const withDupInfo=items.map((it,i)=>{
+    const num=(it.invoiceNumber||"").trim().toLowerCase();
+    let dup:string|null=null;
+    if(num){
+      const existing=checkDuplicate(it.invoiceNumber);
+      if(existing)dup=`Existe déjà sur ${existing.po} (${existing.client})`;
+      else if(items.some((o,j)=>j!==i&&(o.invoiceNumber||"").trim().toLowerCase()===num))dup="Doublon dans cet import";
+    }
+    return{...it,dupWarning:dup};
+  });
+  const validItems=withDupInfo.filter((it:any)=>it.invoiceNumber&&it.amount&&!it.dupWarning&&!it.error);
+  const invalidCount=withDupInfo.length-validItems.length;
+
+  const handleCreateAll=async()=>{
+    if(validItems.length===0){alert("Aucune facture valide à créer (numéro et montant requis, pas de doublon).");return;}
+    onSaveAll(validItems.map(({_id,fileName,error,dupWarning,...rest}:any)=>rest));
+    const allLines=validItems.flatMap((it:any)=>it.lines||[]);
+    await autoAddMissingProducts(allLines,"Import facture (groupé)");
+  };
+
+  return(
+    <Modal title="Import groupé de factures" sub={`Commande : ${order.poNumber}`} width={640} onClose={onClose}
+      footer={<><button onClick={onClose}>{t(lang as Lang,"cancel")}</button>
+        <Btn icon="ti-check" label={`Créer ${validItems.length} facture${validItems.length>1?"s":""}`} onClick={handleCreateAll} variant="primary"/></>}>
+      <div style={{marginBottom:14}}>
+        <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv" multiple style={{display:"none"}} onChange={handleFiles}/>
+        <button onClick={()=>fileRef.current?.click()} disabled={processing}
+          style={{display:"flex",alignItems:"center",gap:6,background:C.blueL,color:C.blueDk,border:"none",borderRadius:6,padding:"9px 14px",fontSize:12,fontWeight:700,cursor:processing?"wait":"pointer"}}>
+          <i className={`ti ${processing?"ti-loader-2":"ti-file-upload"}`} style={{fontSize:14}} aria-hidden="true"/> {processing?"Extraction en cours…":"Sélectionner plusieurs fichiers (PDF/Excel)"}
+        </button>
+        <div style={{fontSize:11,color:C.t3,marginTop:6}}>Chaque fichier devient une facture séparée. N°, date, montant et lignes sont détectés automatiquement — vérifie chaque fichier avant de valider.</div>
+      </div>
+      {withDupInfo.length===0?(
+        <div style={{textAlign:"center",color:C.t3,fontSize:12,padding:24,border:`1px dashed ${C.b}`,borderRadius:C.rSm}}>Aucun fichier sélectionné pour l'instant.</div>
+      ):(
+        <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:420,overflowY:"auto"}}>
+          {withDupInfo.map((it:any)=>(
+            <div key={it._id} style={{border:`1px solid ${it.dupWarning?C.red:it.error?C.amber:C.b}`,borderRadius:C.rSm,padding:10,background:it.dupWarning?C.redL:it.error?C.amberL:"#fff"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                <span style={{fontSize:11,color:C.t2,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:300}}>
+                  <i className="ti ti-file" style={{fontSize:12,marginRight:4}} aria-hidden="true"/>{it.fileName}
+                </span>
+                <button onClick={()=>removeItem(it._id)} style={{background:"none",border:"none",color:C.t3,cursor:"pointer",fontSize:14}}>✕</button>
+              </div>
+              {it.error?(
+                <div style={{fontSize:11,color:C.amberDk}}>{it.error}</div>
+              ):(
+                <>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                    <div>
+                      <label style={{fontSize:9,color:C.t3,fontWeight:700,textTransform:"uppercase"}}>N° facture</label>
+                      <input value={it.invoiceNumber} onChange={(e:any)=>updateItem(it._id,"invoiceNumber",e.target.value)} placeholder="ex: INV-001"
+                        style={{width:"100%",padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,boxSizing:"border-box"}}/>
+                    </div>
+                    <div>
+                      <label style={{fontSize:9,color:C.t3,fontWeight:700,textTransform:"uppercase"}}>Date</label>
+                      <input type="date" value={it.date} onChange={(e:any)=>updateItem(it._id,"date",e.target.value)}
+                        style={{width:"100%",padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,boxSizing:"border-box"}}/>
+                    </div>
+                    <div>
+                      <label style={{fontSize:9,color:C.t3,fontWeight:700,textTransform:"uppercase"}}>Montant (€)</label>
+                      <input type="number" value={it.amount} onChange={(e:any)=>updateItem(it._id,"amount",e.target.value)}
+                        style={{width:"100%",padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,boxSizing:"border-box"}}/>
+                    </div>
+                  </div>
+                  <div style={{fontSize:10,color:C.t3,marginTop:5}}>{it.lines.length} ligne{it.lines.length>1?"s":""} d'article{it.lines.length>1?"s":""} détectée{it.lines.length>1?"s":""}</div>
+                  {it.dupWarning&&<div style={{fontSize:10,color:C.redDk,fontWeight:700,marginTop:4}}><i className="ti ti-alert-triangle" style={{fontSize:11}} aria-hidden="true"/> {it.dupWarning}</div>}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {invalidCount>0&&withDupInfo.length>0&&<div style={{fontSize:11,color:C.amberDk,marginTop:10}}>{invalidCount} fichier(s) incomplet(s) ou en doublon ne seront pas créés.</div>}
+    </Modal>
+  );
+}
+
 function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const ps=payStatus(invoice);
@@ -3346,7 +3484,7 @@ function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
 }
 
 // ─── ORDER TABS PANEL ────────────────────────────────────────────────────────
-function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms}:any){
+function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[tab,setTab]=useState<"orders"|"invoices"|"payments">("orders");
   const[search,setSearch]=useState("");
@@ -3424,7 +3562,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>Aucune commande trouvée</div>}
-            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
+            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
                 onMouseEnter={(e:any)=>{e.currentTarget.style.background=C.blueL;e.currentTarget.style.borderColor=C.blue;}}
@@ -3568,7 +3706,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onEditOrder,onDelOrder,o
 }
 
 // ─── ORDER CARD (extracted from CustomerPage) ───────────────────────────────────
-function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
+function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
   const open=Math.max(0,(+order.amount||0)-invoiced);
@@ -3631,6 +3769,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
             <IBtn icon="ti-file-type-pdf" title="Rapport PDF" c={C.red} bg={C.redL} onClick={()=>printOrderReport(order,client)}/>
             <IBtn icon="ti-file-spreadsheet" title="Rapport Excel" c={C.green} bg={C.greenL} onClick={()=>exportOrderExcel(order,client)}/>
             {perms?.canEdit&&<IBtn icon="ti-plus" title="Ajouter facture" c={C.teal} bg={C.tealL} onClick={()=>onAddInv(order)}/>}
+            {perms?.canEdit&&onAddBulkInv&&<IBtn icon="ti-files" title="Importer plusieurs factures" c={C.purple} bg={C.purpleL} onClick={()=>onAddBulkInv(order)}/>}
             {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditOrder(order)}/>}
             {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_order")))onDelOrder(order.id);}}/>}
           </div>
@@ -3663,7 +3802,10 @@ function OrderCard({order,client,exp,tgl,onAddInv,onEditOrder,onDelOrder,onAddPa
           />
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
             <h4 style={{margin:0,fontSize:13,fontWeight:700,color:C.t1}}>Expéditions & Factures</h4>
-            {perms?.canEdit&&<Btn icon="ti-plus" label="Ajouter facture" onClick={()=>onAddInv(order)} variant="success" small/>}
+            <div style={{display:"flex",gap:6}}>
+              {perms?.canEdit&&<Btn icon="ti-plus" label="Ajouter facture" onClick={()=>onAddInv(order)} variant="success" small/>}
+              {perms?.canEdit&&onAddBulkInv&&<Btn icon="ti-files" label="Importer plusieurs" onClick={()=>onAddBulkInv(order)} variant="ghost" small/>}
+            </div>
           </div>
           {(order.invoices||[]).length===0?(
             <div style={{background:"#fff",border:`1px dashed ${C.b}`,borderRadius:C.r,padding:20,textAlign:"center",color:C.t3,fontSize:12}}>Aucune facture pour cette commande</div>
@@ -3731,6 +3873,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
   const[importing,setImporting]=useState(false);
   const[importMsg,setImportMsg]=useState("");
   const[draftLines,setDraftLines]=useState<any[]|null>(null);
+  const[catalogueMsg,setCatalogueMsg]=useState("");
   const fileRef=useRef<HTMLInputElement>(null);
   const existingLines=order.lines||[];
 
@@ -3771,9 +3914,12 @@ function PoLinesPanel({order,onSave,canEdit}:any){
   const updateDraft=(idx:number,field:string,val:any)=>setDraftLines((prev:any)=>prev.map((l:any,i:number)=>i===idx?{...l,[field]:val}:l));
   const addDraftLine=()=>setDraftLines((prev:any)=>[...(prev||[]),{pn:"",desc:"",qty:1,unitPrice:0}]);
   const removeDraftLine=(idx:number)=>setDraftLines((prev:any)=>prev.filter((_:any,i:number)=>i!==idx));
-  const confirmImport=()=>{
-    onSave((draftLines||[]).filter((l:any)=>l.pn));
+  const confirmImport=async()=>{
+    const clean=(draftLines||[]).filter((l:any)=>l.pn);
+    onSave(clean);
     setDraftLines(null);setImportMsg("");
+    const added=await autoAddMissingProducts(clean,"Import bon de commande");
+    if(added>0)setCatalogueMsg(`✓ ${added} nouvel${added>1?"s":""} article${added>1?"s":""} ajouté${added>1?"s":""} automatiquement au catalogue.`);
   };
 
   return(
@@ -3804,6 +3950,9 @@ function PoLinesPanel({order,onSave,canEdit}:any){
           </div>
         )}
       </div>
+      {catalogueMsg&&<div style={{fontSize:11,color:C.greenDk,background:C.greenL,borderRadius:C.rSm,padding:"6px 10px",marginBottom:8,display:"flex",alignItems:"center",gap:5}}>
+        <i className="ti ti-circle-check" style={{fontSize:12}} aria-hidden="true"/>{catalogueMsg}
+      </div>}
       {importMsg&&!draftLines&&<div style={{fontSize:11,color:C.amberDk,marginBottom:8}}>{importMsg}</div>}
 
       {draftLines?(
@@ -3883,6 +4032,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
   const[importMsg,setImportMsg]=useState("");
   const[draftLines,setDraftLines]=useState<any[]|null>(null);
   const[draftMeta,setDraftMeta]=useState<{invoiceNumber:string,date:string}>({invoiceNumber:"",date:""});
+  const[catalogueMsg,setCatalogueMsg]=useState("");
   const fileRef=useRef<HTMLInputElement>(null);
   const orderHasLines=(order?.lines||[]).length>0;
   const coverage=orderLineCoverage(order,invoiceId); // remaining excludes THIS invoice's own prior values
@@ -3938,13 +4088,15 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
   const updateDraft=(idx:number,field:string,val:any)=>setDraftLines((prev:any)=>prev.map((l:any,i:number)=>i===idx?{...l,[field]:val}:l));
   const addDraftLine=()=>setDraftLines((prev:any)=>[...(prev||[]),{pn:"",desc:"",qtyInvoiced:1,unitPrice:0}]);
   const removeDraftLine=(idx:number)=>setDraftLines((prev:any)=>prev.filter((_:any,i:number)=>i!==idx));
-  const confirmImport=()=>{
+  const confirmImport=async()=>{
     const clean=(draftLines||[]).filter((l:any)=>l.pn);
     const merged=[...(lines||[]).filter((l:any)=>!clean.some((c:any)=>c.pn===l.pn)),...clean];
     onChange(merged);
     const totalAmount=merged.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
     if(onMetaConfirmed&&(draftMeta.invoiceNumber||draftMeta.date||totalAmount>0))onMetaConfirmed({...draftMeta,amount:totalAmount});
     setDraftLines(null);setImportMsg("");setDraftMeta({invoiceNumber:"",date:""});
+    const added=await autoAddMissingProducts(clean,"Import facture");
+    if(added>0)setCatalogueMsg(`✓ ${added} nouvel${added>1?"s":""} article${added>1?"s":""} ajouté${added>1?"s":""} automatiquement au catalogue.`);
   };
 
   return(
@@ -3966,6 +4118,9 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
         )}
       </div>
       {importMsg&&!draftLines&&<div style={{fontSize:11,color:C.amberDk,marginBottom:8}}>{importMsg}</div>}
+      {catalogueMsg&&<div style={{fontSize:11,color:C.greenDk,background:C.greenL,borderRadius:C.rSm,padding:"6px 10px",marginBottom:8,display:"flex",alignItems:"center",gap:5}}>
+        <i className="ti ti-circle-check" style={{fontSize:12}} aria-hidden="true"/>{catalogueMsg}
+      </div>}
 
       {draftLines?(
         <div style={{background:C.blueL,border:`1px solid ${C.blue}`,borderRadius:C.rSm,padding:12}}>
@@ -6064,6 +6219,45 @@ const loadCatLocal=():{data:any[]|null,ts:string}=>{
     return{data:d?JSON.parse(d):null,ts};
   }catch{return{data:null,ts:""};}
 };
+// ── Auto-add unknown articles to the catalogue ──────────────────────────────
+// Whenever a PO or invoice import contains a PN the catalogue doesn't know
+// yet, create a minimal catalogue entry for it (PN, description, and its
+// observed price) instead of silently losing that pricing data. Writes
+// straight to the shared cloud store — CataloguePage will pick it up next
+// time it's opened, same as any other cross-device sync.
+async function autoAddMissingProducts(lines:any[],source:string):Promise<number>{
+  const candidates=(lines||[]).filter((l:any)=>l.pn&&String(l.pn).trim());
+  if(candidates.length===0)return 0;
+  try{
+    const catData=await sbGet(CAT_KEY);
+    const{data:localCat}=loadCatLocal();
+    const current:any[]=(catData?.products&&catData.products.length>0)?catData.products:(localCat||[]);
+    const existingPNs=new Set(current.map((p:any)=>String(p.pn||"").trim().toUpperCase()));
+    const today=todayStr();
+    const seen=new Set<string>();
+    const newProducts:any[]=[];
+    candidates.forEach((l:any)=>{
+      const key=String(l.pn).trim().toUpperCase();
+      if(existingPNs.has(key)||seen.has(key))return;
+      seen.add(key);
+      newProducts.push({
+        pn:String(l.pn).trim(),
+        description:l.desc||"",
+        prices:(+l.unitPrice>0)?[{price:+l.unitPrice,date:today,source}]:[],
+        lastUpdated:today,
+      });
+    });
+    if(newProducts.length===0)return 0;
+    const merged=[...current,...newProducts];
+    saveCatLocal(merged);
+    await sbSet(CAT_KEY,{products:merged,ts:new Date().toISOString()});
+    return newProducts.length;
+  }catch(e){
+    console.warn("[autoAddMissingProducts]",e);
+    return 0;
+  }
+}
+
 const saveQuotLocal=(q:any[])=>{
   try{
     localStorage.setItem(QUOT_LS_KEY,JSON.stringify(q));
