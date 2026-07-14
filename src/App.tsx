@@ -1247,14 +1247,21 @@ export default function App(){
   const getStats=(c:string,yr?:number)=>{
     const y=yr??selYear;
     const orders=getOrders(c);
-    // PO counted in year registered · INV in year generated
+    // PO counted in year registered · INV in year generated · PAID in year collected
+    // All three now use the SAME period (the selected year), each on its own
+    // date field, so the three dashboard cards are always directly comparable.
     const totalPO=orders.reduce((s:number,o:any)=>{const d=o.date?new Date(o.date+"T00:00:00"):null;return(d&&d.getFullYear()===y)?s+(+o.amount||0):s;},0);
     const totalInv=orders.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>{const d=i.date?new Date(i.date+"T00:00:00"):null;return(d&&d.getFullYear()===y)?ss+(+i.amount||0):ss;},0),0);
-    const totalPaid=orders.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).reduce((sss:number,p:any)=>sss+(+p.amount||0),0),0),0);
+    const totalPaid=orders.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).reduce((sss:number,p:any)=>{const d=p.date?new Date(p.date+"T00:00:00"):null;return(d&&d.getFullYear()===y)?sss+(+p.amount||0):sss;},0),0),0);
     // Cross-year (financial position — open orders span years)
-    const _poAll=orders.reduce((s:number,o:any)=>s+(+o.amount||0),0);
-    const _invAll=orders.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0),0);
-    const openOrders=Math.max(0,_poAll-_invAll);
+    // Per-order remainder, summing only positive balances — NOT a global
+    // PO-minus-invoiced subtraction. A global subtraction lets an
+    // over-invoiced order (invoiced > its own PO) mask genuinely open
+    // balances on other orders, which understated this figure to zero.
+    const openOrders=orders.reduce((s:number,o:any)=>{
+      const invAmt=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);
+      return s+Math.max(0,(+o.amount||0)-invAmt);
+    },0);
     const unpaidInv=orders.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>{const p=(i.payments||[]).reduce((sss:number,pp:any)=>sss+(+pp.amount||0),0);return ss+Math.max(0,(+i.amount||0)-p);},0),0);
     // Monthly: filtered by selected year
     const monthly=MONTHS.map((_,mi)=>{let po=0,inv=0,paid=0;orders.forEach((o:any)=>{
@@ -1700,9 +1707,13 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[simDso,setSimDso]=useState<number|null>(null);
   const all=getAllOrders();
-  const totPO=all.reduce((s:number,o:any)=>s+(+o.amount||0),0);
-  const totInv=all.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0),0);
-  const totPaid=all.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).reduce((sss:number,p:any)=>sss+(+p.amount||0),0),0),0);
+  // Same rule as getStats(): PO counted in year registered, INV in year
+  // generated, PAID in year collected — all three on the SAME selected year,
+  // each via its own date field, so this page stays consistent with the
+  // per-client dashboard cards.
+  const totPO=all.reduce((s:number,o:any)=>{const d=o.date?new Date(o.date+"T00:00:00"):null;return(d&&d.getFullYear()===selYear)?s+(+o.amount||0):s;},0);
+  const totInv=all.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>{const d=i.date?new Date(i.date+"T00:00:00"):null;return(d&&d.getFullYear()===selYear)?ss+(+i.amount||0):ss;},0),0);
+  const totPaid=all.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).reduce((sss:number,p:any)=>{const d=p.date?new Date(p.date+"T00:00:00"):null;return(d&&d.getFullYear()===selYear)?sss+(+p.amount||0):sss;},0),0),0);
   const totOpen=all.reduce((s:number,o:any)=>{const inv=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return s+Math.max(0,(+o.amount||0)-inv);},0);
   const totUnpaid=all.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>{const p=(i.payments||[]).reduce((sss:number,pp:any)=>sss+(+pp.amount||0),0);return ss+Math.max(0,(+i.amount||0)-p);},0),0);
   const txFact=totPO>0?(totInv/totPO*100):0;
@@ -11799,11 +11810,24 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
 
     } else {
       title="Synthèse par client";
-      rows=selCustomers.map((c:string)=>{const ords=data?.[c]||[];const po=ords.reduce((s:number,o:any)=>s+(+o.amount||0),0);const inv=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((ss:number,i:any)=>ss+(+i.amount||0),0),0);const paid=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).reduce((sss:number,p:any)=>sss+(+p.amount||0),0),0),0);const open=Math.max(0,po-inv);const term=PAY_TERMS.find((t:any)=>t.id===(configs[c]?.termId||"net60"))?.label||"—";return`<tr><td style="font-weight:700">${c}</td><td>${configs[c]?.accountNumber||"—"}</td><td>${term}</td><td>${ords.length}</td><td style="text-align:right">${fmt(po)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right">${fmt(paid)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;}).join("");
-      const tPO=selCustomers.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(+o.amount||0),0),0);
+      // Same rule as the dashboard: PO/Facturé/Encaissé all scoped to the
+      // SAME selected period, each via its own date — and "Reste" computed
+      // per order (never a global subtraction, which can mask genuinely
+      // open balances behind an over-invoiced order elsewhere).
+      rows=selCustomers.map((c:string)=>{
+        const ords=data?.[c]||[];
+        const po=ords.reduce((s:number,o:any)=>(o.date&&inRange(o.date))?s+(+o.amount||0):s,0);
+        const inv=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((ss:number,i:any)=>ss+(+i.amount||0),0),0);
+        const paid=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).filter((p:any)=>inRange(p.date)).reduce((sss:number,p:any)=>sss+(+p.amount||0),0),0),0);
+        const open=ords.reduce((s:number,o:any)=>{const invAmt=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return s+Math.max(0,(+o.amount||0)-invAmt);},0);
+        const term=PAY_TERMS.find((t:any)=>t.id===(configs[c]?.termId||"net60"))?.label||"—";
+        return`<tr><td style="font-weight:700">${c}</td><td>${configs[c]?.accountNumber||"—"}</td><td>${term}</td><td>${ords.length}</td><td style="text-align:right">${fmt(po)} €</td><td style="text-align:right">${fmt(inv)} €</td><td style="text-align:right">${fmt(paid)} €</td><td style="text-align:right;font-weight:700;color:#B45309">${fmt(open)} €</td></tr>`;
+      }).join("");
+      const tPO=selCustomers.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>(o.date&&inRange(o.date))?ss+(+o.amount||0):ss,0),0);
       const tInv=selCustomers.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((sss:number,i:any)=>sss+(+i.amount||0),0),0),0);
-      const tPaid=selCustomers.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(o.invoices||[]).reduce((sss:number,i:any)=>sss+(i.payments||[]).reduce((ssss:number,p:any)=>ssss+(+p.amount||0),0),0),0),0);
-      rows+=`<tr style="background:#DBEAFE;font-weight:800;font-size:12px"><td>TOTAL</td><td></td><td></td><td></td><td style="text-align:right;padding:8px 10px">${fmt(tPO)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tInv)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tPaid)} €</td><td style="text-align:right;padding:8px 10px">${fmt(Math.max(0,tPO-tInv))} €</td></tr>`;
+      const tPaid=selCustomers.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>ss+(o.invoices||[]).reduce((sss:number,i:any)=>sss+(i.payments||[]).filter((p:any)=>inRange(p.date)).reduce((ssss:number,p:any)=>ssss+(+p.amount||0),0),0),0),0);
+      const tOpen=selCustomers.reduce((s:number,c:string)=>s+(data?.[c]||[]).reduce((ss:number,o:any)=>{const invAmt=(o.invoices||[]).reduce((sss:number,i:any)=>sss+(+i.amount||0),0);return ss+Math.max(0,(+o.amount||0)-invAmt);},0),0);
+      rows+=`<tr style="background:#DBEAFE;font-weight:800;font-size:12px"><td>TOTAL</td><td></td><td></td><td></td><td style="text-align:right;padding:8px 10px">${fmt(tPO)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tInv)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tPaid)} €</td><td style="text-align:right;padding:8px 10px">${fmt(tOpen)} €</td></tr>`;
       printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>N° Compte</th><th>Conditions</th><th>Cmds</th><th>PO Total (€)</th><th>Facturé (€)</th><th>Encaissé (€)</th><th>Open Orders (€)</th></tr>",rows);
     }
     onClose();
