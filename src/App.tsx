@@ -3886,17 +3886,6 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
     setDraftLines(null);setImportMsg("");setDraftMeta({invoiceNumber:"",date:""});
   };
 
-  if(!orderHasLines&&!(lines||[]).length&&!draftLines){
-    return(
-      <div style={{marginBottom:16,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"12px 14px"}}>
-        <div style={{fontSize:12,fontWeight:600,color:C.t1,display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
-          <i className="ti ti-link" style={{fontSize:14,color:C.t3}} aria-hidden="true"/> Articles facturés
-        </div>
-        <div style={{fontSize:11,color:C.t3,fontStyle:"italic"}}>La commande n'a pas de détail ligne par ligne (importe d'abord son bon de commande) — impossible de lier cette facture aux articles pour l'instant.</div>
-      </div>
-    );
-  }
-
   return(
     <div style={{marginBottom:16,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"12px 14px"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:8}}>
@@ -3998,6 +3987,8 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
             </tbody>
           </table>
         </div>
+      ):!orderHasLines?(
+        <div style={{fontSize:11,color:C.t3,fontStyle:"italic"}}>La commande n'a pas de détail ligne par ligne — importe d'abord son bon de commande pour lier cette facture aux articles. En attendant, tu peux quand même importer cette facture ci-dessus : le N° de facture, la date et le montant seront détectés automatiquement.</div>
       ):null}
     </div>
   );
