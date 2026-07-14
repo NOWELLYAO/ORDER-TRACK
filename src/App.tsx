@@ -451,19 +451,30 @@ const calcDueDate=(invDate:string,termId:string,customDays:number)=>{
 // so the "remaining" figure reflects what OTHER invoices already cover.
 const orderLineCoverage=(order:any,excludeInvId?:string)=>{
   const invoiced:Record<string,number>={};
+  // Track which invoice line(s) actually covered each ordered PN, including
+  // substitutions (invoice.lines[].orderPn lets a different, actually-billed
+  // PN count against the originally ordered one — e.g. supplier swapped a
+  // part number between the PO and the invoice).
+  const substitutions:Record<string,Set<string>>={};
   (order?.invoices||[]).forEach((inv:any)=>{
     if(excludeInvId&&inv.id===excludeInvId)return;
     (inv.lines||[]).forEach((l:any)=>{
-      if(!l.pn)return;
-      invoiced[l.pn]=(invoiced[l.pn]||0)+(+l.qtyInvoiced||+l.qty||0);
+      const key=l.orderPn||l.pn;
+      if(!key)return;
+      invoiced[key]=(invoiced[key]||0)+(+l.qtyInvoiced||+l.qty||0);
+      if(l.orderPn&&l.orderPn!==l.pn){
+        if(!substitutions[key])substitutions[key]=new Set();
+        substitutions[key].add(l.pn);
+      }
     });
   });
   return(order?.lines||[]).map((l:any)=>{
     const ordered=+l.qty||0;
     const inv=invoiced[l.pn]||0;
     const remaining=Math.max(0,ordered-inv);
+    const subs=substitutions[l.pn]?Array.from(substitutions[l.pn]):[];
     return{...l,qtyOrdered:ordered,qtyInvoiced:inv,qtyRemaining:remaining,
-      status:inv<=0?"none":remaining<=0?"complete":"partial"};
+      status:inv<=0?"none":remaining<=0?"complete":"partial",substitutedBy:subs};
   });
 };
 
@@ -1296,6 +1307,30 @@ export default function App(){
     persist(null,{...data,[client]:orders},null);setModal(null);
   };
   const delInvoice=(client:string,oid:string,iid:string)=>{const orders=[...getOrders(client)];const idx=orders.findIndex((o:any)=>o.id===oid);if(idx<0)return;orders[idx]=autoAdvanceOrderStatus({...orders[idx],invoices:orders[idx].invoices.filter((i:any)=>i.id!==iid)});persist(null,{...data,[client]:orders},null);};
+  // Batch version of saveInvoice — builds and persists ALL new invoices in
+  // ONE state update instead of looping saveInvoice(), which would silently
+  // drop all but the last item (each call read the same pre-render state).
+  const saveInvoicesBulk=(client:string,oid:string,items:any[]):{created:number,skipped:{invoiceNumber:string,reason:string}[]}=>{
+    const orders=[...getOrders(client)];const idx=orders.findIndex((o:any)=>o.id===oid);
+    if(idx<0)return{created:0,skipped:items.map((it:any)=>({invoiceNumber:it.invoiceNumber,reason:"Commande introuvable"}))};
+    const invs=[...(orders[idx].invoices||[])];
+    const cfg2=configs[client]||{};
+    const skipped:{invoiceNumber:string,reason:string}[]=[];
+    let created=0;
+    items.forEach((f:any)=>{
+      const dup=findDuplicateInvoiceNumber(f.invoiceNumber)||
+        (invs.some((i:any)=>(i.invoiceNumber||"").trim().toLowerCase()===(f.invoiceNumber||"").trim().toLowerCase())?{client,po:orders[idx].poNumber}:null);
+      if(dup){skipped.push({invoiceNumber:f.invoiceNumber,reason:`Doublon (déjà sur ${dup.po} — ${dup.client})`});return;}
+      const dueDate=f.dueDate||calcDueDate(f.date,cfg2.termId||"net60",cfg2.customDays||0);
+      invs.push({...f,id:f.id||`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,dueDate,payments:f.payments||[],attachments:f.attachments||[]});
+      created++;
+    });
+    if(created>0){
+      orders[idx]=autoAdvanceOrderStatus({...orders[idx],invoices:invs});
+      persist(null,{...data,[client]:orders},null);
+    }
+    return{created,skipped};
+  };
 
   // PAYMENT CRUD
   const savePayment=(client:string,oid:string,iid:string,p:any)=>{
@@ -1553,7 +1588,11 @@ export default function App(){
           {modal.type==="invoice"&&<InvoiceModal client={modal.client} order={modal.order} invoice={modal.invoice} cfg={modal.cfg} lang={lang} onSave={(f:any)=>saveInvoice(modal.client,modal.order.id,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="bulk_invoice"&&<BulkInvoiceModal client={modal.client} order={modal.order} cfg={modal.cfg} lang={lang}
             checkDuplicate={(num:string)=>findDuplicateInvoiceNumber(num)}
-            onSaveAll={(items:any[])=>{items.forEach((it:any)=>saveInvoice(modal.client,modal.order.id,it));setModal(null);}}
+            onSaveAll={(items:any[])=>{
+              const{created,skipped}=saveInvoicesBulk(modal.client,modal.order.id,items);
+              if(skipped.length>0)alert(`${created} facture(s) créée(s).\n${skipped.length} ignorée(s) pour cause de doublon :\n`+skipped.map(s=>`- ${s.invoiceNumber}: ${s.reason}`).join("\n"));
+              setModal(null);
+            }}
             onClose={()=>setModal(null)}/>}
           {modal.type==="payment"&&<PaymentModal invoice={modal.invoice} payment={modal.payment} lang={lang} onSave={(f:any)=>savePayment(modal.client,modal.order.id,modal.invoice.id,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="report"&&<ReportModal clients={visibleClients} data={data} configs={configs} lang={lang} isAdmin={isAdmin} onClose={()=>setModal(null)}/>}
@@ -3991,7 +4030,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
                 const si=statusInfo(l.status);
                 return(
                 <tr key={i} style={{borderBottom:`1px solid ${C.b}`}}>
-                  <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}</td>
+                  <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}{l.substitutedBy?.length>0&&<div style={{fontSize:9,color:C.amberDk,fontWeight:600}}>facturé sous {l.substitutedBy.join(", ")}</div>}</td>
                   <td style={{padding:"5px 8px",color:C.t2}}>{l.desc||"—"}</td>
                   <td style={{padding:"5px 8px",color:C.t2}}>{l.qty}</td>
                   <td style={{padding:"5px 8px",color:C.t2}}>{fmt(l.unitPrice)} €</td>
@@ -4036,12 +4075,28 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
   const fileRef=useRef<HTMLInputElement>(null);
   const orderHasLines=(order?.lines||[]).length>0;
   const coverage=orderLineCoverage(order,invoiceId); // remaining excludes THIS invoice's own prior values
-  const byPn:Record<string,any>=Object.fromEntries((lines||[]).map((l:any)=>[l.pn,l]));
+  const byOrderPn:Record<string,any>=Object.fromEntries((lines||[]).map((l:any)=>[l.orderPn||l.pn,l]));
+  const[substPn,setSubstPn]=useState<Record<string,string>>({});
+  const getActualPn=(orderPn:string)=>substPn[orderPn]??(byOrderPn[orderPn]?.pn||orderPn);
 
-  const setQty=(pn:string,desc:string,unitPrice:number,qty:number)=>{
+  const setQty=(orderPn:string,desc:string,unitPrice:number,qty:number)=>{
     const q=Math.max(0,qty||0);
-    const rest=(lines||[]).filter((l:any)=>l.pn!==pn);
-    onChange(q>0?[...rest,{pn,desc,unitPrice,qtyInvoiced:q}]:rest);
+    const actualPn=(getActualPn(orderPn)||"").trim()||orderPn;
+    const rest=(lines||[]).filter((l:any)=>(l.orderPn||l.pn)!==orderPn);
+    const line:any={pn:actualPn,desc,unitPrice,qtyInvoiced:q};
+    if(actualPn!==orderPn)line.orderPn=orderPn;
+    onChange(q>0?[...rest,line]:rest);
+  };
+  const setActualPn=(orderPn:string,val:string)=>{
+    setSubstPn(prev=>({...prev,[orderPn]:val}));
+    const existing=byOrderPn[orderPn];
+    if(existing&&+existing.qtyInvoiced>0){
+      const actualPn=(val||"").trim()||orderPn;
+      const rest=(lines||[]).filter((l:any)=>(l.orderPn||l.pn)!==orderPn);
+      const line:any={pn:actualPn,desc:existing.desc,unitPrice:existing.unitPrice,qtyInvoiced:+existing.qtyInvoiced};
+      if(actualPn!==orderPn)line.orderPn=orderPn;
+      onChange([...rest,line]);
+    }
   };
   const fillAllRemaining=()=>{
     onChange(coverage.filter((l:any)=>l.qtyRemaining>0).map((l:any)=>({pn:l.pn,desc:l.desc,unitPrice:l.unitPrice,qtyInvoiced:l.qtyRemaining})));
@@ -4162,20 +4217,29 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead><tr style={{background:"#F8FAFC"}}>
-              {["Part Number","Description","Commandé","Déjà facturé (autres)","Restant","Facturé ici"].map(h=>(
+              {["Part Number commandé","Description","Commandé","Déjà facturé (autres)","Restant","PN facturé (si différent)","Facturé ici"].map(h=>(
                 <th key={h} style={{padding:"5px 8px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",borderBottom:`1px solid ${C.b}`}}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
               {coverage.map((l:any,i:number)=>{
-                const current=byPn[l.pn]?.qtyInvoiced||0;
+                const current=byOrderPn[l.pn]?.qtyInvoiced||0;
+                const actualPn=getActualPn(l.pn);
+                const isSubstituted=actualPn.trim()&&actualPn.trim()!==l.pn;
                 return(
-                  <tr key={i} style={{borderBottom:`1px solid ${C.b}`}}>
-                    <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}</td>
+                  <tr key={i} style={{borderBottom:`1px solid ${C.b}`,background:isSubstituted?C.amberL:undefined}}>
+                    <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}
+                      {l.substitutedBy?.length>0&&<div style={{fontSize:9,color:C.amberDk,fontWeight:600}}>déjà facturé sous {l.substitutedBy.join(", ")}</div>}
+                    </td>
                     <td style={{padding:"5px 8px",color:C.t2}}>{l.desc||"—"}</td>
                     <td style={{padding:"5px 8px",color:C.t2}}>{l.qtyOrdered}</td>
                     <td style={{padding:"5px 8px",color:C.t3}}>{l.qtyInvoiced}</td>
                     <td style={{padding:"5px 8px",color:l.qtyRemaining>0?C.amberDk:C.greenDk,fontWeight:600}}>{l.qtyRemaining}</td>
+                    <td style={{padding:"5px 8px"}}>
+                      <input value={actualPn} placeholder={l.pn} title="Renseigne un PN différent si le fournisseur a substitué l'article sur cette facture"
+                        onChange={(e:any)=>setActualPn(l.pn,e.target.value)}
+                        style={{width:110,padding:"4px 6px",border:`1px solid ${isSubstituted?C.amber:C.b}`,borderRadius:4,fontSize:11,fontFamily:"monospace"}}/>
+                    </td>
                     <td style={{padding:"5px 8px"}}>
                       <input type="number" min={0} value={current}
                         onChange={(e:any)=>setQty(l.pn,l.desc,l.unitPrice,+e.target.value)}
@@ -4186,6 +4250,36 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
               })}
             </tbody>
           </table>
+          <div style={{fontSize:10,color:C.t3,marginTop:6}}><i className="ti ti-info-circle" style={{fontSize:11}} aria-hidden="true"/> Si le fournisseur a remplacé un article par un nouveau PN sur la facture, indique ce nouveau PN dans la colonne "PN facturé" — la quantité sera bien déduite du restant de l'article commandé d'origine.</div>
+          {(()=>{
+            const orderPns=new Set(coverage.map((l:any)=>l.pn));
+            const orphans=(lines||[]).filter((l:any)=>!orderPns.has(l.orderPn||l.pn));
+            if(orphans.length===0)return null;
+            return(
+              <div style={{marginTop:12,background:C.amberL,border:`1px solid ${C.amber}`,borderRadius:C.rSm,padding:10}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.amberDk,marginBottom:6}}><i className="ti ti-alert-triangle" style={{fontSize:12}} aria-hidden="true"/> {orphans.length} ligne{orphans.length>1?"s":""} facturée{orphans.length>1?"s":""} sans article commandé correspondant</div>
+                <div style={{fontSize:10,color:C.t2,marginBottom:8}}>Ces PN ne figurent pas dans le bon de commande — s'il s'agit d'une substitution, associe-les à l'article d'origine ci-dessous. Sinon, ce sont de nouveaux articles hors PO.</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {orphans.map((l:any,i:number)=>(
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"120px 1fr 60px 1fr",gap:6,alignItems:"center",background:"#fff",borderRadius:4,padding:6}}>
+                      <span style={{fontFamily:"monospace",color:C.blue,fontWeight:700,fontSize:11}}>{l.pn}</span>
+                      <span style={{fontSize:10,color:C.t2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.desc||"—"}</span>
+                      <span style={{fontSize:10,color:C.t3}}>Qté {l.qtyInvoiced}</span>
+                      <select defaultValue="" onChange={(e:any)=>{
+                        const targetPn=e.target.value;
+                        if(!targetPn)return;
+                        const rest=(lines||[]).filter((x:any)=>x!==l);
+                        onChange([...rest,{...l,pn:l.pn,orderPn:targetPn}]);
+                      }} style={{padding:"4px 6px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:10}}>
+                        <option value="">— Associer à un article commandé —</option>
+                        {coverage.map((c:any)=><option key={c.pn} value={c.pn}>{c.pn} — {c.desc||"?"} (restant {c.qtyRemaining})</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       ):(lines||[]).length>0?(
         <div style={{overflowX:"auto"}}>
