@@ -1302,7 +1302,15 @@ export default function App(){
     // P5 — Retards livraison
     const _late=_allOrders.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
     if(_late.length>0) alerts.push({level:"info",icon:"ti-truck-off",text:`${_late.length} livraison${_late.length>1?"s":""} en retard`,detail:_late.map((o:any)=>`${o._client} ${o.poNumber}`).join(", ")});
-    return alerts.slice(0,5);
+    // P6 — Écarts commandé/facturé au niveau article (sur-facturation détectée)
+    const _overInv:{po:string,client:string,items:string[]}[]=[];
+    _allOrders.forEach((o:any)=>{
+      if(!(o.lines||[]).length)return;
+      const over=orderLineCoverage(o).filter((l:any)=>l.qtyInvoiced>l.qtyOrdered);
+      if(over.length>0)_overInv.push({po:o.poNumber,client:o._client,items:over.map((l:any)=>l.pn)});
+    });
+    if(_overInv.length>0) alerts.push({level:"warning",icon:"ti-alert-triangle",text:`${_overInv.length} commande${_overInv.length>1?"s":""} avec écart articles/facturation`,detail:_overInv.map(o=>`${o.client} ${o.po} (${o.items.join(", ")})`).join(" · ")});
+    return alerts.slice(0,6);
   };
   const tickerAlerts=globalAlerts();
 
@@ -3705,7 +3713,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
             qty:colMap.qty>=0?(+r[colMap.qty]||1):1,
             unitPrice:colMap.price>=0?(+r[colMap.price]||0):0,
           }))
-          .filter((l:any)=>l.pn);
+          .filter((l:any)=>l.pn&&!isJunkRowLabel(l.pn));
       }
       setImportMsg(lines.length>0?`${lines.length} ligne(s) détectée(s) — vérifie et corrige avant de valider.`:"Aucune ligne détectée automatiquement — ajoute-les manuellement ci-dessous.");
       setDraftLines(lines.length>0?lines:[{pn:"",desc:"",qty:1,unitPrice:0}]);
@@ -3869,7 +3877,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
             qtyInvoiced:colMap.qty>=0?(+r[colMap.qty]||1):1,
             unitPrice:colMap.price>=0?(+r[colMap.price]||0):0,
           }))
-          .filter((l:any)=>l.pn);
+          .filter((l:any)=>l.pn&&!isJunkRowLabel(l.pn));
       }
       const meta=extractInvoiceMetaFromRows(rows);
       setDraftMeta(meta);
@@ -6102,6 +6110,12 @@ const detectColumns=(headers:string[])=>{
 };
 
 // Smart header finder — scans all rows to find the header row
+// Excel tables almost always end with a few summary/footer rows (TOTAL HT,
+// Sous-total, TVA, Payeur, Net à payer…) that sit in the same PN column as
+// real articles and would otherwise be imported as fake line items.
+const isJunkRowLabel=(pn:string):boolean=>
+  /^(total|sous[\s-]?total|tva|t\.v\.a|payeur|payer|remise|discount|frais|transport|shipping|port|net\s?[aà]|net\s?payer|montant|tax|customer|client|grand\s?total|sub[\s-]?total)\b/i.test(pn.trim());
+
 const findHeaderRow=(rows:any[][]):{headerIdx:number,colMap:any}=>{
   // Score each row — the header row has the most column name keywords
   let bestScore=-1,bestIdx=0;
@@ -8363,7 +8377,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
                       <input type="checkbox" checked={filteredProducts.length>0&&filteredProducts.every((p:any)=>selectedIds.has(p.id||p.pn))} onChange={toggleSelectAllVisible}
                         style={{cursor:"pointer"}}/>
                     </th>
-                    {(catReadOnly?["Part Number","Description","Gamme","Prix disponibles","Dernière mise à jour"]:["Part Number","Description","Gamme","Prix disponibles","Dernière mise à jour","Actions"]).map((h,i)=>(
+                    {(catReadOnly?["Part Number","Description","Gamme","Prix disponibles","Dernière mise à jour","Fiche"]:["Part Number","Description","Gamme","Prix disponibles","Dernière mise à jour","Fiche","Actions"]).map((h,i)=>(
                       <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
                     ))}
                   </tr></thead>
@@ -8405,6 +8419,18 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
                           </div>
                         </td>
                         <td style={{padding:"8px 12px",color:C.t3}}>{p.lastUpdated||"—"}</td>
+                        <td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
+                          <div style={{display:"flex",gap:4}}>
+                            <button onClick={()=>printProductFiche(p.pn,p,getAllOrders())} title="Fiche produit PDF"
+                              style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                              <i className="ti ti-file-type-pdf" style={{fontSize:12}} aria-hidden="true"/>
+                            </button>
+                            <button onClick={()=>exportProductFicheExcel(p.pn,p,getAllOrders())} title="Fiche produit Excel"
+                              style={{background:C.greenL,color:C.greenDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                              <i className="ti ti-file-spreadsheet" style={{fontSize:12}} aria-hidden="true"/>
+                            </button>
+                          </div>
+                        </td>
                         {!catReadOnly&&<td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
                           <div style={{display:"flex",gap:4}}>
                             <button onClick={()=>setCatEditProduct(p)} title="Modifier"
@@ -10417,6 +10443,31 @@ function ProjectsPage({isMobile}:any){
   );
 }
 
+// ── Cross-order product analytics: everywhere a PN was ordered/invoiced ──
+function buildProductFicheData(pn:string,allOrders:any[]){
+  const occurrences:any[]=[];
+  allOrders.forEach((o:any)=>{
+    (o.lines||[]).filter((l:any)=>l.pn===pn).forEach((l:any)=>{
+      const qtyInvoiced=(o.invoices||[]).reduce((s:number,inv:any)=>
+        s+((inv.lines||[]).filter((il:any)=>il.pn===pn).reduce((ss:number,il:any)=>ss+(+il.qtyInvoiced||0),0)),0);
+      occurrences.push({client:o._client,po:o.poNumber,date:o.date,status:o.status,
+        qtyOrdered:+l.qty||0,unitPrice:+l.unitPrice||0,qtyInvoiced});
+    });
+  });
+  occurrences.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const totalQtyOrdered=occurrences.reduce((s,o)=>s+o.qtyOrdered,0);
+  const totalQtyInvoiced=occurrences.reduce((s,o)=>s+o.qtyInvoiced,0);
+  const totalAmountOrdered=occurrences.reduce((s,o)=>s+o.qtyOrdered*o.unitPrice,0);
+  const totalAmountInvoiced=occurrences.reduce((s,o)=>s+Math.min(o.qtyInvoiced,o.qtyOrdered)*o.unitPrice,0);
+  const clients=Array.from(new Set(occurrences.map(o=>o.client)));
+  const prices=occurrences.map(o=>o.unitPrice).filter(p=>p>0);
+  const minPrice=prices.length?Math.min(...prices):0;
+  const maxPrice=prices.length?Math.max(...prices):0;
+  const avgPrice=prices.length?prices.reduce((a,b)=>a+b,0)/prices.length:0;
+  const lastOrderDate=occurrences.reduce((mx,o)=>o.date>mx?o.date:mx,"");
+  return{occurrences,totalQtyOrdered,totalQtyInvoiced,totalAmountOrdered,totalAmountInvoiced,clients,minPrice,maxPrice,avgPrice,lastOrderDate};
+}
+
 // ── PDF (print-to-PDF): full order report — articles coverage + invoices ──
 function printOrderReport(order:any,client:string){
   const w=window.open("","_blank","width=1000,height=1000");
@@ -10430,8 +10481,8 @@ function printOrderReport(order:any,client:string){
   const hasLines=cov.length>0;
 
   const linesRows=cov.map((l:any)=>{
-    const si=l.status==="complete"?{label:"Facturé",c:"#059669",bg:"#D1FAE5"}:l.status==="partial"?{label:"Partiel",c:"#D97706",bg:"#FEF3C7"}:{label:"Non facturé",c:"#6B7280",bg:"#F1F5F9"};
-    return`<tr><td style="font-family:monospace;color:#2563EB;font-weight:700">${l.pn}</td><td>${l.desc||"—"}</td><td style="text-align:right">${l.qty}</td><td style="text-align:right">${fmt(l.unitPrice)} €</td><td style="text-align:right;font-weight:700">${fmt((+l.qty||0)*(+l.unitPrice||0))} €</td><td style="text-align:right">${l.qtyInvoiced}</td><td style="text-align:right;color:${l.qtyRemaining>0?"#D97706":"#059669"};font-weight:700">${l.qtyRemaining}</td><td><span style="background:${si.bg};color:${si.c};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${si.label}</span></td></tr>`;
+    const si=l.status==="complete"?{label:"Facturé",c:"#059669",bg:"#D1FAE5",row:"#F0FDF4"}:l.status==="partial"?{label:"Partiel",c:"#D97706",bg:"#FEF3C7",row:"#FFFBEB"}:{label:"Non facturé",c:"#6B7280",bg:"#F1F5F9",row:"#FAFAFA"};
+    return`<tr style="background:${si.row};border-left:3px solid ${si.c}"><td style="font-family:monospace;color:#2563EB;font-weight:700">${l.pn}</td><td>${l.desc||"—"}</td><td style="text-align:right">${l.qty}</td><td style="text-align:right">${fmt(l.unitPrice)} €</td><td style="text-align:right;font-weight:700">${fmt((+l.qty||0)*(+l.unitPrice||0))} €</td><td style="text-align:right">${l.qtyInvoiced}</td><td style="text-align:right;color:${l.qtyRemaining>0?"#D97706":"#059669"};font-weight:700">${l.qtyRemaining}</td><td><span style="background:${si.bg};color:${si.c};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${si.label}</span></td></tr>`;
   }).join("");
   const linesTotalOrdered=cov.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
   const linesTotalInvoiced=cov.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
@@ -10440,7 +10491,8 @@ function printOrderReport(order:any,client:string){
   const invRows=(order.invoices||[]).map((inv:any)=>{
     const ps=payStatus(inv);
     const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
-    return`<tr><td style="font-weight:700;color:#7C3AED">${inv.invoiceNumber||"—"}</td><td>${fmtD(inv.date)}</td><td style="text-align:right;font-weight:700">${fmt(inv.amount)} €</td><td>${fmtD(inv.dueDate)}</td><td style="text-align:right;color:#059669">${fmt(paid)} €</td><td style="text-align:right;color:${ps.rem>0?"#DC2626":"#059669"};font-weight:700">${fmt(ps.rem)} €</td><td><span style="background:${ps.bg||"#F1F5F9"};color:${ps.color||"#6B7280"};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${ps.label||ps.key||"—"}</span></td></tr>`;
+    const rowBg=ps.key==="paid"?"#F0FDF4":["overdue","ov_part"].includes(ps.key)?"#FEF2F2":["today","soon","soon_part"].includes(ps.key)?"#FFFBEB":"#F8FAFC";
+    return`<tr style="background:${rowBg};border-left:3px solid ${ps.color||"#6B7280"}"><td style="font-weight:700;color:#7C3AED">${inv.invoiceNumber||"—"}</td><td>${fmtD(inv.date)}</td><td style="text-align:right;font-weight:700">${fmt(inv.amount)} €</td><td>${fmtD(inv.dueDate)}</td><td style="text-align:right;color:#059669">${fmt(paid)} €</td><td style="text-align:right;color:${ps.rem>0?"#DC2626":"#059669"};font-weight:700">${fmt(ps.rem)} €</td><td><span style="background:${ps.bg||"#F1F5F9"};color:${ps.color||"#6B7280"};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${ps.label||ps.key||"—"}</span></td></tr>`;
   }).join("")||`<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucune facture pour cette commande</td></tr>`;
 
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rapport commande ${order.poNumber||""}</title><style>
@@ -10545,7 +10597,14 @@ async function exportOrderExcel(order:any,client:string){
     ["Notes",order.notes||"—"],
     ["Généré le",new Date().toLocaleDateString("fr-FR")],
   ];
-  summaryRows.forEach(([k,v])=>{const r=wsR.addRow([k,v]);r.getCell(1).font={bold:true};});
+  summaryRows.forEach(([k,v])=>{
+    const r=wsR.addRow([k,v]);
+    r.getCell(1).font={bold:true};
+    if(k==="Montant PO (€)")r.getCell(2).font={bold:true,color:{argb:"FF2563EB"}};
+    if(k==="Facturé (€)")r.getCell(2).font={bold:true,color:{argb:"FF0D9488"}};
+    if(k==="Restant à facturer (€)")r.getCell(2).font={bold:true,color:{argb:remaining>0?"FFD97706":"FF059669"}};
+    if(k==="Encaissé (€)")r.getCell(2).font={bold:true,color:{argb:"FF059669"}};
+  });
 
   // ── Sheet 2: Articles ──
   const wsA=wb.addWorksheet("Articles");
@@ -10555,8 +10614,10 @@ async function exportOrderExcel(order:any,client:string){
   wsA.getRow(1).font={bold:true};
   wsA.getRow(1).eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0D1B2A"}};c.font={bold:true,color:{argb:"FFFFFFFF"}};});
   cov.forEach((l:any)=>{
-    wsA.addRow([l.pn,l.desc||"—",l.qty,+l.unitPrice||0,(+l.qty||0)*(+l.unitPrice||0),l.qtyInvoiced,l.qtyRemaining,
+    const r=wsA.addRow([l.pn,l.desc||"—",l.qty,+l.unitPrice||0,(+l.qty||0)*(+l.unitPrice||0),l.qtyInvoiced,l.qtyRemaining,
       l.status==="complete"?"Facturé":l.status==="partial"?"Partiel":"Non facturé"]);
+    const argb=l.status==="complete"?"FFD1FAE5":l.status==="partial"?"FFFEF3C7":"FFF1F5F9";
+    r.eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb}};});
   });
   if(cov.length>0){
     const tot=wsA.addRow(["","TOTAL","",
@@ -10564,6 +10625,7 @@ async function exportOrderExcel(order:any,client:string){
       cov.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0),
       cov.reduce((s:number,l:any)=>s+(+l.qtyRemaining||0)*(+l.unitPrice||0),0),""]);
     tot.font={bold:true};
+    tot.eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFE2E8F0"}};});
   }
 
   // ── Sheet 3: Factures ──
@@ -10575,7 +10637,9 @@ async function exportOrderExcel(order:any,client:string){
   (order.invoices||[]).forEach((inv:any)=>{
     const ps=payStatus(inv);
     const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
-    wsF.addRow([inv.invoiceNumber||"—",inv.date?fmtD(inv.date):"—",+inv.amount||0,inv.dueDate?fmtD(inv.dueDate):"—",paid,ps.rem,ps.label||ps.key||"—"]);
+    const r=wsF.addRow([inv.invoiceNumber||"—",inv.date?fmtD(inv.date):"—",+inv.amount||0,inv.dueDate?fmtD(inv.dueDate):"—",paid,ps.rem,ps.label||ps.key||"—"]);
+    const argb=ps.key==="paid"?"FFD1FAE5":["overdue","ov_part"].includes(ps.key)?"FFFEE2E2":["today","soon","soon_part"].includes(ps.key)?"FFFEF3C7":"FFF8FAFC";
+    r.eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb}};});
   });
 
   const buf=await wb.xlsx.writeBuffer();
@@ -10584,6 +10648,144 @@ async function exportOrderExcel(order:any,client:string){
   const a=document.createElement('a');
   a.href=url;a.download=`Rapport_${(order.poNumber||"commande").replace(/[^\w\-]/g,"_")}_${new Date().toISOString().slice(0,10)}.xlsx`;
   a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── PDF (print-to-PDF): product fiche — real cross-order/client analytics ──
+function printProductFiche(pn:string,product:any,allOrders:any[]){
+  const w=window.open("","_blank","width=1000,height=1000");
+  if(!w)return;
+  const d=buildProductFicheData(pn,allOrders);
+  const type=detectProductType(pn,product?.description||"");
+
+  const occRows=d.occurrences.map((o:any)=>{
+    const full=o.qtyInvoiced>=o.qtyOrdered&&o.qtyOrdered>0;
+    const partial=o.qtyInvoiced>0&&!full;
+    const bg=full?"#F0FDF4":partial?"#FFFBEB":"#FAFAFA";
+    const border=full?"#059669":partial?"#D97706":"#9CA3AF";
+    const label=full?"Facturé":partial?"Partiel":"Non facturé";
+    return`<tr style="background:${bg};border-left:3px solid ${border}"><td style="font-weight:700">${o.client}</td><td>${o.po||"—"}</td><td>${fmtD(o.date)}</td><td style="text-align:right">${o.qtyOrdered}</td><td style="text-align:right">${fmt(o.unitPrice)} €</td><td style="text-align:right;font-weight:700">${fmt(o.qtyOrdered*o.unitPrice)} €</td><td style="text-align:right">${o.qtyInvoiced}</td><td><span style="background:${bg};color:${border};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;border:1px solid ${border}">${label}</span></td></tr>`;
+  }).join("")||`<tr><td colspan="8" style="text-align:center;color:#8FA0B3;padding:16px">Cet article n'a encore été détecté dans aucune commande importée.</td></tr>`;
+
+  const priceRows=(product?.prices||[]).slice().sort((a:any,b:any)=>(b.date||"").localeCompare(a.date||"")).map((p:any)=>
+    `<tr><td>${p.date||"—"}</td><td style="text-align:right;font-weight:700">${fmt(p.price)} €</td><td>${p.source||"—"}</td></tr>`).join("")||`<tr><td colspan="3" style="text-align:center;color:#8FA0B3;padding:12px">Aucun historique de prix catalogue</td></tr>`;
+
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Fiche produit ${pn}</title><style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:28px 32px;}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:16px;border-bottom:3px solid #0D1B2A;}
+    .logo{font-size:20px;font-weight:800;color:#2563EB;letter-spacing:-.02em;}
+    .meta{text-align:right;font-size:11px;color:#8FA0B3;}
+    h1{font-size:17px;font-weight:700;color:#0D1B2A;margin-bottom:2px;font-family:monospace;}
+    h2{font-size:13px;font-weight:700;color:#0D1B2A;margin:22px 0 8px;}
+    .sub{font-size:11px;color:#8FA0B3;margin-bottom:18px;}
+    .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px;}
+    .card{background:#F8FAFC;border:1px solid #E5EAF0;border-radius:8px;padding:10px 12px;}
+    .card .lbl{font-size:9px;color:#8FA0B3;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
+    .card .val{font-size:15px;font-weight:800;color:#0D1B2A;}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px;}
+    th{background:#0D1B2A;color:#fff;padding:7px 9px;text-align:left;font-weight:600;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;}
+    td{padding:6px 9px;border-bottom:1px solid #E5EAF0;}
+    .footer{margin-top:10px;padding-top:12px;border-top:1px solid #E5EAF0;font-size:10px;color:#8FA0B3;display:flex;justify-content:space-between;}
+    @media print{body{padding:16px;}.no-print{display:none!important}}
+  </style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px">
+    <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
+    <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">✕ Close</button>
+  </div>
+  <div class="header">
+    <div><div class="logo">OrderTrack</div><h1>${pn}</h1><div class="sub">${product?.description||"—"} · ${type.label}</div></div>
+    <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Fiche produit — analyse cross-commandes</div>
+  </div>
+  <div class="summary">
+    <div class="card"><div class="lbl">Nb commandes</div><div class="val">${d.occurrences.length}</div></div>
+    <div class="card"><div class="lbl">Nb clients</div><div class="val">${d.clients.length}</div></div>
+    <div class="card"><div class="lbl">Qté totale commandée</div><div class="val" style="color:#2563EB">${d.totalQtyOrdered}</div></div>
+    <div class="card"><div class="lbl">Qté totale facturée</div><div class="val" style="color:#0D9488">${d.totalQtyInvoiced}</div></div>
+    <div class="card"><div class="lbl">Montant total commandé</div><div class="val" style="color:#2563EB">${fmt(d.totalAmountOrdered)} €</div></div>
+    <div class="card"><div class="lbl">Montant total facturé</div><div class="val" style="color:#0D9488">${fmt(d.totalAmountInvoiced)} €</div></div>
+    <div class="card"><div class="lbl">Prix observé (min / moy / max)</div><div class="val" style="font-size:13px">${fmt(d.minPrice)} / ${fmt(d.avgPrice)} / ${fmt(d.maxPrice)} €</div></div>
+    <div class="card"><div class="lbl">Dernière commande</div><div class="val" style="font-size:13px">${d.lastOrderDate?fmtD(d.lastOrderDate):"—"}</div></div>
+  </div>
+  <h2>📋 Historique des commandes (${d.occurrences.length})</h2>
+  <table><thead><tr><th>Client</th><th>PO #</th><th>Date</th><th style="text-align:right">Qté cmd.</th><th style="text-align:right">Prix unit.</th><th style="text-align:right">Total</th><th style="text-align:right">Qté facturée</th><th>Statut</th></tr></thead>
+  <tbody>${occRows}</tbody></table>
+  <h2>💶 Historique des prix catalogue</h2>
+  <table><thead><tr><th>Date</th><th style="text-align:right">Prix</th><th>Source</th></tr></thead><tbody>${priceRows}</tbody></table>
+  <div class="footer"><span>OrderTrack — Fiche produit confidentielle</span><span>${pn}</span></div>
+  </body></html>`);
+  w.document.close();
+}
+
+// ── Excel: product fiche (Résumé / Historique commandes / Historique prix) ──
+async function exportProductFicheExcel(pn:string,product:any,allOrders:any[]){
+  const loadExcelJS=():Promise<any>=>new Promise((resolve,reject)=>{
+    if((window as any).ExcelJS){resolve((window as any).ExcelJS);return;}
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    s.onload=()=>resolve((window as any).ExcelJS);
+    s.onerror=()=>reject(new Error('ExcelJS load failed'));
+    document.head.appendChild(s);
+  });
+  let ExcelJS:any;
+  try{ExcelJS=await loadExcelJS();}
+  catch{alert('Impossible de charger ExcelJS. Vérifiez votre connexion internet.');return;}
+
+  const d=buildProductFicheData(pn,allOrders);
+  const type=detectProductType(pn,product?.description||"");
+  const wb=new ExcelJS.Workbook();
+  wb.creator="OrderTrack";wb.created=new Date();
+
+  const wsR=wb.addWorksheet("Résumé");
+  wsR.columns=[{width:28},{width:28}];
+  const rTitle=wsR.addRow(["Fiche produit",pn]);rTitle.font={bold:true,size:14};
+  wsR.addRow([]);
+  const rows:[string,any][]=[
+    ["Description",product?.description||"—"],
+    ["Type",type.label],
+    ["Nb commandes",d.occurrences.length],
+    ["Nb clients distincts",d.clients.length],
+    ["Clients",d.clients.join(", ")||"—"],
+    ["Qté totale commandée",d.totalQtyOrdered],
+    ["Qté totale facturée",d.totalQtyInvoiced],
+    ["Montant total commandé (€)",d.totalAmountOrdered],
+    ["Montant total facturé (€)",d.totalAmountInvoiced],
+    ["Prix min observé (€)",d.minPrice],
+    ["Prix moyen observé (€)",+d.avgPrice.toFixed(2)],
+    ["Prix max observé (€)",d.maxPrice],
+    ["Dernière commande",d.lastOrderDate?fmtD(d.lastOrderDate):"—"],
+    ["Généré le",new Date().toLocaleDateString("fr-FR")],
+  ];
+  rows.forEach(([k,v])=>{const r=wsR.addRow([k,v]);r.getCell(1).font={bold:true};});
+
+  const wsO=wb.addWorksheet("Historique commandes");
+  wsO.columns=[{header:"Client",width:16},{header:"PO #",width:16},{header:"Date",width:12},
+    {header:"Qté commandée",width:14},{header:"Prix unit. (€)",width:14},{header:"Total (€)",width:14},
+    {header:"Qté facturée",width:13},{header:"Statut",width:14}];
+  wsO.getRow(1).font={bold:true};
+  wsO.getRow(1).eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0D1B2A"}};c.font={bold:true,color:{argb:"FFFFFFFF"}};});
+  d.occurrences.forEach((o:any)=>{
+    const full=o.qtyInvoiced>=o.qtyOrdered&&o.qtyOrdered>0;
+    const partial=o.qtyInvoiced>0&&!full;
+    const r=wsO.addRow([o.client,o.po||"—",fmtD(o.date),o.qtyOrdered,o.unitPrice,o.qtyOrdered*o.unitPrice,o.qtyInvoiced,full?"Facturé":partial?"Partiel":"Non facturé"]);
+    const argb=full?"FFD1FAE5":partial?"FFFEF3C7":"FFF1F5F9";
+    r.eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb}};});
+  });
+
+  const wsP=wb.addWorksheet("Historique prix");
+  wsP.columns=[{header:"Date",width:14},{header:"Prix (€)",width:14},{header:"Source",width:24}];
+  wsP.getRow(1).font={bold:true};
+  wsP.getRow(1).eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0D1B2A"}};c.font={bold:true,color:{argb:"FFFFFFFF"}};});
+  (product?.prices||[]).slice().sort((a:any,b:any)=>(b.date||"").localeCompare(a.date||"")).forEach((p:any)=>{
+    wsP.addRow([p.date||"—",+p.price||0,p.source||"—"]);
+  });
+
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const url=URL.createObjectURL(blob);
+  const a2=document.createElement('a');
+  a2.href=url;a2.download=`Fiche_${pn.replace(/[^\w\-]/g,"_")}_${new Date().toISOString().slice(0,10)}.xlsx`;
+  a2.click();
   URL.revokeObjectURL(url);
 }
 
