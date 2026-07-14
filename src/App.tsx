@@ -3246,7 +3246,12 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
         </div>
         <Fld label="Notes" value={f.notes} onChange={(v:any)=>s("notes",v)} placeholder="Détails de l'expédition…" span={2} rows={2}/>
       </div>
-      <InvoiceLinesPanel order={order} invoiceId={f.id} lines={f.lines} onChange={(lines:any[])=>s("lines",lines)}/>
+      <InvoiceLinesPanel order={order} invoiceId={f.id} lines={f.lines} onChange={(lines:any[])=>s("lines",lines)}
+        onMetaConfirmed={(meta:{invoiceNumber:string,date:string,amount?:number})=>{
+          if(meta.invoiceNumber)s("invoiceNumber",meta.invoiceNumber);
+          if(meta.date){s("date",meta.date);if(!f.overrideDueDate)s("dueDate",autoDate(meta.date));}
+          if(meta.amount&&meta.amount>0&&!f.amount)s("amount",meta.amount);
+        }}/>
       <FileAttachments
         files={f.attachments}
         entityId={f.id}
@@ -3812,10 +3817,11 @@ function PoLinesPanel({order,onSave,canEdit}:any){
 // either by quick-filling the remaining quantity per PN, or by importing the
 // facture PDF itself (same extraction engine as the PO import), always with
 // an editable review step before it's merged in.
-function InvoiceLinesPanel({order,invoiceId,lines,onChange}:any){
+function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any){
   const[importing,setImporting]=useState(false);
   const[importMsg,setImportMsg]=useState("");
   const[draftLines,setDraftLines]=useState<any[]|null>(null);
+  const[draftMeta,setDraftMeta]=useState<{invoiceNumber:string,date:string}>({invoiceNumber:"",date:""});
   const fileRef=useRef<HTMLInputElement>(null);
   const orderHasLines=(order?.lines||[]).length>0;
   const coverage=orderLineCoverage(order,invoiceId); // remaining excludes THIS invoice's own prior values
@@ -3836,11 +3842,13 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange}:any){
     if(!file)return;
     setImporting(true);setImportMsg("Extraction en cours…");
     try{
+      let rows:any[][]=[];
       let extracted:any[]=[];
       if(file.name.toLowerCase().endsWith(".pdf")){
-        extracted=await extractInvoiceLinesFromPdf(file);
+        rows=await extractPdfRows(file);
+        extracted=parsePoLinesFromRows(rows).map(l=>({pn:l.pn,desc:l.desc,qtyInvoiced:l.qty,unitPrice:l.unitPrice}));
       } else {
-        const rows=await parseExcel(file);
+        rows=await parseExcel(file);
         // Same name-based column detection as the PO import — a facture and
         // a bon de commande/devis rarely share the same column order.
         const{headerIdx,colMap}=findHeaderRow(rows);
@@ -3854,7 +3862,10 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange}:any){
           }))
           .filter((l:any)=>l.pn);
       }
-      setImportMsg(extracted.length>0?`${extracted.length} ligne(s) détectée(s) — vérifie et corrige avant de valider.`:"Aucune ligne détectée automatiquement — ajoute-les manuellement ci-dessous.");
+      const meta=extractInvoiceMetaFromRows(rows);
+      setDraftMeta(meta);
+      const metaNote=meta.invoiceNumber||meta.date?" N° et date de facture détectés ci-dessous — vérifie-les.":"";
+      setImportMsg((extracted.length>0?`${extracted.length} ligne(s) détectée(s) — vérifie et corrige avant de valider.`:"Aucune ligne détectée automatiquement — ajoute-les manuellement ci-dessous.")+metaNote);
       setDraftLines(extracted.length>0?extracted:[{pn:"",desc:"",qtyInvoiced:1,unitPrice:0}]);
     }catch(err){
       console.warn("[Invoice import]",err);
@@ -3870,7 +3881,9 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange}:any){
     const clean=(draftLines||[]).filter((l:any)=>l.pn);
     const merged=[...(lines||[]).filter((l:any)=>!clean.some((c:any)=>c.pn===l.pn)),...clean];
     onChange(merged);
-    setDraftLines(null);setImportMsg("");
+    const totalAmount=merged.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
+    if(onMetaConfirmed&&(draftMeta.invoiceNumber||draftMeta.date||totalAmount>0))onMetaConfirmed({...draftMeta,amount:totalAmount});
+    setDraftLines(null);setImportMsg("");setDraftMeta({invoiceNumber:"",date:""});
   };
 
   if(!orderHasLines&&!(lines||[]).length&&!draftLines){
@@ -3907,6 +3920,18 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange}:any){
       {draftLines?(
         <div style={{background:C.blueL,border:`1px solid ${C.blue}`,borderRadius:C.rSm,padding:12}}>
           <div style={{fontSize:11,color:C.blueDk,marginBottom:10}}>{importMsg} L'extraction automatique n'est jamais fiable à 100% — relis chaque ligne avant de valider.</div>
+          {(draftMeta.invoiceNumber||draftMeta.date)&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10,background:"#fff",border:`1px solid ${C.blue}`,borderRadius:6,padding:10}}>
+              <div>
+                <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:3,textTransform:"uppercase"}}>N° de facture détecté</label>
+                <input value={draftMeta.invoiceNumber} onChange={(e:any)=>setDraftMeta((p:any)=>({...p,invoiceNumber:e.target.value}))} placeholder="ex: INV-2026-001" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:12,width:"100%",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:3,textTransform:"uppercase"}}>Date de facture détectée</label>
+                <input type="date" value={draftMeta.date} onChange={(e:any)=>setDraftMeta((p:any)=>({...p,date:e.target.value}))} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:12,width:"100%",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+          )}
           <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
             {draftLines.map((l:any,i:number)=>(
               <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center"}}>
@@ -6487,6 +6512,44 @@ function parsePoLinesFromRows(rows:string[][]){
     lines.push({pn,desc,qty,unitPrice});
   });
   return lines;
+}
+
+// ── Auto-detect invoice number & date from an uploaded facture (PDF or Excel) ──
+// Scans every row's cells for common "Facture N° / Invoice # / Date" patterns,
+// so the invoice can be created without retyping info that's already on the
+// document. Always shown editable before confirming — never trusted blindly.
+function extractInvoiceMetaFromRows(rows:any[][]):{invoiceNumber:string,date:string}{
+  let invoiceNumber="",date="";
+  const toISO=(s:string)=>{
+    let m=s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+    if(m)return`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+    m=s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m)return`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+    return"";
+  };
+  for(const row of(rows||[])){
+    const cells=(row||[]).map((c:any)=>String(c??"").trim()).filter(Boolean);
+    if(!cells.length)continue;
+    const line=cells.join(" | ");
+    if(!invoiceNumber){
+      const m=line.match(/(?:facture|invoice)\s*(?:n[°o]?|#|num[ée]ro)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-\/.]{3,})/i);
+      if(m&&!/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}$/.test(m[1]))invoiceNumber=m[1].trim();
+      if(!invoiceNumber){
+        const idx=cells.findIndex((c:string)=>/^(facture|invoice)\s*(n[°o]?|#|num[ée]ro)?\s*:?$/i.test(c));
+        if(idx>=0&&cells[idx+1])invoiceNumber=cells[idx+1];
+      }
+    }
+    if(!date){
+      const m=line.match(/date\s*(?:facture|invoice)?\s*:?\s*(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{4}-\d{1,2}-\d{1,2})/i);
+      if(m)date=toISO(m[1]);
+      if(!date){
+        const idx=cells.findIndex((c:string)=>/^date\b/i.test(c));
+        if(idx>=0&&cells[idx+1])date=toISO(cells[idx+1]);
+      }
+    }
+    if(invoiceNumber&&date)break;
+  }
+  return{invoiceNumber,date};
 }
 
 async function extractOrderLinesFromPdf(file:File){
