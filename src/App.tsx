@@ -3398,12 +3398,12 @@ function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,o
               pn:String(colMap.pn>=0?r[colMap.pn]:"").trim(),
               desc:String(colMap.desc>=0?r[colMap.desc]:"").trim(),
               qtyInvoiced:colMap.qty>=0?(+r[colMap.qty]||1):1,
-              unitPrice:colMap.price>=0?(+r[colMap.price]||0):0,
+              unitPrice:colMap.price>=0?round2(+r[colMap.price]||0):0,
             }))
             .filter((l:any)=>l.pn&&!isJunkRowLabel(l.pn));
         }
         const meta=extractInvoiceMetaFromRows(rows);
-        const amount=lines.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
+        const amount=round2(lines.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0));
         newItems.push({_id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,fileName:file.name,
           invoiceNumber:meta.invoiceNumber||"",date:meta.date||todayStr(),amount:amount>0?amount:"",lines,error:null});
       }catch(err){
@@ -3948,7 +3948,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
             pn:String(colMap.pn>=0?r[colMap.pn]:"").trim(),
             desc:String(colMap.desc>=0?r[colMap.desc]:"").trim(),
             qty:colMap.qty>=0?(+r[colMap.qty]||1):1,
-            unitPrice:colMap.price>=0?(+r[colMap.price]||0):0,
+            unitPrice:colMap.price>=0?round2(+r[colMap.price]||0):0,
           }))
           .filter((l:any)=>l.pn&&!isJunkRowLabel(l.pn));
       }
@@ -4013,8 +4013,8 @@ function PoLinesPanel({order,onSave,canEdit}:any){
               <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center"}}>
                 <input value={l.pn} onChange={(e:any)=>updateDraft(i,"pn",e.target.value)} placeholder="PN" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,fontFamily:"monospace",width:"100%",boxSizing:"border-box"}}/>
                 <input value={l.desc} onChange={(e:any)=>updateDraft(i,"desc",e.target.value)} placeholder="Description" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
-                <input type="number" value={l.qty} onChange={(e:any)=>updateDraft(i,"qty",+e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
-                <input type="number" value={l.unitPrice} onChange={(e:any)=>updateDraft(i,"unitPrice",+e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                <input type="number" value={l.qty} onChange={(e:any)=>updateDraft(i,"qty",e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                <input type="number" value={l.unitPrice} onChange={(e:any)=>updateDraft(i,"unitPrice",e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
                 <button onClick={()=>removeDraftLine(i)} style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:26,height:26,cursor:"pointer"}}>✕</button>
               </div>
             ))}
@@ -4088,6 +4088,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
   const coverage=orderLineCoverage(order,invoiceId); // remaining excludes THIS invoice's own prior values
   const byOrderPn:Record<string,any>=Object.fromEntries((lines||[]).map((l:any)=>[l.orderPn||l.pn,l]));
   const[substPn,setSubstPn]=useState<Record<string,string>>({});
+  const[qtyBuf,setQtyBuf]=useState<Record<string,string>>({});
   const getActualPn=(orderPn:string)=>substPn[orderPn]??(byOrderPn[orderPn]?.pn||orderPn);
 
   const setQty=(orderPn:string,desc:string,unitPrice:number,qty:number)=>{
@@ -4135,7 +4136,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
             pn:String(colMap.pn>=0?r[colMap.pn]:"").trim(),
             desc:String(colMap.desc>=0?r[colMap.desc]:"").trim(),
             qtyInvoiced:colMap.qty>=0?(+r[colMap.qty]||1):1,
-            unitPrice:colMap.price>=0?(+r[colMap.price]||0):0,
+            unitPrice:colMap.price>=0?round2(+r[colMap.price]||0):0,
           }))
           .filter((l:any)=>l.pn&&!isJunkRowLabel(l.pn));
       }
@@ -4158,7 +4159,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
     const clean=(draftLines||[]).filter((l:any)=>l.pn);
     const merged=[...(lines||[]).filter((l:any)=>!clean.some((c:any)=>c.pn===l.pn)),...clean];
     onChange(merged);
-    const totalAmount=merged.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
+    const totalAmount=round2(merged.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0));
     if(onMetaConfirmed&&(draftMeta.invoiceNumber||draftMeta.date||totalAmount>0))onMetaConfirmed({...draftMeta,amount:totalAmount});
     setDraftLines(null);setImportMsg("");setDraftMeta({invoiceNumber:"",date:""});
     const added=await autoAddMissingProducts(clean,"Import facture");
@@ -4208,8 +4209,8 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
               <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center"}}>
                 <input value={l.pn} onChange={(e:any)=>updateDraft(i,"pn",e.target.value)} placeholder="PN" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,fontFamily:"monospace",width:"100%",boxSizing:"border-box"}}/>
                 <input value={l.desc} onChange={(e:any)=>updateDraft(i,"desc",e.target.value)} placeholder="Description" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
-                <input type="number" value={l.qtyInvoiced} onChange={(e:any)=>updateDraft(i,"qtyInvoiced",+e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
-                <input type="number" value={l.unitPrice} onChange={(e:any)=>updateDraft(i,"unitPrice",+e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                <input type="number" value={l.qtyInvoiced} onChange={(e:any)=>updateDraft(i,"qtyInvoiced",e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                <input type="number" value={l.unitPrice} onChange={(e:any)=>updateDraft(i,"unitPrice",e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
                 <button onClick={()=>removeDraftLine(i)} style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:26,height:26,cursor:"pointer"}}>✕</button>
               </div>
             ))}
@@ -4234,7 +4235,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
             </tr></thead>
             <tbody>
               {coverage.map((l:any,i:number)=>{
-                const current=byOrderPn[l.pn]?.qtyInvoiced||0;
+                const current=qtyBuf[l.pn]??String(byOrderPn[l.pn]?.qtyInvoiced||"");
                 const actualPn=getActualPn(l.pn);
                 const isSubstituted=actualPn.trim()&&actualPn.trim()!==l.pn;
                 return(
@@ -4253,7 +4254,8 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
                     </td>
                     <td style={{padding:"5px 8px"}}>
                       <input type="number" min={0} value={current}
-                        onChange={(e:any)=>setQty(l.pn,l.desc,l.unitPrice,+e.target.value)}
+                        onChange={(e:any)=>{setQtyBuf(prev=>({...prev,[l.pn]:e.target.value}));setQty(l.pn,l.desc,l.unitPrice,+e.target.value||0);}}
+                        onBlur={()=>setQtyBuf(prev=>{const{[l.pn]:_,...rest}=prev;return rest;})}
                         style={{width:70,padding:"4px 6px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11}}/>
                     </td>
                   </tr>
@@ -6850,6 +6852,11 @@ async function extractPdfRows(file:File):Promise<string[][]>{
   return rows;
 }
 
+// Rounds to 2 decimals — Excel/PDF extraction routinely produces values like
+// 208.46000000000001 (float artifacts) or long decimal chains that are
+// painful to edit by hand; every extracted price/amount goes through this.
+const round2=(n:any):number=>Math.round((+n||0)*100)/100;
+
 function parsePoLinesFromRows(rows:string[][]){
   const lines:{pn:string,desc:string,qty:number,unitPrice:number}[]=[];
   rows.forEach(row=>{
@@ -6869,7 +6876,7 @@ function parsePoLinesFromRows(rows:string[][]){
     const smallInts=numTokens.filter(n=>Number.isInteger(n)&&n>0&&n<1000);
     const decimalsFound=numTokens.filter(n=>!Number.isInteger(n)&&n>0);
     let qty=smallInts.length>0?smallInts[0]:1;
-    let unitPrice=decimalsFound.length>0?decimalsFound[0]:(numTokens.length>0?numTokens[numTokens.length-1]:0);
+    let unitPrice=round2(decimalsFound.length>0?decimalsFound[0]:(numTokens.length>0?numTokens[numTokens.length-1]:0));
     lines.push({pn,desc,qty,unitPrice});
   });
   return lines;
