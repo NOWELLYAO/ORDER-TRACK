@@ -3676,6 +3676,8 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
                       <td style={{padding:"8px 10px",textAlign:"center"}}><Tag label={ps.label} c={ps.color} bg={ps.bg} sm/></td>
                       <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
                         <div style={{display:"flex",gap:3,justifyContent:"center"}}>
+                          <IBtn icon="ti-file-type-pdf" title="Facture PDF" c={C.red} bg={C.redL} onClick={()=>printInvoiceDoc(inv,inv._order,client)} small/>
+                          <IBtn icon="ti-file-spreadsheet" title="Facture Excel" c={C.green} bg={C.greenL} onClick={()=>exportInvoiceExcel(inv,inv._order,client)} small/>
                           {perms?.canEdit&&<IBtn icon="ti-coin" title="Paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(inv._order,inv)} small/>}
                           {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(inv._order,inv)} small/>}
                           {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_invoice")))onDelInv(inv._oid,inv.id);}} small/>}
@@ -3888,6 +3890,8 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
                         <div style={{height:3,background:"#F1F5F9",borderRadius:99,marginTop:4,width:120}}><div style={{height:"100%",width:`${pctPay}%`,background:ps.color,borderRadius:99}}/></div>
                       </div>
                       <div style={{display:"flex",gap:4}}>
+                        <IBtn icon="ti-file-type-pdf" title="Facture PDF" c={C.red} bg={C.redL} onClick={()=>printInvoiceDoc(inv,order,client)}/>
+                        <IBtn icon="ti-file-spreadsheet" title="Facture Excel" c={C.green} bg={C.greenL} onClick={()=>exportInvoiceExcel(inv,order,client)}/>
                         {perms?.canEdit&&<IBtn icon="ti-coin" title="Enregistrer paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(order,inv)}/>}
                         {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier facture" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(order,inv)}/>}
                         {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_invoice")))onDelInv(order.id,inv.id);}}/>}
@@ -10828,6 +10832,138 @@ function buildProductFicheData(pn:string,allOrders:any[]){
   const avgPrice=prices.length?prices.reduce((a,b)=>a+b,0)/prices.length:0;
   const lastOrderDate=occurrences.reduce((mx,o)=>o.date>mx?o.date:mx,"");
   return{occurrences,totalQtyOrdered,totalQtyInvoiced,totalAmountOrdered,totalAmountInvoiced,clients,minPrice,maxPrice,avgPrice,lastOrderDate};
+}
+
+// ── PDF (print-to-PDF): standalone document for a single invoice ────────────
+function printInvoiceDoc(inv:any,order:any,client:string){
+  const w=window.open("","_blank","width=900,height=1000");
+  if(!w)return;
+  const ps=payStatus(inv);
+  const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+  const rem=Math.max(0,(+inv.amount||0)-paid);
+  const pctPay=+inv.amount>0?Math.min(100,paid/+inv.amount*100):0;
+
+  const linesRows=(inv.lines||[]).map((l:any)=>
+    `<tr><td style="font-family:monospace;color:#2563EB;font-weight:700">${l.pn}${l.orderPn?` <span style="color:#8FA0B3;font-weight:400">(cmd: ${l.orderPn})</span>`:""}</td><td>${l.desc||"—"}</td><td style="text-align:right">${l.qtyInvoiced}</td><td style="text-align:right">${fmt(l.unitPrice)} €</td><td style="text-align:right;font-weight:700">${fmt((+l.qtyInvoiced||0)*(+l.unitPrice||0))} €</td></tr>`
+  ).join("");
+  const linesTotal=(inv.lines||[]).reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
+
+  const payRows=(inv.payments||[]).map((p:any)=>
+    `<tr><td>${fmtD(p.date)}</td><td style="text-align:right;font-weight:700;color:#059669">${fmt(p.amount)} €</td><td>${p.method||"—"}</td><td>${p.reference||"—"}</td></tr>`
+  ).join("")||`<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucun paiement enregistré</td></tr>`;
+
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Facture ${inv.invoiceNumber||""}</title><style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:28px 32px;}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:16px;border-bottom:3px solid #0D1B2A;}
+    .logo{font-size:20px;font-weight:800;color:#2563EB;letter-spacing:-.02em;}
+    .meta{text-align:right;font-size:11px;color:#8FA0B3;}
+    h1{font-size:17px;font-weight:700;color:#0D1B2A;margin-bottom:2px;}
+    h2{font-size:13px;font-weight:700;color:#0D1B2A;margin:22px 0 8px;}
+    .sub{font-size:11px;color:#8FA0B3;margin-bottom:18px;}
+    .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px;}
+    .card{background:#F8FAFC;border:1px solid #E5EAF0;border-radius:8px;padding:10px 12px;}
+    .card .lbl{font-size:9px;color:#8FA0B3;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
+    .card .val{font-size:15px;font-weight:800;color:#0D1B2A;}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px;}
+    th{background:#0D1B2A;color:#fff;padding:7px 9px;text-align:left;font-weight:600;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;}
+    td{padding:6px 9px;border-bottom:1px solid #E5EAF0;}
+    tr:nth-child(even){background:#F8FAFC;}
+    tfoot td{font-weight:800;border-top:2px solid #0D1B2A;background:#F8FAFC;}
+    .bar{height:6px;background:#F1F5F9;border-radius:99px;overflow:hidden;margin-top:6px;}
+    .footer{margin-top:22px;padding-top:12px;border-top:1px solid #E5EAF0;font-size:10px;color:#8FA0B3;display:flex;justify-content:space-between;}
+    @media print{body{padding:16px;}.no-print{display:none!important}}
+  </style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px">
+    <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
+    <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">✕ Close</button>
+  </div>
+  <div class="header">
+    <div><div class="logo">OrderTrack</div><h1>Facture — ${inv.invoiceNumber||"—"}${inv.imported?' <span style="font-size:11px;color:#1D4ED8;font-weight:600">(importée)</span>':""}</h1><div class="sub">Client : ${client} · Commande : ${order.poNumber||"—"} ${order.soNumber?`· S/O : ${order.soNumber}`:""}</div></div>
+    <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Statut : <strong style="color:${ps.color||"#0D1B2A"}">${ps.label||ps.key||"—"}</strong></div>
+  </div>
+  <div class="summary">
+    <div class="card"><div class="lbl">Montant facture</div><div class="val" style="color:#2563EB">${fmt(inv.amount)} €</div></div>
+    <div class="card"><div class="lbl">Payé (${pctPay.toFixed(0)}%)</div><div class="val" style="color:#059669">${fmt(paid)} €</div></div>
+    <div class="card"><div class="lbl">Reste dû</div><div class="val" style="color:${rem>0?"#D97706":"#059669"}">${fmt(rem)} €</div></div>
+    <div class="card"><div class="lbl">Date / Échéance</div><div class="val" style="font-size:13px">${fmtD(inv.date)} → ${fmtD(inv.dueDate)}</div></div>
+  </div>
+  <div class="bar"><div style="height:100%;width:${pctPay}%;background:${ps.color||"#059669"}"></div></div>
+  ${inv.notes?`<div class="sub" style="margin-top:14px">Notes : ${inv.notes}</div>`:""}
+  ${(inv.lines||[]).length>0?`<h2>📋 Articles facturés (${inv.lines.length})</h2>
+  <table><thead><tr><th>Part Number</th><th>Description</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix unit.</th><th style="text-align:right">Total</th></tr></thead>
+  <tbody>${linesRows}</tbody>
+  <tfoot><tr><td colspan="4" style="text-align:right">TOTAL ARTICLES</td><td style="text-align:right">${fmt(linesTotal)} €</td></tr></tfoot>
+  </table>`:""}
+  <h2>💶 Paiements (${(inv.payments||[]).length})</h2>
+  <table><thead><tr><th>Date</th><th style="text-align:right">Montant</th><th>Méthode</th><th>Référence</th></tr></thead>
+  <tbody>${payRows}</tbody></table>
+  <div class="footer"><span>OrderTrack — Facture confidentielle</span><span>${client} · ${inv.invoiceNumber||""}</span></div>
+  </body></html>`);
+  w.document.close();
+}
+
+// ── Excel: standalone document for a single invoice ──────────────────────────
+async function exportInvoiceExcel(inv:any,order:any,client:string){
+  const loadExcelJS=():Promise<any>=>new Promise((resolve,reject)=>{
+    if((window as any).ExcelJS){resolve((window as any).ExcelJS);return;}
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    s.onload=()=>resolve((window as any).ExcelJS);
+    s.onerror=()=>reject(new Error('ExcelJS load failed'));
+    document.head.appendChild(s);
+  });
+  let ExcelJS:any;
+  try{ExcelJS=await loadExcelJS();}
+  catch{alert('Impossible de charger ExcelJS. Vérifiez votre connexion internet.');return;}
+
+  const ps=payStatus(inv);
+  const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+  const rem=Math.max(0,(+inv.amount||0)-paid);
+  const wb=new ExcelJS.Workbook();
+  wb.creator="OrderTrack";wb.created=new Date();
+
+  const wsR=wb.addWorksheet("Résumé");
+  wsR.columns=[{width:26},{width:26}];
+  const rTitle=wsR.addRow(["Facture",inv.invoiceNumber||"—"]);rTitle.font={bold:true,size:14};
+  wsR.addRow([]);
+  const rows:[string,any][]=[
+    ["Client",client],["Commande (PO #)",order.poNumber||"—"],["S/O #",order.soNumber||"—"],
+    ["Date facture",inv.date?fmtD(inv.date):"—"],["Échéance",inv.dueDate?fmtD(inv.dueDate):"—"],
+    ["Montant (€)",+inv.amount||0],["Payé (€)",paid],["Reste dû (€)",rem],
+    ["Statut",ps.label||ps.key||"—"],["Importée",inv.imported?"Oui":"Non"],["Notes",inv.notes||"—"],
+    ["Généré le",new Date().toLocaleDateString("fr-FR")],
+  ];
+  rows.forEach(([k,v])=>{const r=wsR.addRow([k,v]);r.getCell(1).font={bold:true};
+    if(k==="Montant (€)")r.getCell(2).font={bold:true,color:{argb:"FF2563EB"}};
+    if(k==="Payé (€)")r.getCell(2).font={bold:true,color:{argb:"FF059669"}};
+    if(k==="Reste dû (€)")r.getCell(2).font={bold:true,color:{argb:rem>0?"FFD97706":"FF059669"}};
+  });
+
+  if((inv.lines||[]).length>0){
+    const wsA=wb.addWorksheet("Articles");
+    wsA.columns=[{header:"Part Number",width:16},{header:"Description",width:42},{header:"Qté",width:10},
+      {header:"Prix unit. (€)",width:14},{header:"Total (€)",width:14}];
+    wsA.getRow(1).font={bold:true};
+    wsA.getRow(1).eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0D1B2A"}};c.font={bold:true,color:{argb:"FFFFFFFF"}};});
+    inv.lines.forEach((l:any)=>wsA.addRow([l.pn,l.desc||"—",l.qtyInvoiced,+l.unitPrice||0,(+l.qtyInvoiced||0)*(+l.unitPrice||0)]));
+    const tot=wsA.addRow(["","TOTAL","","",inv.lines.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0)]);
+    tot.font={bold:true};
+  }
+
+  const wsP=wb.addWorksheet("Paiements");
+  wsP.columns=[{header:"Date",width:14},{header:"Montant (€)",width:14},{header:"Méthode",width:20},{header:"Référence",width:20}];
+  wsP.getRow(1).font={bold:true};
+  wsP.getRow(1).eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0D1B2A"}};c.font={bold:true,color:{argb:"FFFFFFFF"}};});
+  (inv.payments||[]).forEach((p:any)=>wsP.addRow([p.date?fmtD(p.date):"—",+p.amount||0,p.method||"—",p.reference||"—"]));
+
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=`Facture_${(inv.invoiceNumber||"sans_numero").replace(/[^\w\-]/g,"_")}_${new Date().toISOString().slice(0,10)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── PDF (print-to-PDF): full order report — articles coverage + invoices ──
