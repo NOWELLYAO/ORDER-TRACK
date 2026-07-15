@@ -468,9 +468,17 @@ const orderLineCoverage=(order:any,excludeInvId?:string)=>{
       }
     });
   });
+  // A PN can legitimately appear on several order lines (staggered
+  // deliveries, separate line items). The invoiced total for that PN must be
+  // ALLOCATED across those lines one at a time (FIFO) — crediting the full
+  // per-PN invoiced quantity to every line that shares the PN would multiply
+  // the "Facturé" total by however many duplicate lines exist.
+  const pool:Record<string,number>={...invoiced};
   return(order?.lines||[]).map((l:any)=>{
     const ordered=+l.qty||0;
-    const inv=invoiced[l.pn]||0;
+    const avail=pool[l.pn]||0;
+    const inv=Math.min(ordered,avail);
+    pool[l.pn]=avail-inv;
     const remaining=Math.max(0,ordered-inv);
     const subs=substitutions[l.pn]?Array.from(substitutions[l.pn]):[];
     return{...l,qtyOrdered:ordered,qtyInvoiced:inv,qtyRemaining:remaining,
