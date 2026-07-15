@@ -3317,7 +3317,7 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
   const term=PAY_TERMS.find(t=>t.id===(cfg?.termId||"net60"))||PAY_TERMS[5];
   const autoDate=(d:string)=>calcDueDate(d,cfg?.termId||"net60",cfg?.customDays||0);
   const invoiceIdRef=useRef(invoice?.id||Date.now().toString());
-  const[f,setF]=useState({invoiceNumber:invoice?.invoiceNumber||"",date:invoice?.date||todayStr(),amount:invoice?.amount||"",shippingMode:invoice?.shippingMode||"Transitaire FCA",dueDate:invoice?.dueDate||autoDate(invoice?.date||todayStr()),overrideDueDate:!!invoice?.dueDate,notes:invoice?.notes||"",id:invoiceIdRef.current,payments:invoice?.payments||[],attachments:invoice?.attachments||[],lines:invoice?.lines||[]});
+  const[f,setF]=useState({invoiceNumber:invoice?.invoiceNumber||"",date:invoice?.date||todayStr(),amount:invoice?.amount||"",shippingMode:invoice?.shippingMode||"Transitaire FCA",dueDate:invoice?.dueDate||autoDate(invoice?.date||todayStr()),overrideDueDate:!!invoice?.dueDate,notes:invoice?.notes||"",id:invoiceIdRef.current,payments:invoice?.payments||[],attachments:invoice?.attachments||[],lines:invoice?.lines||[],imported:invoice?.imported||false});
   const s=(k:string,v:any)=>setF(p=>({...p,[k]:v}));
   const already=(order.invoices||[]).filter((i:any)=>i.id!==invoice?.id).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);
   const remaining=Math.max(0,(+order.amount||0)-already);
@@ -3354,10 +3354,11 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
         <Fld label="Notes" value={f.notes} onChange={(v:any)=>s("notes",v)} placeholder="Détails de l'expédition…" span={2} rows={2}/>
       </div>
       <InvoiceLinesPanel order={order} invoiceId={f.id} lines={f.lines} onChange={(lines:any[])=>s("lines",lines)}
-        onMetaConfirmed={(meta:{invoiceNumber:string,date:string,amount?:number})=>{
+        onMetaConfirmed={(meta:{invoiceNumber:string,date:string,amount?:number,imported?:boolean})=>{
           if(meta.invoiceNumber)s("invoiceNumber",meta.invoiceNumber);
           if(meta.date){s("date",meta.date);if(!f.overrideDueDate)s("dueDate",autoDate(meta.date));}
           if(meta.amount&&meta.amount>0&&!f.amount)s("amount",meta.amount);
+          if(meta.imported)s("imported",true);
         }}/>
       <FileAttachments
         files={f.attachments}
@@ -3440,7 +3441,7 @@ function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,o
 
   const handleCreateAll=async()=>{
     if(validItems.length===0){alert("Aucune facture valide à créer (numéro et montant requis, pas de doublon).");return;}
-    onSaveAll(validItems.map(({_id,fileName,error,dupWarning,...rest}:any)=>rest));
+    onSaveAll(validItems.map(({_id,fileName,error,dupWarning,...rest}:any)=>({...rest,imported:true})));
     const allLines=validItems.flatMap((it:any)=>it.lines||[]);
     await autoAddMissingProducts(allLines,"Import facture (groupé)");
   };
@@ -3655,6 +3656,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
                       onMouseLeave={(e:any)=>e.currentTarget.style.background=ii%2===0?"#fff":"#FAFBFD"}>
                       <td style={{padding:"8px 10px",fontWeight:700,color:C.purple,whiteSpace:"nowrap"}}>
                         {inv.invoiceNumber||"—"}
+                        {inv.imported&&<i className="ti ti-file-upload" title="Créée depuis un fichier importé" style={{fontSize:11,color:C.blueDk,marginLeft:5}} aria-hidden="true"/>}
                         {inv.attachments?.length>0&&<i className="ti ti-paperclip" title={`${inv.attachments.length} pièce(s) jointe(s)`} style={{fontSize:12,color:C.t3,marginLeft:5}} aria-hidden="true"/>}
                       </td>
                       <td style={{padding:"8px 10px",fontSize:11,color:C.t2,fontFamily:"monospace"}}>{inv._po||"—"}</td>
@@ -3781,9 +3783,9 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
       style={{background:"#fff",borderRadius:C.rLg,boxShadow:focusOrderId===order.id?`0 0 0 3px ${C.blue}40,${C.shMd}`:C.sh,border:`1px solid ${focusOrderId===order.id?C.blue:nbEchues>0?C.red+"50":nbUpcoming>0?C.amber+"40":C.b}`,overflow:"hidden",transition:"box-shadow .2s,border-color .2s"}}
       onMouseEnter={(e:any)=>e.currentTarget.style.boxShadow=C.shMd}
       onMouseLeave={(e:any)=>e.currentTarget.style.boxShadow=focusOrderId===order.id?`0 0 0 3px ${C.blue}40,${C.shMd}`:C.sh}>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer"}} onClick={()=>{tgl(order.id);if(focusOrderId===order.id&&onClearFocus)onClearFocus();}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",flexWrap:"wrap"}} onClick={()=>{tgl(order.id);if(focusOrderId===order.id&&onClearFocus)onClearFocus();}}>
         <i className={`ti ${isExp?"ti-chevron-down":"ti-chevron-right"}`} style={{fontSize:15,color:C.t3,flexShrink:0}} aria-hidden="true"/>
-        <div style={{flex:1,display:"grid",gridTemplateColumns:client==="CIMELEC"?"1.2fr 0.9fr 0.9fr 0.9fr 1.1fr 1fr 1fr":"1.4fr 1fr 1fr 1.2fr 1.1fr 1.1fr",gap:10,alignItems:"center",minWidth:0}}>
+        <div style={{flex:"1 1 420px",display:"grid",gridTemplateColumns:client==="CIMELEC"?"1.2fr 0.9fr 0.9fr 0.9fr 1.1fr 1fr 1fr":"1.4fr 1fr 1fr 1.2fr 1.1fr 1.1fr",gap:10,alignItems:"center",minWidth:0}}>
           <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>PO #</div><div style={{fontWeight:700,fontSize:13,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{order.poNumber||"—"}</div></div>
           <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>S/O</div><div style={{fontSize:12,color:C.t2}}>{order.soNumber||"—"}</div></div>
           {client==="CIMELEC"&&<div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>N° Commande</div><div style={{fontSize:12,color:C.purple,fontWeight:600}}>{order.orderNumber||"—"}</div></div>}
@@ -3792,7 +3794,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Facturé / Reste</div><div style={{fontSize:12}}><span style={{color:C.teal,fontWeight:600}}>{fmt(invoiced)}</span><span style={{color:C.t3}}> / </span><span style={{color:open>0?C.amber:C.green,fontWeight:600}}>{fmt(open)}</span></div></div>
           <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Encaissé</div><div style={{fontSize:12,color:C.green,fontWeight:600}}>{fmt(totalPaid)} €</div></div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",flexShrink:0}}>
           {isLate&&<Tag label="⏰ RETARD LIVR." c={C.red} bg={C.redL}/>}
           {nbEchues>0&&<Tag label={`⚠ ${nbEchues} ÉCHU${nbEchues>1?"ES":"E"} · ${fmtK(amtEchues)} €`} c={C.redDk} bg={C.redL}/>}
           {nbEchues===0&&nbUpcoming>0&&<Tag label={`🔔 ${nbUpcoming} ÉCHÉANCE${nbUpcoming>1?"S":""} PROCHE${nbUpcoming>1?"S":""}`} c={C.amberDk} bg={C.amberL}/>}
@@ -3866,7 +3868,9 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
                 return(
                   <div key={inv.id} style={{background:"#fff",borderRadius:C.r,border:`1px solid ${ps.key.startsWith("over")||ps.key==="today"?C.red+"50":C.b}`,overflow:"hidden"}}>
                     <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr 1.2fr 1fr 1.5fr auto",gap:10,alignItems:"center",padding:"12px 14px"}}>
-                      <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Invoice #</div><div style={{fontWeight:700,fontSize:13,color:C.purple}}>{inv.invoiceNumber||"—"}</div></div>
+                      <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Invoice #</div><div style={{fontWeight:700,fontSize:13,color:C.purple,display:"flex",alignItems:"center",gap:6}}>{inv.invoiceNumber||"—"}
+                        {inv.imported&&<span title="Créée depuis un fichier importé (PDF/Excel), pas de saisie manuelle" style={{display:"flex",alignItems:"center",gap:3,fontSize:9,fontWeight:700,color:C.blueDk,background:C.blueL,padding:"2px 6px",borderRadius:99}}><i className="ti ti-file-upload" style={{fontSize:10}} aria-hidden="true"/>Importé</span>}
+                      </div></div>
                       <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Date</div><div style={{fontSize:12,color:C.t2}}>{fmtD(inv.date)}</div></div>
                       <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Montant</div><div style={{fontWeight:700,fontSize:13,color:C.teal}}>{fmt(inv.amount)} €</div></div>
                       <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Échéance</div><div style={{fontSize:12,color:inv.dueDate?C.t2:C.t3}}>{fmtD(inv.dueDate)}</div></div>
@@ -4160,7 +4164,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
     const merged=[...(lines||[]).filter((l:any)=>!clean.some((c:any)=>c.pn===l.pn)),...clean];
     onChange(merged);
     const totalAmount=round2(merged.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0));
-    if(onMetaConfirmed&&(draftMeta.invoiceNumber||draftMeta.date||totalAmount>0))onMetaConfirmed({...draftMeta,amount:totalAmount});
+    if(onMetaConfirmed&&(draftMeta.invoiceNumber||draftMeta.date||totalAmount>0))onMetaConfirmed({...draftMeta,amount:totalAmount,imported:true});
     setDraftLines(null);setImportMsg("");setDraftMeta({invoiceNumber:"",date:""});
     const added=await autoAddMissingProducts(clean,"Import facture");
     if(added>0)setCatalogueMsg(`✓ ${added} nouvel${added>1?"s":""} article${added>1?"s":""} ajouté${added>1?"s":""} automatiquement au catalogue.`);
@@ -6964,7 +6968,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
   const[pendingFile,setPendingFile]=useState<string>("");
   const[catSearch,setCatSearch]=useState("");
   const[typeFilter,setTypeFilter]=useState<string|null>(null);
-  const[showPriceAlerts,setShowPriceAlerts]=useState(true);
+  const[showPriceAlerts,setShowPriceAlerts]=useState(false);
   const[selectedIds,setSelectedIds]=useState<Set<string>>(new Set());
   const[catEditProduct,setCatEditProduct]=useState<any>(null);
   const fileRef=useRef<HTMLInputElement>(null);
@@ -8644,8 +8648,8 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
             </button>}
           </div>
 
-          {/* ── Alertes de variation de prix ── */}
-          {priceAlerts.length>0&&(
+          {/* ── Alertes de variation de prix (admin uniquement) ── */}
+          {isAdmin&&priceAlerts.length>0&&(
             <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.amber}`,boxShadow:C.sh,overflow:"hidden"}}>
               <button onClick={()=>setShowPriceAlerts(!showPriceAlerts)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:C.amberL,border:"none",cursor:"pointer"}}>
                 <span style={{display:"flex",alignItems:"center",gap:8,fontSize:12.5,fontWeight:700,color:C.amberDk}}>
@@ -8727,7 +8731,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
                       <input type="checkbox" checked={filteredProducts.length>0&&filteredProducts.every((p:any)=>selectedIds.has(p.id||p.pn))} onChange={toggleSelectAllVisible}
                         style={{cursor:"pointer"}}/>
                     </th>
-                    {(catReadOnly?["Part Number","Description","Gamme","Prix disponibles","Dernière mise à jour","Fiche"]:["Part Number","Description","Gamme","Prix disponibles","Dernière mise à jour","Fiche","Actions"]).map((h,i)=>(
+                    {(catReadOnly?["Part Number","Description","Gamme","Prix disponibles","Dernière mise à jour",...(isAdmin?["Fiche"]:[])]:["Part Number","Description","Gamme","Prix disponibles","Dernière mise à jour","Fiche","Actions"]).map((h,i)=>(
                       <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#fff",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
                     ))}
                   </tr></thead>
@@ -8769,7 +8773,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
                           </div>
                         </td>
                         <td style={{padding:"8px 12px",color:C.t3}}>{p.lastUpdated||"—"}</td>
-                        <td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
+                        {isAdmin&&<td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
                           <div style={{display:"flex",gap:4}}>
                             <button onClick={()=>printProductFiche(p.pn,p,getAllOrders())} title="Fiche produit PDF"
                               style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
@@ -8780,7 +8784,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
                               <i className="ti ti-file-spreadsheet" style={{fontSize:12}} aria-hidden="true"/>
                             </button>
                           </div>
-                        </td>
+                        </td>}
                         {!catReadOnly&&<td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
                           <div style={{display:"flex",gap:4}}>
                             <button onClick={()=>setCatEditProduct(p)} title="Modifier"
