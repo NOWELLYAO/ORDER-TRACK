@@ -3409,7 +3409,7 @@ function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,o
               qtyInvoiced:colMap.qty>=0?(+r[colMap.qty]||1):1,
               unitPrice:colMap.price>=0?round2(+r[colMap.price]||0):0,
             }))
-            .filter((l:any)=>l.pn&&!isJunkRowLabel(l.pn));
+            .filter((l:any)=>(l.pn||l.desc)&&!isJunkRowLabel(l.pn||l.desc));
         }
         const meta=extractInvoiceMetaFromRows(rows);
         const amount=round2(lines.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0));
@@ -3860,7 +3860,15 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           />
           {/* ── Articles commandés (import bon de commande) ── */}
           <PoLinesPanel order={order} canEdit={perms?.canEdit}
-            onSave={(lines:any[])=>{const upd={...order,lines};if(onSaveOrder)onSaveOrder(upd);else onEditOrder(upd);}}
+            onSave={(lines:any[])=>{
+              // Keep the PO's headline amount in sync with its line items
+              // (articles + freight/misc) whenever they're edited — only
+              // when there ARE lines, so orders without line-level detail
+              // keep their manually-entered amount untouched.
+              const linesTotal=lines.length>0?round2(lines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0)):null;
+              const upd={...order,lines,...(linesTotal!==null?{amount:linesTotal}:{})};
+              if(onSaveOrder)onSaveOrder(upd);else onEditOrder(upd);
+            }}
           />
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
             <h4 style={{margin:0,fontSize:13,fontWeight:700,color:C.t1}}>Expéditions & Factures</h4>
@@ -3966,7 +3974,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
             qty:colMap.qty>=0?(+r[colMap.qty]||1):1,
             unitPrice:colMap.price>=0?round2(+r[colMap.price]||0):0,
           }))
-          .filter((l:any)=>l.pn&&!isJunkRowLabel(l.pn));
+          .filter((l:any)=>(l.pn||l.desc)&&!isJunkRowLabel(l.pn||l.desc));
       }
       setImportMsg(lines.length>0?`${lines.length} ligne(s) détectée(s) — vérifie et corrige avant de valider.`:"Aucune ligne détectée automatiquement — ajoute-les manuellement ci-dessous.");
       setDraftLines(lines.length>0?lines:[{pn:"",desc:"",qty:1,unitPrice:0}]);
@@ -3981,7 +3989,21 @@ function PoLinesPanel({order,onSave,canEdit}:any){
   const addDraftLine=()=>setDraftLines((prev:any)=>[...(prev||[]),{pn:"",desc:"",qty:1,unitPrice:0}]);
   const removeDraftLine=(idx:number)=>setDraftLines((prev:any)=>prev.filter((_:any,i:number)=>i!==idx));
   const confirmImport=async()=>{
-    const clean=(draftLines||[]).filter((l:any)=>l.pn);
+    // A line without a PN but WITH a description (freight, customs, misc
+    // charges…) is legitimate — it must not be silently dropped. Give it a
+    // synthetic, collision-safe PN so it stays trackable/unique.
+    const usedPns=new Set((draftLines||[]).map((l:any)=>(l.pn&&String(l.pn).trim())).filter(Boolean));
+    let miscCounter=0;
+    const clean=(draftLines||[])
+      .filter((l:any)=>(l.pn&&String(l.pn).trim())||(l.desc&&String(l.desc).trim()))
+      .map((l:any)=>{
+        if(l.pn&&String(l.pn).trim())return{...l,pn:String(l.pn).trim()};
+        miscCounter++;
+        let candidate=`DIVERS-${miscCounter}`;
+        while(usedPns.has(candidate)){miscCounter++;candidate=`DIVERS-${miscCounter}`;}
+        usedPns.add(candidate);
+        return{...l,pn:candidate};
+      });
     onSave(clean);
     setDraftLines(null);setImportMsg("");
     const added=await autoAddMissingProducts(clean,"Import bon de commande");
@@ -4154,7 +4176,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
             qtyInvoiced:colMap.qty>=0?(+r[colMap.qty]||1):1,
             unitPrice:colMap.price>=0?round2(+r[colMap.price]||0):0,
           }))
-          .filter((l:any)=>l.pn&&!isJunkRowLabel(l.pn));
+          .filter((l:any)=>(l.pn||l.desc)&&!isJunkRowLabel(l.pn||l.desc));
       }
       const meta=extractInvoiceMetaFromRows(rows);
       setDraftMeta(meta);
@@ -4172,7 +4194,20 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
   const addDraftLine=()=>setDraftLines((prev:any)=>[...(prev||[]),{pn:"",desc:"",qtyInvoiced:1,unitPrice:0}]);
   const removeDraftLine=(idx:number)=>setDraftLines((prev:any)=>prev.filter((_:any,i:number)=>i!==idx));
   const confirmImport=async()=>{
-    const clean=(draftLines||[]).filter((l:any)=>l.pn);
+    // Same rule as the PO import — a description-only line (freight, misc
+    // charges) is legitimate on a facture too and must not be dropped.
+    const usedPns=new Set([...(draftLines||[]),...(lines||[])].map((l:any)=>(l.pn&&String(l.pn).trim())).filter(Boolean));
+    let miscCounter=0;
+    const clean=(draftLines||[])
+      .filter((l:any)=>(l.pn&&String(l.pn).trim())||(l.desc&&String(l.desc).trim()))
+      .map((l:any)=>{
+        if(l.pn&&String(l.pn).trim())return{...l,pn:String(l.pn).trim()};
+        miscCounter++;
+        let candidate=`DIVERS-${miscCounter}`;
+        while(usedPns.has(candidate)){miscCounter++;candidate=`DIVERS-${miscCounter}`;}
+        usedPns.add(candidate);
+        return{...l,pn:candidate};
+      });
     const merged=[...(lines||[]).filter((l:any)=>!clean.some((c:any)=>c.pn===l.pn)),...clean];
     onChange(merged);
     const totalAmount=round2(merged.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0));
