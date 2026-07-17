@@ -1578,7 +1578,7 @@ export default function App(){
         )}
         <main style={{flex:1,overflow:"auto",padding:isMobile?"16px":"28px 32px"}}>
         {page==="kpi"&&<KpiPage clients={visibleClients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrdersScoped} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} canExport={perms.canExport} isAdmin={isAdmin} targets={targets}/>}
-        {page==="dashboard"&&<CompilPage getStats={getStats} clients={visibleClients} configs={configs} setPage={setPage} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} isAdmin={isAdmin}/>}
+        {page==="dashboard"&&<CompilPage getStats={getStats} clients={visibleClients} configs={configs} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} isAdmin={isAdmin} targets={targets} getAllOrders={getAllOrdersScoped}/>}
         {page==="tresorerie"&&<TresoreriePage getAllOrders={getAllOrdersScoped} clients={visibleClients} lang={lang} isMobile={isMobile}/>}
         {page==="rapport"&&!restrictedClient&&perms.canViewReports&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
         {page==="catalogue"&&<CataloguePage clients={visibleClients} restrictedClient={restrictedClient} isAdmin={isAdmin} getAllOrders={getAllOrdersScoped} lang={lang} isMobile={isMobile}/>}
@@ -2632,7 +2632,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
 }
 
 // ─── COMPILATION PAGE ────────────────────────────────────────────────────────
-function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="fr",isAdmin=true}:any){
+function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYear,lang="fr",isAdmin=true,targets,getAllOrders}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const all=clients.map((c:string)=>({client:c,...getStats(c,selYear)}));
   const totPO  = all.reduce((s:number,c:any)=>s+c.totalPO,0);
