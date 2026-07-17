@@ -7071,40 +7071,110 @@ function CatEditModal({product,allProducts,onSave,onClose}:any){
 // detected from the description (and PN as a fallback), matching whole
 // tokens against known series prefixes — longest prefix first so "CRN"
 // isn't mis-classified as "CR", etc.
+// Product Segments = Grundfos's own commercial segmentation (from the
+// official SAP discount-structure sheet): DBS (Domestic Building Services),
+// CBS (Commercial Building Services), IND (Industry), WU (Water Utility —
+// groundwater & wastewater), SERV (Service/spares). Every recognized family
+// below is tagged with its real segment, so the analysis can roll up to
+// this strategic level, not just the technical product series.
+const SEGMENT_LABELS:Record<string,string>={
+  DBS:"DBS — Domestic Building Services",
+  CBS:"CBS — Commercial Building Services",
+  IND:"IND — Industrie",
+  WU:"WU — Water Utility (réseaux & eaux usées)",
+  SERV:"SERV — Service & pièces détachées",
+};
 const PRODUCT_TYPE_RULES=[
-  {code:"SQE",  label:"SQE — Submersible pilotée"},
-  {code:"SQ",   label:"SQ — Pompes submersibles"},
-  {code:"SP",   label:"SP — Pompes submersibles"},
-  {code:"CRN",  label:"CRN — Multicellulaire verticale Inox"},
-  {code:"CRE",  label:"CRE — Multicellulaire électronique"},
-  {code:"CR",   label:"CR — Multicellulaire verticale"},
-  {code:"NBE",  label:"NBE — Monocellulaire électronique"},
-  {code:"NB",   label:"NB — Pompes monocellulaires"},
-  {code:"NK",   label:"NK — Monocellulaire longue"},
-  {code:"TPE",  label:"TPE — Circulateur in-line électronique"},
-  {code:"TP",   label:"TP — Circulateurs in-line"},
-  {code:"MAGNA",label:"MAGNA — Circulateurs"},
-  {code:"ALPHA",label:"ALPHA — Circulateurs"},
-  {code:"UPS",  label:"UPS — Circulateurs"},
-  {code:"CME",  label:"CME — Multicellulaire horizontale électronique"},
-  {code:"CM",   label:"CM — Multicellulaire horizontale"},
-  {code:"MQ",   label:"MQ — Groupe hydrophore compact"},
-  {code:"DMH",  label:"DMH — Doseuse hydraulique à membrane"},
-  {code:"DME",  label:"DME — Doseuse électromagnétique"},
-  {code:"DMI",  label:"DMI — Pompe doseuse"},
-  {code:"DMX",  label:"DMX — Pompe doseuse"},
-  {code:"SBA",  label:"SBA — Surpression"},
-  {code:"SB",   label:"SB — Surpression"},
-  {code:"HYDRO",label:"HYDRO — Système de surpression"},
-  {code:"MPC",  label:"MPC — Contrôleur de surpression"},
-  {code:"SEG",  label:"SEG — Relevage broyeuse"},
-  {code:"SLV",  label:"SLV — Relevage vortex"},
-  {code:"SL",   label:"SL — Relevage"},
-  {code:"AMD",  label:"AMD — Broyeuse"},
-  {code:"AMG",  label:"AMG — Broyeuse"},
+  // ── DBS — Domestic Building Services ──
+  {code:"JP",   label:"JP — Surpresseur domestique",segment:"DBS"},
+  {code:"SCALA",label:"SCALA — Surpresseur domestique",segment:"DBS"},
+  {code:"UNILIFT",label:"Unilift — Relevage domestique",segment:"DBS"},
+  {code:"GT",   label:"GT — Réservoir/vase (accessoire DBS)",segment:"DBS"},
+  // ── CBS — Commercial Building Services ──
+  {code:"MAGNA",label:"MAGNA — Circulateurs",segment:"CBS"},
+  {code:"ALPHA",label:"ALPHA — Circulateurs",segment:"CBS"},
+  {code:"UPA",  label:"UPA — Circulateurs",segment:"CBS"},
+  {code:"UPS",  label:"UPS — Circulateurs",segment:"CBS"},
+  {code:"UPE",  label:"UPE — Circulateurs électroniques",segment:"CBS"},
+  {code:"UP",   label:"UP — Circulateurs",segment:"CBS"},
+  {code:"MIXIT",label:"Mixit — Régulation hydraulique",segment:"CBS"},
+  {code:"TPE",  label:"TPE/TPED — Circulateur in-line électronique",segment:"CBS"},
+  {code:"TPD",  label:"TPD — Circulateurs in-line jumelés",segment:"CBS"},
+  {code:"TP",   label:"TP — Circulateurs in-line",segment:"CBS"},
+  {code:"NBGE", label:"NBGE — Monocellulaire électronique (bride)",segment:"CBS"},
+  {code:"NBG",  label:"NBG — Monocellulaire (bride)",segment:"CBS"},
+  {code:"NBE",  label:"NBE — Monocellulaire électronique",segment:"CBS"},
+  {code:"NB",   label:"NB — Pompes monocellulaires",segment:"CBS"},
+  {code:"NKGE", label:"NKGE — Monocellulaire longue électronique (bride)",segment:"CBS"},
+  {code:"NKG",  label:"NKG — Monocellulaire longue (bride)",segment:"CBS"},
+  {code:"NKE",  label:"NKE — Monocellulaire longue électronique",segment:"CBS"},
+  {code:"NK",   label:"NK — Monocellulaire longue",segment:"CBS"},
+  {code:"LSV",  label:"LSV — Pompes à volute (split case)",segment:"CBS"},
+  {code:"LS",   label:"LS — Pompes à volute (split case)",segment:"CBS"},
+  {code:"HS",   label:"HS — Pompes à volute (split case)",segment:"CBS"},
+  {code:"HYDRO",label:"HYDRO — Système de surpression",segment:"CBS"},
+  {code:"MPC",  label:"MPC — Contrôleur de surpression",segment:"CBS"},
+  {code:"FIRE", label:"FIRE 2 / CRF — Groupe incendie",segment:"CBS"},
+  // ── IND — Industrie ──
+  {code:"CRN",  label:"CRN — Multicellulaire verticale Inox",segment:"IND"},
+  {code:"CRIE", label:"CRIE — Multicellulaire Inox électronique",segment:"IND"},
+  {code:"CRI",  label:"CRI — Multicellulaire Inox",segment:"IND"},
+  {code:"CRE",  label:"CRE — Multicellulaire électronique",segment:"IND"},
+  {code:"CRT",  label:"CRT — Multicellulaire dessalement",segment:"IND"},
+  {code:"CR",   label:"CR — Multicellulaire verticale",segment:"IND"},
+  {code:"CME",  label:"CME — Multicellulaire horizontale électronique",segment:"IND"},
+  {code:"CM",   label:"CM — Multicellulaire horizontale",segment:"IND"},
+  {code:"BM",   label:"BM — Pompe haute pression (booster/RO)",segment:"IND"},
+  {code:"DMH",  label:"DMH — Doseuse hydraulique à membrane",segment:"IND"},
+  {code:"DME",  label:"DME — Doseuse électromagnétique",segment:"IND"},
+  {code:"DMI",  label:"DMI — Pompe doseuse",segment:"IND"},
+  {code:"DMX",  label:"DMX — Pompe doseuse",segment:"IND"},
+  {code:"DDA",  label:"DDA — Doseuse digitale",segment:"IND"},
+  {code:"DDC",  label:"DDC — Doseuse digitale",segment:"IND"},
+  {code:"DDE",  label:"DDE — Doseuse digitale",segment:"IND"},
+  {code:"CONEX",label:"Conex — Contrôleurs/dosage",segment:"IND"},
+  {code:"OXIPERM",label:"Oxiperm — Traitement/désinfection",segment:"IND"},
+  {code:"SELCOPERM",label:"Selcoperm — Traitement/désinfection",segment:"IND"},
+  {code:"MQ",   label:"MQ — Groupe hydrophore compact",segment:"IND"},
+  {code:"SBA",  label:"SBA — Surpression",segment:"IND"},
+  {code:"SB",   label:"SB — Surpression",segment:"IND"},
+  // ── WU — Water Utility (réseaux & eaux usées) ──
+  {code:"SQE",  label:"SQE — Submersible pilotée",segment:"WU"},
+  {code:"SQFLEX",label:"SQFlex — Pompage solaire",segment:"WU"},
+  {code:"SQF",  label:"SQF — Pompe solaire (gamme SQFlex)",segment:"WU"},
+  {code:"SQ",   label:"SQ — Pompes submersibles (petit diamètre)",segment:"WU"},
+  {code:"SP",   label:"SP — Pompes submersibles (eau propre/forage)",segment:"WU"},
+  {code:"MS",   label:"MS — Moteurs submersibles",segment:"WU"},
+  {code:"SEG",  label:"SEG — Relevage broyeuse",segment:"WU"},
+  {code:"SLV",  label:"SLV — Relevage vortex",segment:"WU"},
+  {code:"SL",   label:"SL — Relevage",segment:"WU"},
+  {code:"SE",   label:"SE — Relevage/effluent",segment:"WU"},
+  {code:"AMD",  label:"AMD — Broyeuse",segment:"WU"},
+  {code:"AMG",  label:"AMG — Broyeuse",segment:"WU"},
+  {code:"MULTILIFT",label:"Multilift — Station de relevage",segment:"WU"},
+  {code:"SOLOLIFT",label:"Sololift — Station de relevage compacte",segment:"WU"},
+  {code:"LCD",  label:"LCD — Coffret de commande relevage",segment:"WU"},
+  {code:"LC",   label:"LC — Coffret de commande relevage",segment:"WU"},
+  {code:"DWK",  label:"DWK — Pompe de drainage",segment:"WU"},
 ].sort((a,b)=>b.code.length-a.code.length);
-const UNCLASSIFIED_TYPE={code:"AUTRE",label:"Autres / non classé"};
-
+const UNCLASSIFIED_TYPE={code:"AUTRE",label:"Autres / non classé",segment:""};
+const ACCESSORY_TYPE={code:"ACCESS",label:"Accessoires & pièces détachées",segment:"SERV"};
+// Second-pass fallback: many catalogue lines are generic spares/accessories
+// (câbles, joints, coffrets, flotteurs, chaînes de levage…) rather than a
+// pump series in their own right. Classifying them as "Accessoires" instead
+// of dumping them into "Autre" makes the AUTRE bucket meaningful again —
+// it should only catch genuinely unrecognized items. This matches Grundfos's
+// own segmentation, which carves out "SPARES & KITS" as its own line under
+// every segment — grouped here under SERV since the exact origin segment of
+// a given spare part isn't reliably inferable from the description alone.
+const ACCESSORY_KEYWORDS=[
+  "kit","câble","cable","joint","seal","bearing","roulement","float switch","flotteur",
+  "chaîne de levage","chain","pied d'assise","coffret","panneau","régulateur de niveau",
+  "injection","tubing","inlay","bride","raccord","flexible","valve","robinet","clapet",
+  "capteur","sonde","sensor","membrane","diaphragm","cartouche","filtre","filter",
+  "vanne","joint torique","o-ring","garniture","accouplement","coupling","support",
+  "alarme","alarm","interrupteur","inter.","switch","boîtier","boitier","armoire",
+];
 function detectProductType(pn:string,description:string){
   const text=`${description||""} ${pn||""}`.toUpperCase();
   const tokens=text.split(/[^A-Z0-9]+/).filter(Boolean);
@@ -7113,6 +7183,8 @@ function detectProductType(pn:string,description:string){
       if(tok===rule.code||new RegExp(`^${rule.code}\\d`).test(tok))return rule;
     }
   }
+  const lowerDesc=(description||"").toLowerCase();
+  if(ACCESSORY_KEYWORDS.some(k=>lowerDesc.includes(k)))return ACCESSORY_TYPE;
   return UNCLASSIFIED_TYPE;
 }
 
@@ -11292,23 +11364,30 @@ async function exportInvoiceExcel(inv:any,order:any,client:string){
 // commandé-vs-facturé gap per type to spot fulfillment imbalances.
 // ═══════════════════════════════════════════════════════════════════════════
 function computeTypeBreakdown(items:{pn:string,desc:string,qty:number,unitPrice:number}[]){
-  const byType:Record<string,{code:string,label:string,qty:number,value:number,count:number}>={};
+  const byType:Record<string,{code:string,label:string,segment:string,qty:number,value:number,count:number}>={};
+  const bySegment:Record<string,{segment:string,label:string,qty:number,value:number,count:number}>={};
   items.forEach(l=>{
     if(!l.pn||(+l.qty||0)<=0)return;
     const t=detectProductType(l.pn,l.desc||"");
-    if(!byType[t.code])byType[t.code]={code:t.code,label:t.label,qty:0,value:0,count:0};
+    if(!byType[t.code])byType[t.code]={code:t.code,label:t.label,segment:(t as any).segment||"",qty:0,value:0,count:0};
     byType[t.code].qty+=(+l.qty||0);
     byType[t.code].value+=(+l.qty||0)*(+l.unitPrice||0);
     byType[t.code].count+=1;
+    const segKey=(t as any).segment||"—";
+    if(!bySegment[segKey])bySegment[segKey]={segment:segKey,label:SEGMENT_LABELS[segKey]||"Non segmenté (Autre)",qty:0,value:0,count:0};
+    bySegment[segKey].qty+=(+l.qty||0);
+    bySegment[segKey].value+=(+l.qty||0)*(+l.unitPrice||0);
+    bySegment[segKey].count+=1;
   });
   const arr=Object.values(byType).sort((a,b)=>b.value-a.value);
   const total=arr.reduce((s,t)=>s+t.value,0);
   const withPct=arr.map(t=>({...t,pct:total>0?t.value/total*100:0}));
+  const segArr=Object.values(bySegment).sort((a,b)=>b.value-a.value).map(s=>({...s,pct:total>0?s.value/total*100:0}));
   // Herfindahl-Hirschman Index (sum of squared market shares, 0-10000 scale)
   // — standard concentration metric: <1500 = diversifié, 1500-2500 = modéré,
   // >2500 = fortement concentré sur peu de familles de produits.
   const hhi=withPct.reduce((s,t)=>s+Math.pow(t.pct,2),0);
-  return{byType:withPct,total,hhi,typeCount:withPct.length};
+  return{byType:withPct,bySegment:segArr,total,hhi,typeCount:withPct.length};
 }
 
 function printProductTypeAnalysis(scopeLabel:string,periodLabel:string,orderedItems:any[],invoicedItems:any[],label1:string="Commandé",label2:string="Facturé"){
@@ -11334,7 +11413,7 @@ function printProductTypeAnalysis(scopeLabel:string,periodLabel:string,orderedIt
   const biggestGap=gapRows[0];
 
   const typeRow=(t:any,maxVal:number)=>`<tr>
-    <td><span style="background:#F3E8FF;color:#7C3AED;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800">${t.code}</span></td>
+    <td><span style="background:#F3E8FF;color:#7C3AED;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800">${t.code}</span>${t.segment?`<span style="margin-left:5px;background:#F1F5F9;color:#6B7280;padding:1px 6px;border-radius:99px;font-size:8.5px;font-weight:700">${t.segment}</span>`:""}</td>
     <td style="font-size:10.5px;color:#4A5568">${t.label}</td>
     <td style="text-align:center">${t.count}</td>
     <td style="text-align:right">${t.qty}</td>
@@ -11402,6 +11481,10 @@ function printProductTypeAnalysis(scopeLabel:string,periodLabel:string,orderedIt
       ${ordered.hhi>2500?" — la dépendance à une seule famille de produits est un facteur de risque à surveiller (rupture fournisseur, variation tarifaire)." :ordered.hhi>1500?" — une diversification plus poussée réduirait l'exposition à une famille unique.":" — le risque de dépendance à une famille de produits unique est limité."}
       ${biggestGap&&Math.abs(biggestGap.gap)>=10?` Écart le plus marqué entre ${label1.toLowerCase()} et ${label2.toLowerCase()} : <strong>${biggestGap.code}</strong> (${biggestGap.gap>0?`sur-${label2.toLowerCase()}`:`sous-${label2.toLowerCase()}`} de ${Math.abs(biggestGap.gap).toFixed(1)} points par rapport à son poids en ${label1.toLowerCase()}) — à investiguer.`:""}`}
     </div>
+
+    <h2>🏢 Répartition par segment commercial Grundfos (DBS / CBS / IND / WU / SERV)</h2>
+    <table><thead><tr><th>Segment</th><th style="text-align:center">Lignes</th><th style="text-align:right">Valeur</th><th style="text-align:right">% du total</th><th style="width:160px">Poids</th></tr></thead>
+    <tbody>${ordered.bySegment.map((s:any)=>`<tr><td style="font-weight:700">${s.label}</td><td style="text-align:center">${s.count}</td><td style="text-align:right;font-weight:700">${fmt(s.value)} €</td><td style="text-align:right;font-weight:800;color:#2563EB">${s.pct.toFixed(1)}%</td><td style="padding:6px 9px"><div style="height:8px;background:#F1F5F9;border-radius:99px;overflow:hidden;width:100%"><div style="height:100%;width:${s.pct}%;background:linear-gradient(90deg,#059669,#2563EB)"></div></div></td></tr>`).join("")||`<tr><td colspan="5" style="text-align:center;color:#8FA0B3;padding:12px">—</td></tr>`}</tbody></table>
 
     <h2>📦 Répartition — ${label1}</h2>
     <table><thead><tr><th>Type</th><th>Famille</th><th style="text-align:center">Lignes</th><th style="text-align:right">Qté</th><th style="text-align:right">Valeur</th><th style="text-align:right">% du total</th><th style="width:120px">Poids</th></tr></thead>
