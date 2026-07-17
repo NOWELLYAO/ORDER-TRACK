@@ -2642,6 +2642,9 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
   const txFact = totPO>0?(totInv/totPO*100):0;
   const txPay  = totInv>0?(totPaid/totInv*100):0;
   const maxBar = Math.max(...all.map((c:any)=>c.totalPO),1);
+  const globalTarget = getTarget(targets,selYear,null);
+  const poTargetPct = globalTarget.po>0 ? Math.min(100,totPO/globalTarget.po*100) : null;
+  const invTargetPct = globalTarget.inv>0 ? Math.min(100,totInv/globalTarget.inv*100) : null;
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:24}}>
@@ -2657,7 +2660,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
             style={{display:"flex",alignItems:"center",gap:7,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"10px 16px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-target-arrow" style={{fontSize:15}} aria-hidden="true"/> Objectifs
           </button>
-          <button onClick={()=>printFinancialAudit(`Tous clients (${clients.length} comptes)`,all,configs,getTarget(targets,selYear,null))}
+          <button onClick={()=>printFinancialAudit(`Tous clients (${clients.length} comptes)`,getAllOrders(),configs,globalTarget,selYear)}
             style={{display:"flex",alignItems:"center",gap:7,background:"#0D1B2A",color:"#fff",border:"none",borderRadius:C.r,padding:"10px 16px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-certificate" style={{fontSize:15}} aria-hidden="true"/> Audit Expert
           </button>
@@ -2674,14 +2677,14 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Total PO {selYear}</div>
           <div style={{fontSize:22,fontWeight:800,color:C.blue,letterSpacing:"-.02em"}}>{fmtK(totPO)} €</div>
-          {isAdmin&&getTarget(targets,selYear,null).po>0?(()=>{const tgt=getTarget(targets,selYear,null).po;const pct=Math.min(100,totPO/tgt*100);return(
+          {isAdmin&&poTargetPct!==null?(
             <>
               <div style={{marginTop:6,height:5,background:"#F1F5F9",borderRadius:99}}>
-                <div style={{height:"100%",width:`${pct}%`,background:pct>=100?C.green:pct>=70?C.blue:C.amber,borderRadius:99,transition:"width .5s"}}/>
+                <div style={{height:"100%",width:`${poTargetPct}%`,background:poTargetPct>=100?C.green:poTargetPct>=70?C.blue:C.amber,borderRadius:99,transition:"width .5s"}}/>
               </div>
-              <div style={{fontSize:11,color:C.t3,marginTop:4}}>{pct.toFixed(0)}% de l'objectif ({fmtK(tgt)} €)</div>
+              <div style={{fontSize:11,color:C.t3,marginTop:4}}>{poTargetPct.toFixed(0)}% de l'objectif ({fmtK(globalTarget.po)} €)</div>
             </>
-          );})():<div style={{fontSize:11,color:C.t3,marginTop:4}}>Montant commandé</div>}
+          ):<div style={{fontSize:11,color:C.t3,marginTop:4}}>Montant commandé</div>}
         </div>
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Total facturé</div>
@@ -2691,9 +2694,7 @@ function CompilPage({getStats,clients,configs,setPage,selYear,setSelYear,lang="f
               <div style={{height:"100%",width:`${Math.min(100,txFact)}%`,background:txFact>=80?C.green:txFact>=50?C.teal:C.amber,borderRadius:99,transition:"width .5s"}}/>
             </div>
             <div style={{fontSize:11,color:C.t3,marginTop:4}}>{txFact.toFixed(1)}% du PO</div>
-            {getTarget(targets,selYear,null).inv>0&&(()=>{const tgt=getTarget(targets,selYear,null).inv;const pct=Math.min(100,totInv/tgt*100);return(
-              <div style={{fontSize:10,color:pct>=100?C.greenDk:C.t3,marginTop:2,fontWeight:pct>=100?700:400}}>🎯 {pct.toFixed(0)}% de l'objectif facturation ({fmtK(tgt)} €)</div>
-            );})()}
+            {invTargetPct!==null&&<div style={{fontSize:10,color:invTargetPct>=100?C.greenDk:C.t3,marginTop:2,fontWeight:invTargetPct>=100?700:400}}>🎯 {invTargetPct.toFixed(0)}% de l'objectif facturation ({fmtK(globalTarget.inv)} €)</div>}
           </>}
         </div>
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
@@ -3074,7 +3075,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
         <div style={{display:"flex",gap:8}}>
           {perms?.canAddCustomer&&<Btn icon="ti-edit" label="Modifier" onClick={onEditCustomer} variant="ghost"/>}
           {isAdmin&&<Btn icon="ti-trash" label="Supprimer" onClick={onDelCustomer} variant="danger"/>}
-          {isAdmin&&<button onClick={()=>printFinancialAudit(client,orders.map((o:any)=>({...o,_client:client})),{[client]:cfg},getTarget(targets,selYear||new Date().getFullYear(),client))}
+          {isAdmin&&<button onClick={()=>printFinancialAudit(client,orders.map((o:any)=>({...o,_client:client})),{[client]:cfg},getTarget(targets,selYear||new Date().getFullYear(),client),selYear||new Date().getFullYear())}
             style={{display:"flex",alignItems:"center",gap:7,background:"#0D1B2A",color:"#fff",border:"none",borderRadius:C.r,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             <i className="ti ti-certificate" style={{fontSize:15}} aria-hidden="true"/> Audit Expert
           </button>}
@@ -11559,12 +11560,20 @@ function renderAuditDocument(opts:{
 // Works at any scope: pass orders for one client, or all clients combined
 // (each order should carry order._client for the concentration-risk table).
 // ═══════════════════════════════════════════════════════════════════════════
-function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetInfo?:{po:number,inv:number}){
+function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetInfo?:{po:number,inv:number},auditYear?:number){
   const w=window.open("","_blank","width=1100,height=1000");
   if(!w)return;
-  const active=orders.filter((o:any)=>o.status!=="annule");
-  const allInvoices=active.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_order:o})));
-  const allPayments=allInvoices.flatMap((i:any)=>(i.payments||[]).map((p:any)=>({...p,_invoice:i})));
+  // Scoped to a single year — same convention as the rest of the app: each
+  // amount counted on its OWN date (PO on order date, Facturé on invoice
+  // date, Encaissé on payment date), not on when the underlying order was
+  // originally placed. An order from a prior year with an invoice issued
+  // THIS year still shows up in this year's audit — only the invoice does.
+  const year=auditYear||new Date().getFullYear();
+  const inYear=(d:string)=>!!d&&new Date(d+"T00:00:00").getFullYear()===year;
+  const activeAll=orders.filter((o:any)=>o.status!=="annule");
+  const active=activeAll.filter((o:any)=>inYear(o.date));
+  const allInvoices=activeAll.flatMap((o:any)=>(o.invoices||[]).filter((i:any)=>inYear(i.date)).map((i:any)=>({...i,_order:o})));
+  const allPayments=allInvoices.flatMap((i:any)=>(i.payments||[]).filter((p:any)=>inYear(p.date)).map((p:any)=>({...p,_invoice:i})));
 
   const totalPO=active.reduce((s:number,o:any)=>s+(+o.amount||0),0);
   const totalInvoiced=allInvoices.reduce((s:number,i:any)=>s+(+i.amount||0),0);
@@ -11701,13 +11710,13 @@ function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetIn
   // ── Objectifs & Progression — run-rate projection vs cible annuelle ──────
   let targetSectionHtml="";
   if(targetInfo&&(targetInfo.po>0||targetInfo.inv>0)){
-    const auditYear=today.getFullYear();
-    const yearStart=new Date(auditYear,0,1),yearEnd=new Date(auditYear,11,31);
-    const dayOfYear=Math.max(1,Math.round((today.getTime()-yearStart.getTime())/86400000)+1);
+    const currentCalendarYear=today.getFullYear();
+    const yearStart=new Date(year,0,1),yearEnd=new Date(year,11,31);
     const daysInYear=Math.round((yearEnd.getTime()-yearStart.getTime())/86400000)+1;
+    // Past year → fully elapsed; future year → not started yet; current year → actual elapsed days.
+    const dayOfYear=year<currentCalendarYear?daysInYear:year>currentCalendarYear?0:Math.max(1,Math.round((today.getTime()-yearStart.getTime())/86400000)+1);
     const yearElapsedPct=dayOfYear/daysInYear*100;
-    const yearPO=orders.filter((o:any)=>o.status!=="annule"&&o.date&&new Date(o.date+"T00:00:00").getFullYear()===auditYear).reduce((s:number,o:any)=>s+(+o.amount||0),0);
-    const yearInv=allInvoices.filter((i:any)=>i.date&&new Date(i.date+"T00:00:00").getFullYear()===auditYear).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+    const yearPO=totalPO,yearInv=totalInvoiced; // already scoped to `year` above
     const projPO=dayOfYear>0?yearPO/dayOfYear*daysInYear:0;
     const projInv=dayOfYear>0?yearInv/dayOfYear*daysInYear:0;
     const poAttainPct=targetInfo.po>0?yearPO/targetInfo.po*100:null;
@@ -11738,7 +11747,7 @@ function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetIn
     score=Math.max(0,Math.min(100,score));
 
     targetSectionHtml=`
-    <h2>🎯 Objectifs & Progression ${auditYear}</h2>
+    <h2>🎯 Objectifs & Progression ${year}</h2>
     <div class="kpigrid" style="margin-bottom:10px">
       <div class="kpi"><div class="lbl">Année écoulée</div><div class="val">${yearElapsedPct.toFixed(0)}%</div><div class="sub">${dayOfYear}/${daysInYear} jours</div></div>
       ${targetInfo.po>0?`<div class="kpi"><div class="lbl">PO — Atteint / Cible</div><div class="val" style="color:${trackLabel(poTrack).c}">${fmt(yearPO)} € / ${fmt(targetInfo.po)} €</div><div class="sub">${trackLabel(poTrack).l} (${poAttainPct!==null?poAttainPct.toFixed(0):0}%)</div></div>`:""}
@@ -11760,9 +11769,9 @@ function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetIn
   const healthLabel=score>=80?"Situation saine":score>=60?"Vigilance requise":score>=40?"Risques significatifs":"Situation critique";
 
   w.document.write(renderAuditDocument({
-    title:"Audit Financier",
+    title:`Audit Financier ${year}`,
     subtitle:"Commandes, facturation et recouvrement",
-    scope:scopeLabel,
+    scope:`${scopeLabel} · Année ${year}`,
     healthScore:score,
     healthLabel,
     execSummary:[
