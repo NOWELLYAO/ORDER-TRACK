@@ -4163,6 +4163,14 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
   const[draftLines,setDraftLines]=useState<any[]|null>(null);
   const[draftMeta,setDraftMeta]=useState<{invoiceNumber:string,date:string}>({invoiceNumber:"",date:""});
   const[catalogueMsg,setCatalogueMsg]=useState("");
+  const[catalogue,setCatalogue]=useState<any[]>([]);
+  useEffect(()=>{loadCatalogueProducts().then(setCatalogue);},[]);
+  const pnHint=(pn:string):string|null=>{
+    if(!pn||!pn.trim())return null;
+    const p=catalogue.find((x:any)=>x.pn.trim().toUpperCase()===pn.trim().toUpperCase());
+    if(p?.status==="obsolete")return p.replacedBy?`⚠️ Obsolète — remplacé par ${p.replacedBy}`:"⚠️ Obsolète";
+    return null;
+  };
   const fileRef=useRef<HTMLInputElement>(null);
   const orderHasLines=(order?.lines||[]).length>0;
   const coverage=orderLineCoverage(order,invoiceId); // remaining excludes THIS invoice's own prior values
@@ -4220,10 +4228,28 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
           }))
           .filter((l:any)=>(l.pn||l.desc)&&!isJunkRowLabel(l.pn||l.desc));
       }
+      // Auto-link lines billed under a NEW PN when the catalogue knows it
+      // replaces an OLD PN that IS on this order — exactly the case where a
+      // supplier updates a part number between the PO and the invoice.
+      let autoLinked=0;
+      const orderPns=new Set((order?.lines||[]).map((l:any)=>l.pn));
+      if(extracted.some((l:any)=>l.pn&&!orderPns.has(l.pn))){
+        const catalogue=await loadCatalogueProducts();
+        if(catalogue.length>0){
+          extracted=extracted.map((l:any)=>{
+            if(l.pn&&!orderPns.has(l.pn)){
+              const match=findObsoletePnMatch(catalogue,l.pn,orderPns);
+              if(match){autoLinked++;return{...l,orderPn:match};}
+            }
+            return l;
+          });
+        }
+      }
       const meta=extractInvoiceMetaFromRows(rows);
       setDraftMeta(meta);
       const metaNote=meta.invoiceNumber||meta.date?" N° et date de facture détectés ci-dessous — vérifie-les.":"";
-      setImportMsg((extracted.length>0?`${extracted.length} ligne(s) détectée(s) — vérifie et corrige avant de valider.`:"Aucune ligne détectée automatiquement — ajoute-les manuellement ci-dessous.")+metaNote);
+      const autoLinkNote=autoLinked>0?` 🔄 ${autoLinked} ligne(s) rattachée(s) automatiquement via un remplacement d'article connu.`:"";
+      setImportMsg((extracted.length>0?`${extracted.length} ligne(s) détectée(s) — vérifie et corrige avant de valider.`:"Aucune ligne détectée automatiquement — ajoute-les manuellement ci-dessous.")+metaNote+autoLinkNote);
       setDraftLines(extracted.length>0?extracted:[{pn:"",desc:"",qtyInvoiced:1,unitPrice:0}]);
     }catch(err){
       console.warn("[Invoice import]",err);
@@ -4299,12 +4325,15 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
           )}
           <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
             {draftLines.map((l:any,i:number)=>(
-              <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center"}}>
-                <input value={l.pn} onChange={(e:any)=>updateDraft(i,"pn",e.target.value)} placeholder="PN" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,fontFamily:"monospace",width:"100%",boxSizing:"border-box"}}/>
-                <input value={l.desc} onChange={(e:any)=>updateDraft(i,"desc",e.target.value)} placeholder="Description" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
-                <input type="number" value={l.qtyInvoiced} onChange={(e:any)=>updateDraft(i,"qtyInvoiced",e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
-                <input type="number" value={l.unitPrice} onChange={(e:any)=>updateDraft(i,"unitPrice",e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
-                <button onClick={()=>removeDraftLine(i)} style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:26,height:26,cursor:"pointer"}}>✕</button>
+              <div key={i}>
+                <div style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center"}}>
+                  <input value={l.pn} onChange={(e:any)=>updateDraft(i,"pn",e.target.value)} placeholder="PN" style={{padding:"5px 7px",border:`1px solid ${l.orderPn?C.blue:C.b}`,borderRadius:4,fontSize:11,fontFamily:"monospace",width:"100%",boxSizing:"border-box"}}/>
+                  <input value={l.desc} onChange={(e:any)=>updateDraft(i,"desc",e.target.value)} placeholder="Description" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                  <input type="number" value={l.qtyInvoiced} onChange={(e:any)=>updateDraft(i,"qtyInvoiced",e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                  <input type="number" value={l.unitPrice} onChange={(e:any)=>updateDraft(i,"unitPrice",e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
+                  <button onClick={()=>removeDraftLine(i)} style={{background:C.redL,color:C.redDk,border:"none",borderRadius:4,width:26,height:26,cursor:"pointer"}}>✕</button>
+                </div>
+                {l.orderPn&&<div style={{fontSize:9,color:C.blueDk,marginTop:2,marginLeft:2}}><i className="ti ti-replace" style={{fontSize:10}} aria-hidden="true"/> Rattaché automatiquement à l'article commandé {l.orderPn} (remplacement connu)</div>}
               </div>
             ))}
           </div>
@@ -4331,10 +4360,13 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
                 const current=qtyBuf[l.pn]??String(byOrderPn[l.pn]?.qtyInvoiced||"");
                 const actualPn=getActualPn(l.pn);
                 const isSubstituted=actualPn.trim()&&actualPn.trim()!==l.pn;
+                const orderPnHint=pnHint(l.pn);
+                const actualPnHint=pnHint(actualPn);
                 return(
                   <tr key={i} style={{borderBottom:`1px solid ${C.b}`,background:isSubstituted?C.amberL:undefined}}>
                     <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}
                       {l.substitutedBy?.length>0&&<div style={{fontSize:9,color:C.amberDk,fontWeight:600}}>déjà facturé sous {l.substitutedBy.join(", ")}</div>}
+                      {orderPnHint&&<div style={{fontSize:9,color:C.redDk,fontWeight:600}}>{orderPnHint}</div>}
                     </td>
                     <td style={{padding:"5px 8px",color:C.t2}}>{l.desc||"—"}</td>
                     <td style={{padding:"5px 8px",color:C.t2}}>{l.qtyOrdered}</td>
@@ -4344,6 +4376,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
                       <input value={actualPn} placeholder={l.pn} title="Renseigne un PN différent si le fournisseur a substitué l'article sur cette facture"
                         onChange={(e:any)=>setActualPn(l.pn,e.target.value)}
                         style={{width:110,padding:"4px 6px",border:`1px solid ${isSubstituted?C.amber:C.b}`,borderRadius:4,fontSize:11,fontFamily:"monospace"}}/>
+                      {actualPnHint&&<div style={{fontSize:9,color:C.redDk,fontWeight:600,marginTop:2}}>{actualPnHint}</div>}
                     </td>
                     <td style={{padding:"5px 8px"}}>
                       <input type="number" min={0} value={current}
@@ -6446,6 +6479,44 @@ const getTarget=(targets:any,year:number,client?:string|null):{po:number,inv:num
 // observed price) instead of silently losing that pricing data. Writes
 // straight to the shared cloud store — CataloguePage will pick it up next
 // time it's opened, same as any other cross-device sync.
+// ── Obsolete / replaced articles — resolution helpers ────────────────────────
+// A product can be marked "obsolete" with a `replacedBy` PN. These helpers
+// let any part of the app answer "is this PN obsolete?" and "which OLD PN(s)
+// does this one replace?" without duplicating the lookup logic everywhere.
+async function loadCatalogueProducts():Promise<any[]>{
+  try{
+    const cloud=await sbGet(CAT_KEY);
+    if(cloud?.products?.length>0)return cloud.products;
+  }catch{}
+  const{data}=loadCatLocal();
+  return data||[];
+}
+// Follows a replacedBy chain to its final, still-active PN (max 5 hops to
+// avoid an accidental loop from bad data).
+const resolveActivePn=(products:any[],pn:string):string=>{
+  let cur=pn,hops=0;
+  while(hops<5){
+    const p=products.find((x:any)=>x.pn.trim().toUpperCase()===cur.trim().toUpperCase());
+    if(!p||p.status!=="obsolete"||!p.replacedBy)return cur;
+    cur=p.replacedBy;hops++;
+  }
+  return cur;
+};
+// Given a PN that was actually invoiced/ordered, finds which OLD (obsolete)
+// PN(s) it replaces, restricted to ones present in `candidatePns` — used to
+// auto-link an invoice line to the matching order line when the supplier
+// billed under the new part number instead of the one originally ordered.
+const findObsoletePnMatch=(products:any[],newPn:string,candidatePns:Set<string>):string|null=>{
+  const olderMatches=products.filter((p:any)=>p.replacedBy&&p.replacedBy.trim().toUpperCase()===newPn.trim().toUpperCase());
+  for(const old of olderMatches){
+    if(candidatePns.has(old.pn))return old.pn;
+    // one more hop, in case of a chain of two replacements
+    const secondHop=products.filter((p:any)=>p.replacedBy&&p.replacedBy.trim().toUpperCase()===old.pn.trim().toUpperCase());
+    for(const older of secondHop)if(candidatePns.has(older.pn))return older.pn;
+  }
+  return null;
+};
+
 async function autoAddMissingProducts(lines:any[],source:string):Promise<number>{
   const candidates=(lines||[]).filter((l:any)=>l.pn&&String(l.pn).trim());
   if(candidates.length===0)return 0;
@@ -6767,13 +6838,20 @@ function ManualProductEntry({products,saveProducts}:any){
 }
 
 // ─── CATALOGUE EDIT MODAL ────────────────────────────────────────────────────
-function CatEditModal({product,onSave,onClose}:any){
+function CatEditModal({product,allProducts,onSave,onClose}:any){
   const[pn,setPn]=useState(product?.pn||"");
   const[desc,setDesc]=useState(product?.description||"");
   const[prices,setPrices]=useState<any[]>(product?.prices||[]);
   const[newPrice,setNewPrice]=useState("");
   const[newDate,setNewDate]=useState(new Date().toISOString().slice(0,10));
   const[newCustomer,setNewCustomer]=useState("");
+  const[status,setStatus]=useState<string>(product?.status||"active");
+  const[replacedBy,setReplacedBy]=useState(product?.replacedBy||"");
+
+  // Reverse lookup: which OTHER products point to this one as their replacement.
+  const replacesThese=(allProducts||[]).filter((p:any)=>p.pn!==product?.pn&&p.replacedBy&&p.replacedBy.trim().toUpperCase()===String(pn).trim().toUpperCase());
+  const replacementTarget=(allProducts||[]).find((p:any)=>p.pn.trim().toUpperCase()===replacedBy.trim().toUpperCase());
+  const replacedByNotFound=replacedBy.trim()&&!replacementTarget;
 
   const addPrice=()=>{
     const v=parseFloat(newPrice.replace(",","."))||0;
@@ -6786,7 +6864,7 @@ function CatEditModal({product,onSave,onClose}:any){
 
   const handleSave=()=>{
     if(!pn.trim())return;
-    onSave({...product,pn:pn.trim(),description:desc.trim(),prices,lastUpdated:new Date().toISOString().slice(0,10)});
+    onSave({...product,pn:pn.trim(),description:desc.trim(),prices,status,replacedBy:status==="obsolete"?replacedBy.trim():"",lastUpdated:new Date().toISOString().slice(0,10)});
   };
 
   return(
@@ -6816,6 +6894,32 @@ function CatEditModal({product,onSave,onClose}:any){
               <input value={desc} onChange={e=>setDesc(e.target.value)}
                 style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
             </div>
+          </div>
+          {/* Statut / Remplacement */}
+          <div style={{background:status==="obsolete"?C.redL:"#F8FAFC",border:`1px solid ${status==="obsolete"?C.red:C.b}`,borderRadius:8,padding:12}}>
+            <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:8,textTransform:"uppercase",letterSpacing:".05em"}}>Statut de l'article</label>
+            <div style={{display:"flex",gap:8,marginBottom:status==="obsolete"?10:0}}>
+              <button onClick={()=>setStatus("active")} style={{flex:1,padding:"8px 10px",borderRadius:6,border:`1px solid ${status==="active"?C.green:C.b}`,background:status==="active"?C.greenL:"#fff",color:status==="active"?C.greenDk:C.t2,fontWeight:status==="active"?700:400,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                <i className="ti ti-circle-check" style={{fontSize:14}} aria-hidden="true"/> Actif
+              </button>
+              <button onClick={()=>setStatus("obsolete")} style={{flex:1,padding:"8px 10px",borderRadius:6,border:`1px solid ${status==="obsolete"?C.red:C.b}`,background:status==="obsolete"?C.redL:"#fff",color:status==="obsolete"?C.redDk:C.t2,fontWeight:status==="obsolete"?700:400,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                <i className="ti ti-ban" style={{fontSize:14}} aria-hidden="true"/> Obsolète
+              </button>
+            </div>
+            {status==="obsolete"&&(
+              <div>
+                <label style={{fontSize:10,color:C.redDk,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Remplacé par (PN)</label>
+                <input value={replacedBy} onChange={e=>setReplacedBy(e.target.value)} placeholder="ex: 92959941"
+                  style={{width:"100%",padding:"8px 10px",border:`1px solid ${replacedByNotFound?C.amber:C.b}`,borderRadius:6,fontSize:13,fontFamily:"monospace",fontWeight:700,boxSizing:"border-box"}}/>
+                {replacementTarget&&<div style={{fontSize:11,color:C.greenDk,marginTop:5,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-circle-check" style={{fontSize:12}} aria-hidden="true"/> Trouvé dans le catalogue : {replacementTarget.description||"—"}</div>}
+                {replacedByNotFound&&<div style={{fontSize:11,color:C.amberDk,marginTop:5,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-alert-triangle" style={{fontSize:12}} aria-hidden="true"/> Ce PN n'existe pas encore au catalogue — il sera quand même enregistré comme remplaçant.</div>}
+              </div>
+            )}
+            {replacesThese.length>0&&(
+              <div style={{fontSize:11,color:C.blueDk,marginTop:status==="obsolete"?10:0,background:C.blueL,borderRadius:6,padding:"7px 9px",display:"flex",alignItems:"center",gap:5}}>
+                <i className="ti ti-replace" style={{fontSize:13}} aria-hidden="true"/> Cet article remplace : {replacesThese.map((p:any)=>p.pn).join(", ")}
+              </div>
+            )}
           </div>
           {/* Prices list */}
           <div>
@@ -8217,7 +8321,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      {catEditProduct&&<CatEditModal product={catEditProduct} onSave={handleCatEdit} onClose={()=>setCatEditProduct(null)}/>}
+      {catEditProduct&&<CatEditModal product={catEditProduct} allProducts={products} onSave={handleCatEdit} onClose={()=>setCatEditProduct(null)}/>}
       {/* Header */}
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
         <div>
@@ -8863,7 +8967,23 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
                             )}
                           </div>
                         </td>
-                        <td style={{padding:"8px 12px",fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{p.pn}</td>
+                        <td style={{padding:"8px 12px",fontWeight:700,color:C.blue,fontFamily:"monospace"}}>
+                          {p.pn}
+                          {p.status==="obsolete"&&(
+                            <div style={{marginTop:3}}>
+                              <span title={p.replacedBy?`Remplacé par ${p.replacedBy}`:"Obsolète"} style={{display:"inline-flex",alignItems:"center",gap:3,background:C.redL,color:C.redDk,padding:"1px 6px",borderRadius:99,fontSize:9,fontWeight:700}}>
+                                <i className="ti ti-ban" style={{fontSize:9}} aria-hidden="true"/> Obsolète{p.replacedBy?` → ${p.replacedBy}`:""}
+                              </span>
+                            </div>
+                          )}
+                          {(()=>{const replaces=productsTyped.filter((x:any)=>x.replacedBy&&x.replacedBy.trim().toUpperCase()===p.pn.trim().toUpperCase());return replaces.length>0?(
+                            <div style={{marginTop:3}}>
+                              <span title={`Remplace : ${replaces.map((x:any)=>x.pn).join(", ")}`} style={{display:"inline-flex",alignItems:"center",gap:3,background:C.blueL,color:C.blueDk,padding:"1px 6px",borderRadius:99,fontSize:9,fontWeight:700}}>
+                                <i className="ti ti-replace" style={{fontSize:9}} aria-hidden="true"/> Remplace {replaces.length===1?replaces[0].pn:`${replaces.length} PN`}
+                              </span>
+                            </div>
+                          ):null;})()}
+                        </td>
                         <td style={{padding:"8px 12px",color:C.t1,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.description||"—"}</td>
                         <td style={{padding:"8px 12px"}}>
                           <span title={p._type.label} style={{background:p._type.code==="AUTRE"?"#F1F5F9":"#F3E8FF",color:p._type.code==="AUTRE"?C.t3:"#7C3AED",padding:"2px 8px",borderRadius:99,fontSize:10,fontWeight:700,cursor:"pointer"}}
