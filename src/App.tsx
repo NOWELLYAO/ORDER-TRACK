@@ -6285,6 +6285,24 @@ tr:nth-child(even) td{background:#F8FAFC;}
         onUpdate={(idx:number,field:string,val:string)=>setLastWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
         onRemove={(idx:number)=>setLastWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
         title="📋 Last Week — Field Activity" color={C.purple} isMobile={isMobile}/>
+
+      <div style={{display:"flex",justifyContent:"center",margin:"-4px 0"}}>
+        <button
+          title="Fait passer les activités de la semaine en cours (Planned Activity) vers Last Week, et avance le numéro de semaine — à utiliser au début d'une nouvelle semaine"
+          onClick={()=>{
+            const nonEmpty=thisWeekItems.filter((item:any)=>item.client||item.action);
+            if(nonEmpty.length===0){alert("Aucune activité dans \"Planned Activity\" à faire remonter.");return;}
+            if(!window.confirm(`Faire passer ${nonEmpty.length} activité(s) de "Planned Activity" vers "Last Week" ?\n\nLe contenu actuel de "Last Week" sera remplacé, et "Planned Activity" sera vidé pour la nouvelle semaine.`))return;
+            setLastWeekItems(thisWeekItems);
+            setThisWeekItems([{priority:"HIGH",client:"",action:"",status:"📋"}]);
+            const m=weekLabel.match(/^([A-Za-zÀ-ÿ]*)(\d+)$/);
+            if(m)setWeekLabel(`${m[1]}${(+m[2])+1}`);
+          }}
+          style={{display:"flex",alignItems:"center",gap:7,background:C.green,color:"#fff",border:"none",borderRadius:99,padding:"9px 20px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 3px 10px rgba(16,185,129,.35)"}}>
+          <i className="ti ti-arrow-big-up-lines" style={{fontSize:15}} aria-hidden="true"/> Nouvelle semaine — faire monter en Last Week
+        </button>
+      </div>
+
       <ActivityTable
         items={thisWeekItems}
         onAdd={()=>setThisWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
