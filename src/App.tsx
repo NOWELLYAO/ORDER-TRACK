@@ -11093,6 +11093,26 @@ function printOrderReport(order:any,client:string){
   const linesTotalInvoiced=cov.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
   const linesTotalRemaining=cov.reduce((s:number,l:any)=>s+(+l.qtyRemaining||0)*(+l.unitPrice||0),0);
 
+  // Reconciliation: the invoice-level total (top summary, always exact — it's
+  // literally the sum of each invoice's amount) can exceed the article-level
+  // total (bottom table — only counts amounts explicitly linked to an order
+  // line) when an invoice was recorded without importing its line items, or
+  // has a line that couldn't be matched to any article on this PO. Surface
+  // that gap explicitly instead of leaving two unexplained totals.
+  const unallocatedGap=round2(invoiced-linesTotalInvoiced);
+  const invoiceGaps=(order.invoices||[]).map((inv:any)=>{
+    const linesSum=(inv.lines||[]).reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
+    const gap=round2((+inv.amount||0)-linesSum);
+    return{inv,gap,hasLines:(inv.lines||[]).length>0};
+  }).filter((x:any)=>Math.abs(x.gap)>=0.5);
+
+  const reconciliationHtml=hasLines&&Math.abs(unallocatedGap)>=0.5?`
+  <div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:12px 16px;margin-bottom:18px">
+    <div style="font-weight:700;color:#92400E;font-size:12px;margin-bottom:6px">⚠️ Écart de rattachement détecté : ${fmt(Math.abs(unallocatedGap))} € ${unallocatedGap>0?"facturés mais non liés à un article":"liés en excès par rapport au facturé"}</div>
+    <div style="font-size:11px;color:#78350F;margin-bottom:${invoiceGaps.length>0?"6px":"0"}">Le total "Facturé" du haut (${fmt(invoiced)} €) vient directement des factures et est exact. Le total du tableau ci-dessous (${fmt(linesTotalInvoiced)} €) ne compte que ce qui a été explicitement rattaché à un article — l'écart signale une ou plusieurs factures enregistrées sans détail ligne par ligne, ou avec une ligne non reconnue.</div>
+    ${invoiceGaps.length>0?`<div style="font-size:11px;color:#78350F">Facture(s) concernée(s) : ${invoiceGaps.map((x:any)=>`<strong>${x.inv.invoiceNumber||"—"}</strong> (${x.hasLines?`écart de ${fmt(Math.abs(x.gap))} €`:"aucune ligne d'article importée"})`).join(", ")}</div>`:""}
+  </div>`:"";
+
   const invRows=(order.invoices||[]).map((inv:any)=>{
     const ps=payStatus(inv);
     const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
@@ -11140,6 +11160,7 @@ function printOrderReport(order:any,client:string){
     <div class="card"><div class="lbl">Nb factures</div><div class="val" style="font-size:13px">${(order.invoices||[]).length}</div></div>
   </div>
   ${order.notes?`<div class="sub" style="margin-top:6px">Notes : ${order.notes}</div>`:""}
+  ${reconciliationHtml}
   ${hasLines?`<h2>📋 Articles commandés (${cov.length})</h2>
   <table><thead><tr><th>Part Number</th><th>Description</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix unit.</th><th style="text-align:right">Total</th><th style="text-align:right">Facturé</th><th style="text-align:right">Restant</th><th>Statut</th></tr></thead>
   <tbody>${linesRows}</tbody>
@@ -11177,6 +11198,8 @@ async function exportOrderExcel(order:any,client:string){
   const pct=+order.amount>0?Math.min(100,(invoiced/+order.amount)*100):0;
   const meta=getStatusMeta(order.status);
   const cov=orderLineCoverage(order);
+  const linesTotalInvoiced=cov.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
+  const unallocatedGap=round2(invoiced-linesTotalInvoiced);
 
   // ── Sheet 1: Résumé ──
   const wsR=wb.addWorksheet("Résumé");
@@ -11193,10 +11216,14 @@ async function exportOrderExcel(order:any,client:string){
     ["Date livraison prévue",order.expectedDate?fmtD(order.expectedDate):"—"],
     ["Mode livraison",order.deliveryMode||"—"],
     ["Montant PO (€)",+order.amount||0],
-    ["Facturé (€)",invoiced],
+    ["Facturé (€) — niveau facture",invoiced],
     ["% Facturé",`${pct.toFixed(1)}%`],
     ["Restant à facturer (€)",remaining],
     ["Encaissé (€)",totalPaid],
+    ...(cov.length>0?[
+      ["Facturé (€) — niveau article (tableau ci-dessous)",linesTotalInvoiced] as [string,any],
+      ["Écart de rattachement (€)",unallocatedGap] as [string,any],
+    ]:[]),
     ["Nb factures",(order.invoices||[]).length],
     ["Nb articles",cov.length],
     ["Notes",order.notes||"—"],
@@ -11206,7 +11233,8 @@ async function exportOrderExcel(order:any,client:string){
     const r=wsR.addRow([k,v]);
     r.getCell(1).font={bold:true};
     if(k==="Montant PO (€)")r.getCell(2).font={bold:true,color:{argb:"FF2563EB"}};
-    if(k==="Facturé (€)")r.getCell(2).font={bold:true,color:{argb:"FF0D9488"}};
+    if(k==="Facturé (€) — niveau facture")r.getCell(2).font={bold:true,color:{argb:"FF0D9488"}};
+    if(k==="Écart de rattachement (€)"&&Math.abs(unallocatedGap)>=0.5)r.getCell(2).font={bold:true,color:{argb:"FFD97706"}};
     if(k==="Restant à facturer (€)")r.getCell(2).font={bold:true,color:{argb:remaining>0?"FFD97706":"FF059669"}};
     if(k==="Encaissé (€)")r.getCell(2).font={bold:true,color:{argb:"FF059669"}};
   });
