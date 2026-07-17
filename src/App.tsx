@@ -2646,6 +2646,17 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
   const poTargetPct = globalTarget.po>0 ? Math.min(100,totOpen/globalTarget.po*100) : null;
   const invTargetPct = globalTarget.inv>0 ? Math.min(100,totInv/globalTarget.inv*100) : null;
 
+  // ── Analyse par type de produit sur une période libre (tous clients) ──────
+  const[typeAnalysisFrom,setTypeAnalysisFrom]=useState(`${selYear}-01-01`);
+  const[typeAnalysisTo,setTypeAnalysisTo]=useState(todayStr());
+  const runPeriodTypeAnalysis=()=>{
+    const orders=getAllOrders();
+    const inRange=(d:string)=>!!d&&d>=typeAnalysisFrom&&d<=typeAnalysisTo;
+    const orderedItems=orders.filter((o:any)=>inRange(o.date)).flatMap((o:any)=>o.lines||[]);
+    const invoicedItems=orders.flatMap((o:any)=>o.invoices||[]).filter((i:any)=>inRange(i.date)).flatMap((i:any)=>i.lines||[]);
+    printProductTypeAnalysis(`Tous clients (${clients.length} comptes)`,`${fmtD(typeAnalysisFrom)} → ${fmtD(typeAnalysisTo)}`,orderedItems,invoicedItems);
+  };
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:24}}>
 
@@ -2719,7 +2730,28 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
         </div>}
       </div>
 
-      {/* ── CLIENT BARS + MONTHLY TABLE split layout ── */}
+      {/* ── Analyse par type de produit — période libre ── */}
+      {isAdmin&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 20px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+            <i className="ti ti-chart-pie" style={{fontSize:18,color:C.purple}} aria-hidden="true"/>
+            <span style={{fontWeight:700,fontSize:13,color:C.t1}}>Analyse par type de produit</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <label style={{fontSize:11,color:C.t3}}>Du</label>
+            <input type="date" value={typeAnalysisFrom} onChange={(e:any)=>setTypeAnalysisFrom(e.target.value)}
+              style={{padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12}}/>
+            <label style={{fontSize:11,color:C.t3}}>au</label>
+            <input type="date" value={typeAnalysisTo} onChange={(e:any)=>setTypeAnalysisTo(e.target.value)}
+              style={{padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12}}/>
+          </div>
+          <button onClick={runPeriodTypeAnalysis}
+            style={{display:"flex",alignItems:"center",gap:6,background:C.purple,color:"#fff",border:"none",borderRadius:C.r,padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            <i className="ti ti-chart-pie" style={{fontSize:14}} aria-hidden="true"/> Analyser (tous clients)
+          </button>
+          <span style={{fontSize:10,color:C.t3}}>SP, CR, SEG, SL, DMX… — répartition, concentration, écarts commandé/facturé</span>
+        </div>
+      )}
       <div style={{display:"grid",gridTemplateColumns:"380px 1fr",gap:16,alignItems:"start"}}>
 
         {/* Left — Customer ranking bars */}
@@ -3041,6 +3073,14 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
     }
   },[focusOrderId]);
   const term=PAY_TERMS.find(t=>t.id===cfg.termId)||PAY_TERMS[5];
+  const[typeAnalysisFrom,setTypeAnalysisFrom]=useState(`${selYear||new Date().getFullYear()}-01-01`);
+  const[typeAnalysisTo,setTypeAnalysisTo]=useState(todayStr());
+  const runClientPeriodTypeAnalysis=()=>{
+    const inRange=(d:string)=>!!d&&d>=typeAnalysisFrom&&d<=typeAnalysisTo;
+    const orderedItems=orders.filter((o:any)=>inRange(o.date)).flatMap((o:any)=>o.lines||[]);
+    const invoicedItems=orders.flatMap((o:any)=>o.invoices||[]).filter((i:any)=>inRange(i.date)).flatMap((i:any)=>i.lines||[]);
+    printProductTypeAnalysis(client,`${fmtD(typeAnalysisFrom)} → ${fmtD(typeAnalysisTo)}`,orderedItems,invoicedItems);
+  };
   const txFact=stats.totalPO>0?(stats.totalInv/stats.totalPO*100):0;
   const txPay=stats.totalInv>0?(stats.totalPaid/stats.totalInv*100):0;
   const lateOrders=orders.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
@@ -3082,6 +3122,28 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
           {perms?.canEdit&&<Btn icon="ti-plus" label={tr("btn_new_order")} onClick={onAdd} variant="primary"/>}
         </div>
       </div>
+
+      {/* ── Analyse par type de produit — période libre (ce client) ── */}
+      {isAdmin&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+            <i className="ti ti-chart-pie" style={{fontSize:16,color:C.purple}} aria-hidden="true"/>
+            <span style={{fontWeight:700,fontSize:12,color:C.t1}}>Analyse par type de produit</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <label style={{fontSize:11,color:C.t3}}>Du</label>
+            <input type="date" value={typeAnalysisFrom} onChange={(e:any)=>setTypeAnalysisFrom(e.target.value)}
+              style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:11}}/>
+            <label style={{fontSize:11,color:C.t3}}>au</label>
+            <input type="date" value={typeAnalysisTo} onChange={(e:any)=>setTypeAnalysisTo(e.target.value)}
+              style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:11}}/>
+          </div>
+          <button onClick={runClientPeriodTypeAnalysis}
+            style={{display:"flex",alignItems:"center",gap:6,background:C.purple,color:"#fff",border:"none",borderRadius:C.r,padding:"7px 14px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+            <i className="ti ti-chart-pie" style={{fontSize:13}} aria-hidden="true"/> Analyser {client}
+          </button>
+        </div>
+      )}
 
       {/* KPIs */}
       {/* Compute per-client echues / en cours */}
@@ -3720,6 +3782,8 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
                         <div style={{display:"flex",gap:3,justifyContent:"center"}}>
                           <IBtn icon="ti-file-type-pdf" title="Facture PDF" c={C.red} bg={C.redL} onClick={()=>printInvoiceDoc(inv,inv._order,client)} small/>
                           <IBtn icon="ti-file-spreadsheet" title="Facture Excel" c={C.green} bg={C.greenL} onClick={()=>exportInvoiceExcel(inv,inv._order,client)} small/>
+                          <IBtn icon="ti-chart-pie" title="Analyse par type de produit" c={C.purple} bg={C.purpleL} onClick={()=>printProductTypeAnalysis(`${client} — Facture ${inv.invoiceNumber||"—"}`,inv.date?fmtD(inv.date):"—",
+                            (inv.lines||[]).map((l:any)=>({pn:l.pn,desc:l.desc,qty:l.qtyInvoiced,unitPrice:l.unitPrice})),[],"Facturé")} small/>
                           {perms?.canEdit&&<IBtn icon="ti-coin" title="Paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(inv._order,inv)} small/>}
                           {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(inv._order,inv)} small/>}
                           {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_invoice")))onDelInv(inv._oid,inv.id);}} small/>}
@@ -3872,6 +3936,12 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           <div style={{display:"flex",gap:4}} onClick={(e:any)=>e.stopPropagation()}>
             <IBtn icon="ti-file-type-pdf" title="Rapport PDF" c={C.red} bg={C.redL} onClick={()=>printOrderReport(order,client)}/>
             <IBtn icon="ti-file-spreadsheet" title="Rapport Excel" c={C.green} bg={C.greenL} onClick={()=>exportOrderExcel(order,client)}/>
+            <IBtn icon="ti-chart-pie" title="Analyse par type de produit" c={C.purple} bg={C.purpleL} onClick={()=>{
+              const cov=orderLineCoverage(order);
+              printProductTypeAnalysis(`${client} — Commande ${order.poNumber}`,order.date?fmtD(order.date):"—",
+                cov.map((l:any)=>({pn:l.pn,desc:l.desc,qty:l.qtyOrdered,unitPrice:l.unitPrice})),
+                cov.map((l:any)=>({pn:l.pn,desc:l.desc,qty:l.qtyInvoiced,unitPrice:l.unitPrice})));
+            }}/>
             {perms?.canEdit&&<IBtn icon="ti-plus" title="Ajouter facture" c={C.teal} bg={C.tealL} onClick={()=>onAddInv(order)}/>}
             {perms?.canEdit&&onAddBulkInv&&<IBtn icon="ti-files" title="Importer plusieurs factures" c={C.purple} bg={C.purpleL} onClick={()=>onAddBulkInv(order)}/>}
             {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditOrder(order)}/>}
@@ -3942,6 +4012,8 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
                       <div style={{display:"flex",gap:4}}>
                         <IBtn icon="ti-file-type-pdf" title="Facture PDF" c={C.red} bg={C.redL} onClick={()=>printInvoiceDoc(inv,order,client)}/>
                         <IBtn icon="ti-file-spreadsheet" title="Facture Excel" c={C.green} bg={C.greenL} onClick={()=>exportInvoiceExcel(inv,order,client)}/>
+                        <IBtn icon="ti-chart-pie" title="Analyse par type de produit" c={C.purple} bg={C.purpleL} onClick={()=>printProductTypeAnalysis(`${client} — Facture ${inv.invoiceNumber||"—"}`,inv.date?fmtD(inv.date):"—",
+                          (inv.lines||[]).map((l:any)=>({pn:l.pn,desc:l.desc,qty:l.qtyInvoiced,unitPrice:l.unitPrice})),[],"Facturé")}/>
                         {perms?.canEdit&&<IBtn icon="ti-coin" title="Enregistrer paiement" c={C.green} bg={C.greenL} onClick={()=>onAddPay(order,inv)}/>}
                         {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier facture" c={C.blue} bg={C.blueL} onClick={()=>onEditInv(order,inv)}/>}
                         {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_invoice")))onDelInv(order.id,inv.id);}}/>}
@@ -4595,8 +4667,8 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const [expectedOrders,setExpectedOrders]=useState(draft?.expectedOrders||[{client:"",project:"",est:""}]);
   const [plannedInvoices,setPlannedInvoices]=useState<any[]>(draft?.plannedInvoices||[]);
   const [showPreview,setShowPreview]=useState(false);
-  const [orderPeriod,setOrderPeriod]=useState(7);
-  const [invoicePeriod,setInvoicePeriod]=useState(30);
+  const [orderPeriod,setOrderPeriod]=useState<number|string>(7);
+  const [invoicePeriod,setInvoicePeriod]=useState<number|string>(30);
   const [savedReports,setSavedReports]=useState<any[]>(()=>{try{const r=localStorage.getItem(REPORT_KEY);return r?JSON.parse(r):[];}catch{return [];}});
   const [showHistory,setShowHistory]=useState(false);
   const [showOrders,setShowOrders]=useState(false);
@@ -4696,22 +4768,22 @@ function WeeklyReportPage({getAllOrders,clients,data,configs,lang,isMobile}:any)
   const allOrders=(clients||[]).flatMap((c:string)=>(data?.[c]||[]).map((o:any)=>({...o,_client:c})));
 
   // ── Auto-computed data ──────────────────────────────────────────────────
-  // Orders received this week (last 7 days)
-  const periodStart=new Date(today);periodStart.setDate(today.getDate()-orderPeriod);
+  // Orders received this week (last 7 days) — or month-to-date if "month" selected
+  const periodStart=orderPeriod==="month"?new Date(today.getFullYear(),today.getMonth(),1):(()=>{const d=new Date(today);d.setDate(today.getDate()-(orderPeriod as number));return d;})();
   const recentOrders=allOrders.filter((o:any)=>{
     if(!o.date)return false;
     return new Date(o.date+"T00:00:00")>=periodStart;
   });
   const recentOrdersAmt=recentOrders.reduce((s:number,o:any)=>s+(+o.amount||0),0);
-  const periodLabel=orderPeriod===7?"7 days":orderPeriod===30?"1 month":orderPeriod===60?"2 months":"3 months";
+  const periodLabel=orderPeriod==="month"?"month to date":orderPeriod===7?"7 days":orderPeriod===30?"1 month":orderPeriod===60?"2 months":"3 months";
 
   // Monthly invoicing (current month)
   const thisMonth=today.getMonth();const thisYear=today.getFullYear();
   const prevMonth=thisMonth===0?11:thisMonth-1;const prevMonthYear=thisMonth===0?thisYear-1:thisYear;
   const allInvoices=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_client:o._client,_po:o.poNumber,_so:o.soNumber})));
-  // Dynamic invoice period
-  const invPeriodStart=new Date(today);invPeriodStart.setDate(today.getDate()-invoicePeriod);
-  const invoicePeriodLabel=invoicePeriod===7?"7 days":invoicePeriod===30?"1 month":invoicePeriod===60?"2 months":"3 months";
+  // Dynamic invoice period — or month-to-date if "month" selected
+  const invPeriodStart=invoicePeriod==="month"?new Date(today.getFullYear(),today.getMonth(),1):(()=>{const d=new Date(today);d.setDate(today.getDate()-(invoicePeriod as number));return d;})();
+  const invoicePeriodLabel=invoicePeriod==="month"?"month to date":invoicePeriod===7?"7 days":invoicePeriod===30?"1 month":invoicePeriod===60?"2 months":"3 months";
   const invoicesInPeriod=allInvoices.filter((i:any)=>{
     if(!i.date)return false;
     return new Date(i.date+"T00:00:00")>=invPeriodStart;
@@ -5996,7 +6068,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <span style={{fontSize:12,fontWeight:600,color:C.t2}}>Order period:</span>
         <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
-          {[{v:7,l:"7 days"},{v:30,l:"1 month"},{v:60,l:"2 months"},{v:90,l:"3 months"}].map(({v,l})=>(
+          {[{v:7,l:"7 days"},{v:30,l:"1 month"},{v:60,l:"2 months"},{v:90,l:"3 months"},{v:"month",l:"Month ongoing"}].map(({v,l})=>(
             <button key={v} onClick={()=>setOrderPeriod(v)}
               style={{padding:"7px 16px",border:"none",borderRight:`1px solid ${C.b}`,
                 background:orderPeriod===v?C.blue:"transparent",
@@ -6013,7 +6085,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <span style={{fontSize:12,fontWeight:600,color:C.t2}}>Invoice period:</span>
         <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
-          {[{v:7,l:"7 days"},{v:30,l:"1 month"},{v:60,l:"2 months"},{v:90,l:"3 months"}].map(({v,l})=>(
+          {[{v:7,l:"7 days"},{v:30,l:"1 month"},{v:60,l:"2 months"},{v:90,l:"3 months"},{v:"month",l:"Month ongoing"}].map(({v,l})=>(
             <button key={v} onClick={()=>setInvoicePeriod(v)}
               style={{padding:"7px 16px",border:"none",borderRight:`1px solid ${C.b}`,
                 background:invoicePeriod===v?C.teal:"transparent",
@@ -6292,9 +6364,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
           onClick={()=>{
             const nonEmpty=thisWeekItems.filter((item:any)=>item.client||item.action);
             if(nonEmpty.length===0){alert("Aucune activité dans \"Planned Activity\" à faire remonter.");return;}
-            if(!window.confirm(`Faire passer ${nonEmpty.length} activité(s) de "Planned Activity" vers "Last Week" ?\n\nLe contenu actuel de "Last Week" sera remplacé, et "Planned Activity" sera vidé pour la nouvelle semaine.`))return;
+            if(!window.confirm(`Faire passer ${nonEmpty.length} activité(s) de "Planned Activity" vers "Last Week" ?\n\nLe contenu actuel de "Last Week" sera remplacé. "Planned Activity" restera inchangé — tu pourras l'ajuster toi-même pour la nouvelle semaine.`))return;
             setLastWeekItems(thisWeekItems);
-            setThisWeekItems([{priority:"HIGH",client:"",action:"",status:"📋"}]);
             const m=weekLabel.match(/^([A-Za-zÀ-ÿ]*)(\d+)$/);
             if(m)setWeekLabel(`${m[1]}${(+m[2])+1}`);
           }}
@@ -9028,11 +9099,11 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
                         <td style={{padding:"8px 12px",color:C.t3}}>{p.lastUpdated||"—"}</td>
                         {isAdmin&&<td style={{padding:"8px 6px",whiteSpace:"nowrap"}}>
                           <div style={{display:"flex",gap:4}}>
-                            <button onClick={()=>printProductFiche(p.pn,p,getAllOrders())} title="Fiche produit PDF"
+                            <button onClick={()=>printProductFiche(p.pn,p,getAllOrders(),products)} title="Fiche produit PDF"
                               style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
                               <i className="ti ti-file-type-pdf" style={{fontSize:12}} aria-hidden="true"/>
                             </button>
-                            <button onClick={()=>exportProductFicheExcel(p.pn,p,getAllOrders())} title="Fiche produit Excel"
+                            <button onClick={()=>exportProductFicheExcel(p.pn,p,getAllOrders(),products)} title="Fiche produit Excel"
                               style={{background:C.greenL,color:C.greenDk,border:"none",borderRadius:5,width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
                               <i className="ti ti-file-spreadsheet" style={{fontSize:12}} aria-hidden="true"/>
                             </button>
@@ -11212,6 +11283,144 @@ async function exportInvoiceExcel(inv:any,order:any,client:string){
 }
 
 // ── PDF (print-to-PDF): full order report — articles coverage + invoices ──
+// ═══════════════════════════════════════════════════════════════════════════
+// ANALYSE PAR TYPE DE PRODUIT — reusable at 3 scopes: one order, one invoice,
+// or a free period (client-scoped or global). Classifies every line by its
+// Grundfos series (SP, CR, SEG, SL, DMX…) via detectProductType, and computes
+// real distribution metrics — not just totals: % of value/qty per type, a
+// concentration index (HHI, standard in portfolio-risk analysis), and a
+// commandé-vs-facturé gap per type to spot fulfillment imbalances.
+// ═══════════════════════════════════════════════════════════════════════════
+function computeTypeBreakdown(items:{pn:string,desc:string,qty:number,unitPrice:number}[]){
+  const byType:Record<string,{code:string,label:string,qty:number,value:number,count:number}>={};
+  items.forEach(l=>{
+    if(!l.pn||(+l.qty||0)<=0)return;
+    const t=detectProductType(l.pn,l.desc||"");
+    if(!byType[t.code])byType[t.code]={code:t.code,label:t.label,qty:0,value:0,count:0};
+    byType[t.code].qty+=(+l.qty||0);
+    byType[t.code].value+=(+l.qty||0)*(+l.unitPrice||0);
+    byType[t.code].count+=1;
+  });
+  const arr=Object.values(byType).sort((a,b)=>b.value-a.value);
+  const total=arr.reduce((s,t)=>s+t.value,0);
+  const withPct=arr.map(t=>({...t,pct:total>0?t.value/total*100:0}));
+  // Herfindahl-Hirschman Index (sum of squared market shares, 0-10000 scale)
+  // — standard concentration metric: <1500 = diversifié, 1500-2500 = modéré,
+  // >2500 = fortement concentré sur peu de familles de produits.
+  const hhi=withPct.reduce((s,t)=>s+Math.pow(t.pct,2),0);
+  return{byType:withPct,total,hhi,typeCount:withPct.length};
+}
+
+function printProductTypeAnalysis(scopeLabel:string,periodLabel:string,orderedItems:any[],invoicedItems:any[],label1:string="Commandé",label2:string="Facturé"){
+  const w=window.open("","_blank","width=1100,height=1000");
+  if(!w)return;
+  const ordered=computeTypeBreakdown(orderedItems);
+  const invoiced=computeTypeBreakdown(invoicedItems);
+  const hasInvoiced=invoicedItems.length>0;
+
+  const hhiLabel=(hhi:number)=>hhi>2500?{l:"Fortement concentré",c:"#DC2626"}:hhi>1500?{l:"Modérément concentré",c:"#D97706"}:{l:"Bien diversifié",c:"#059669"};
+  const ohhi=hhiLabel(ordered.hhi);
+
+  // Gap analysis: for each type present in either set, compare % ordered vs
+  // % invoiced — a large gap signals a category being under- or
+  // over-fulfilled relative to its weight in the order book.
+  const allCodes=Array.from(new Set([...ordered.byType.map(t=>t.code),...invoiced.byType.map(t=>t.code)]));
+  const gapRows=hasInvoiced?allCodes.map(code=>{
+    const o=ordered.byType.find(t=>t.code===code);
+    const i=invoiced.byType.find(t=>t.code===code);
+    const opct=o?.pct||0,ipct=i?.pct||0;
+    return{code,label:o?.label||i?.label||code,opct,ipct,gap:ipct-opct};
+  }).sort((a,b)=>Math.abs(b.gap)-Math.abs(a.gap)):[];
+  const biggestGap=gapRows[0];
+
+  const typeRow=(t:any,maxVal:number)=>`<tr>
+    <td><span style="background:#F3E8FF;color:#7C3AED;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800">${t.code}</span></td>
+    <td style="font-size:10.5px;color:#4A5568">${t.label}</td>
+    <td style="text-align:center">${t.count}</td>
+    <td style="text-align:right">${t.qty}</td>
+    <td style="text-align:right;font-weight:700">${fmt(t.value)} €</td>
+    <td style="text-align:right;font-weight:800;color:#2563EB">${t.pct.toFixed(1)}%</td>
+    <td style="padding:6px 9px"><div style="height:8px;background:#F1F5F9;border-radius:99px;overflow:hidden;width:100%"><div style="height:100%;width:${maxVal>0?(t.value/maxVal*100):0}%;background:linear-gradient(90deg,#2563EB,#7C3AED)"></div></div></td>
+  </tr>`;
+  const maxOrderedVal=ordered.byType[0]?.value||0;
+  const maxInvoicedVal=invoiced.byType[0]?.value||0;
+  const orderedRows=ordered.byType.map(t=>typeRow(t,maxOrderedVal)).join("")||`<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucune ligne détaillée disponible pour ce périmètre.</td></tr>`;
+  const invoicedRows=invoiced.byType.map(t=>typeRow(t,maxInvoicedVal)).join("")||`<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucune ligne facturée détaillée disponible.</td></tr>`;
+
+  const gapRowsHtml=gapRows.slice(0,10).map(g=>`<tr>
+    <td><span style="background:#F3E8FF;color:#7C3AED;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800">${g.code}</span></td>
+    <td style="font-size:10.5px;color:#4A5568">${g.label}</td>
+    <td style="text-align:right">${g.opct.toFixed(1)}%</td>
+    <td style="text-align:right">${g.ipct.toFixed(1)}%</td>
+    <td style="text-align:right;font-weight:800;color:${Math.abs(g.gap)<5?"#059669":Math.abs(g.gap)<15?"#D97706":"#DC2626"}">${g.gap>0?"+":""}${g.gap.toFixed(1)} pts</td>
+  </tr>`).join("");
+
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Analyse par type de produit — ${scopeLabel}</title><style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:0;}
+    .page{padding:32px 38px;max-width:1080px;margin:0 auto;}
+    .masthead{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:4px solid #0D1B2A;padding-bottom:16px;margin-bottom:22px;}
+    .logo{font-size:12px;font-weight:800;color:#2563EB;letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px;}
+    h1{font-size:21px;font-weight:800;color:#0D1B2A;letter-spacing:-.02em;}
+    .subtitle{font-size:12px;color:#4A5568;margin-top:3px;}
+    .meta{text-align:right;font-size:10.5px;color:#8FA0B3;line-height:1.6;}
+    h2{font-size:13.5px;font-weight:800;color:#0D1B2A;margin:24px 0 10px;padding-bottom:5px;border-bottom:2px solid #E5EAF0;}
+    .kpigrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:6px;}
+    .kpi{background:#F8FAFC;border:1px solid #E5EAF0;border-radius:10px;padding:12px 14px;}
+    .kpi .lbl{font-size:9px;color:#8FA0B3;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
+    .kpi .val{font-size:17px;font-weight:800;color:#0D1B2A;}
+    .kpi .sub{font-size:10px;color:#8FA0B3;margin-top:2px;}
+    table{width:100%;border-collapse:collapse;font-size:11px;}
+    th{background:#0D1B2A;color:#fff;padding:7px 9px;text-align:left;font-weight:600;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;}
+    td{padding:6px 9px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
+    tr:nth-child(even){background:#FAFBFC;}
+    .insight{background:#EFF6FF;border:1px solid #2563EB;border-radius:10px;padding:14px 18px;margin-bottom:8px;font-size:11.5px;color:#1E3A8A;line-height:1.6;}
+    .footer{margin-top:26px;padding-top:12px;border-top:1px solid #E5EAF0;font-size:9.5px;color:#8FA0B3;display:flex;justify-content:space-between;}
+    @media print{.no-print{display:none!important}.page{padding:16px 20px}}
+  </style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px">
+    <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
+    <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">✕ Close</button>
+  </div>
+  <div class="page">
+    <div class="masthead">
+      <div><div class="logo">OrderTrack · Analyse Produit</div><h1>Répartition par type de produit</h1><div class="subtitle">${scopeLabel}</div></div>
+      <div class="meta">Période : ${periodLabel}<br/>Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</div>
+    </div>
+
+    <div class="kpigrid">
+      <div class="kpi"><div class="lbl">Familles de produits détectées</div><div class="val">${ordered.typeCount}</div></div>
+      <div class="kpi"><div class="lbl">Valeur totale analysée</div><div class="val" style="color:#2563EB">${fmt(ordered.total)} €</div></div>
+      <div class="kpi"><div class="lbl">Indice de concentration (HHI)</div><div class="val" style="color:${ohhi.c}">${Math.round(ordered.hhi)}</div><div class="sub">${ohhi.l}</div></div>
+      <div class="kpi"><div class="lbl">Famille dominante</div><div class="val" style="font-size:14px">${ordered.byType[0]?`${ordered.byType[0].code} (${ordered.byType[0].pct.toFixed(0)}%)`:"—"}</div></div>
+    </div>
+
+    <div class="insight">
+      💡 <strong>Lecture rapide :</strong> ${ordered.byType.length===0?"Aucune ligne d'article détaillée disponible sur ce périmètre — importe le détail des commandes/factures pour activer cette analyse.":
+      `${ordered.byType[0]?.code||"—"} représente ${ordered.byType[0]?.pct.toFixed(0)||0}% de la valeur ${label1.toLowerCase()}e${ordered.byType.length>1?`, suivi de ${ordered.byType[1].code} (${ordered.byType[1].pct.toFixed(0)}%)`:""}.
+      L'indice de concentration (HHI = ${Math.round(ordered.hhi)}) indique un portefeuille <strong>${ohhi.l.toLowerCase()}</strong>
+      ${ordered.hhi>2500?" — la dépendance à une seule famille de produits est un facteur de risque à surveiller (rupture fournisseur, variation tarifaire)." :ordered.hhi>1500?" — une diversification plus poussée réduirait l'exposition à une famille unique.":" — le risque de dépendance à une famille de produits unique est limité."}
+      ${biggestGap&&Math.abs(biggestGap.gap)>=10?` Écart le plus marqué entre ${label1.toLowerCase()} et ${label2.toLowerCase()} : <strong>${biggestGap.code}</strong> (${biggestGap.gap>0?`sur-${label2.toLowerCase()}`:`sous-${label2.toLowerCase()}`} de ${Math.abs(biggestGap.gap).toFixed(1)} points par rapport à son poids en ${label1.toLowerCase()}) — à investiguer.`:""}`}
+    </div>
+
+    <h2>📦 Répartition — ${label1}</h2>
+    <table><thead><tr><th>Type</th><th>Famille</th><th style="text-align:center">Lignes</th><th style="text-align:right">Qté</th><th style="text-align:right">Valeur</th><th style="text-align:right">% du total</th><th style="width:120px">Poids</th></tr></thead>
+    <tbody>${orderedRows}</tbody></table>
+
+    ${hasInvoiced?`<h2>🧾 Répartition — ${label2}</h2>
+    <table><thead><tr><th>Type</th><th>Famille</th><th style="text-align:center">Lignes</th><th style="text-align:right">Qté</th><th style="text-align:right">Valeur</th><th style="text-align:right">% du total</th><th style="width:120px">Poids</th></tr></thead>
+    <tbody>${invoicedRows}</tbody></table>
+
+    <h2>⚖️ Écart ${label1} vs ${label2} par famille (triés par écart absolu)</h2>
+    <table><thead><tr><th>Type</th><th>Famille</th><th style="text-align:right">% ${label1}</th><th style="text-align:right">% ${label2}</th><th style="text-align:right">Écart</th></tr></thead>
+    <tbody>${gapRowsHtml||`<tr><td colspan="5" style="text-align:center;color:#8FA0B3;padding:12px">Pas assez de données pour comparer.</td></tr>`}</tbody></table>`:""}
+
+    <div class="footer"><span>OrderTrack — Analyse générée automatiquement à partir des lignes d'articles détaillées</span><span>Page 1</span></div>
+  </div>
+  </body></html>`);
+  w.document.close();
+}
+
 function printOrderReport(order:any,client:string){
   const w=window.open("","_blank","width=1000,height=1000");
   if(!w)return;
@@ -11423,11 +11632,25 @@ async function exportOrderExcel(order:any,client:string){
 }
 
 // ── PDF (print-to-PDF): product fiche — real cross-order/client analytics ──
-function printProductFiche(pn:string,product:any,allOrders:any[]){
+function printProductFiche(pn:string,product:any,allOrders:any[],allProducts:any[]=[]){
   const w=window.open("","_blank","width=1000,height=1000");
   if(!w)return;
   const d=buildProductFicheData(pn,allOrders);
   const type=detectProductType(pn,product?.description||"");
+  const replaces=allProducts.filter((p:any)=>p.replacedBy&&p.replacedBy.trim().toUpperCase()===pn.trim().toUpperCase());
+  const statusBannerHtml=product?.status==="obsolete"
+    ?`<div style="background:#FEE2E2;border:1px solid #DC2626;border-radius:8px;padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">🚫</span>
+        <div><div style="font-weight:800;color:#991B1B;font-size:13px">Article obsolète</div>
+        <div style="font-size:11px;color:#7F1D1D">${product.replacedBy?`Remplacé par <strong>${product.replacedBy}</strong>${(()=>{const r=allProducts.find((p:any)=>p.pn.trim().toUpperCase()===product.replacedBy.trim().toUpperCase());return r?` — ${r.description||""}`:"";})()}`:"Aucun remplaçant renseigné au catalogue."}</div></div>
+      </div>`
+    :replaces.length>0
+    ?`<div style="background:#DBEAFE;border:1px solid #2563EB;border-radius:8px;padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">🔄</span>
+        <div><div style="font-weight:800;color:#1E3A8A;font-size:13px">Article de remplacement</div>
+        <div style="font-size:11px;color:#1E40AF">Remplace : ${replaces.map((r:any)=>`<strong>${r.pn}</strong>${r.description?` (${r.description})`:""}`).join(", ")}</div></div>
+      </div>`
+    :"";
 
   const occRows=d.occurrences.map((o:any)=>{
     const full=o.qtyInvoiced>=o.qtyOrdered&&o.qtyOrdered>0;
@@ -11468,6 +11691,7 @@ function printProductFiche(pn:string,product:any,allOrders:any[]){
     <div><div class="logo">OrderTrack</div><h1>${pn}</h1><div class="sub">${product?.description||"—"} · ${type.label}</div></div>
     <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Fiche produit — analyse cross-commandes</div>
   </div>
+  ${statusBannerHtml}
   <div class="summary">
     <div class="card"><div class="lbl">Nb commandes</div><div class="val">${d.occurrences.length}</div></div>
     <div class="card"><div class="lbl">Nb clients</div><div class="val">${d.clients.length}</div></div>
@@ -11489,7 +11713,7 @@ function printProductFiche(pn:string,product:any,allOrders:any[]){
 }
 
 // ── Excel: product fiche (Résumé / Historique commandes / Historique prix) ──
-async function exportProductFicheExcel(pn:string,product:any,allOrders:any[]){
+async function exportProductFicheExcel(pn:string,product:any,allOrders:any[],allProducts:any[]=[]){
   const loadExcelJS=():Promise<any>=>new Promise((resolve,reject)=>{
     if((window as any).ExcelJS){resolve((window as any).ExcelJS);return;}
     const s=document.createElement('script');
@@ -11504,6 +11728,7 @@ async function exportProductFicheExcel(pn:string,product:any,allOrders:any[]){
 
   const d=buildProductFicheData(pn,allOrders);
   const type=detectProductType(pn,product?.description||"");
+  const replaces=allProducts.filter((p:any)=>p.replacedBy&&p.replacedBy.trim().toUpperCase()===pn.trim().toUpperCase());
   const wb=new ExcelJS.Workbook();
   wb.creator="OrderTrack";wb.created=new Date();
 
@@ -11514,6 +11739,9 @@ async function exportProductFicheExcel(pn:string,product:any,allOrders:any[]){
   const rows:[string,any][]=[
     ["Description",product?.description||"—"],
     ["Type",type.label],
+    ["Statut",product?.status==="obsolete"?"Obsolète":"Actif"],
+    ...(product?.status==="obsolete"?[["Remplacé par",product.replacedBy||"—"] as [string,any]]:[]),
+    ...(replaces.length>0?[["Remplace",replaces.map((r:any)=>r.pn).join(", ")] as [string,any]]:[]),
     ["Nb commandes",d.occurrences.length],
     ["Nb clients distincts",d.clients.length],
     ["Clients",d.clients.join(", ")||"—"],
@@ -11527,7 +11755,13 @@ async function exportProductFicheExcel(pn:string,product:any,allOrders:any[]){
     ["Dernière commande",d.lastOrderDate?fmtD(d.lastOrderDate):"—"],
     ["Généré le",new Date().toLocaleDateString("fr-FR")],
   ];
-  rows.forEach(([k,v])=>{const r=wsR.addRow([k,v]);r.getCell(1).font={bold:true};});
+  rows.forEach(([k,v])=>{
+    const r=wsR.addRow([k,v]);
+    r.getCell(1).font={bold:true};
+    if(k==="Statut"&&v==="Obsolète")r.getCell(2).font={bold:true,color:{argb:"FFDC2626"}};
+    if(k==="Remplacé par")r.getCell(2).font={bold:true,color:{argb:"FFDC2626"}};
+    if(k==="Remplace")r.getCell(2).font={bold:true,color:{argb:"FF2563EB"}};
+  });
 
   const wsO=wb.addWorksheet("Historique commandes");
   wsO.columns=[{header:"Client",width:16},{header:"PO #",width:16},{header:"Date",width:12},
