@@ -2643,7 +2643,7 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
   const txPay  = totInv>0?(totPaid/totInv*100):0;
   const maxBar = Math.max(...all.map((c:any)=>c.totalPO),1);
   const globalTarget = getTarget(targets,selYear,null);
-  const poTargetPct = globalTarget.po>0 ? Math.min(100,totPO/globalTarget.po*100) : null;
+  const poTargetPct = globalTarget.po>0 ? Math.min(100,totOpen/globalTarget.po*100) : null;
   const invTargetPct = globalTarget.inv>0 ? Math.min(100,totInv/globalTarget.inv*100) : null;
 
   return(
@@ -2677,14 +2677,7 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Total PO {selYear}</div>
           <div style={{fontSize:22,fontWeight:800,color:C.blue,letterSpacing:"-.02em"}}>{fmtK(totPO)} €</div>
-          {isAdmin&&poTargetPct!==null?(
-            <>
-              <div style={{marginTop:6,height:5,background:"#F1F5F9",borderRadius:99}}>
-                <div style={{height:"100%",width:`${poTargetPct}%`,background:poTargetPct>=100?C.green:poTargetPct>=70?C.blue:C.amber,borderRadius:99,transition:"width .5s"}}/>
-              </div>
-              <div style={{fontSize:11,color:C.t3,marginTop:4}}>{poTargetPct.toFixed(0)}% de l'objectif ({fmtK(globalTarget.po)} €)</div>
-            </>
-          ):<div style={{fontSize:11,color:C.t3,marginTop:4}}>Montant commandé</div>}
+          <div style={{fontSize:11,color:C.t3,marginTop:4}}>Montant commandé</div>
         </div>
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Total facturé</div>
@@ -2710,7 +2703,14 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Open Orders</div>
           <div style={{fontSize:22,fontWeight:800,color:C.amberDk,letterSpacing:"-.02em"}}>{fmtK(totOpen)} €</div>
-          <div style={{fontSize:11,color:C.t3,marginTop:4}}>Remaining to invoice</div>
+          {isAdmin&&poTargetPct!==null?(
+            <>
+              <div style={{marginTop:6,height:5,background:"#F1F5F9",borderRadius:99}}>
+                <div style={{height:"100%",width:`${poTargetPct}%`,background:poTargetPct>=100?C.green:poTargetPct>=70?C.blue:C.amber,borderRadius:99,transition:"width .5s"}}/>
+              </div>
+              <div style={{fontSize:11,color:C.t3,marginTop:4}}>{poTargetPct.toFixed(0)}% de l'objectif ({fmtK(globalTarget.po)} €)</div>
+            </>
+          ):<div style={{fontSize:11,color:C.t3,marginTop:4}}>Remaining to invoice</div>}
         </div>
         {isAdmin&&<div style={{background:`linear-gradient(135deg,${C.blue},${C.purple})`,borderRadius:C.rLg,boxShadow:C.shMd,padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
           <div style={{fontSize:10,color:"rgba(255,255,255,.7)",fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Taux global</div>
@@ -3092,16 +3092,16 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
         const echuesAmt=clientEchues.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
         const enCoursAmt=clientEnCours.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
         const clientTarget=getTarget(targets,selYear||new Date().getFullYear(),client);
-        const poPct=clientTarget.po>0?Math.min(100,stats.totalPO/clientTarget.po*100):null;
+        const poPct=clientTarget.po>0?Math.min(100,stats.openOrders/clientTarget.po*100):null;
         const invPct=clientTarget.inv>0?Math.min(100,stats.totalInv/clientTarget.inv*100):null;
         return(
           <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:isMobile?8:12}}>
-            <Kpi icon="ti-file-invoice"    label="PO total"           val={`${fmtK(stats.totalPO)} €`}    sub={poPct!==null?`🎯 ${poPct.toFixed(0)}% de l'objectif (${fmtK(clientTarget.po)} €)`:"Commandé"}                                   c={C.blue}   bg={C.blueL}/>
+            <Kpi icon="ti-file-invoice"    label="PO total"           val={`${fmtK(stats.totalPO)} €`}    sub="Commandé"                                   c={C.blue}   bg={C.blueL}/>
             <Kpi icon="ti-receipt"         label="Facturé"            val={`${fmtK(stats.totalInv)} €`}   sub={isAdmin?(invPct!==null?`🎯 ${invPct.toFixed(0)}% de l'objectif (${fmtK(clientTarget.inv)} €)`:`${txFact.toFixed(1)}% du PO`):""}              c={C.teal}   bg={C.tealL}/>
             <Kpi icon="ti-coin"            label="Encaissé"           val={`${fmtK(stats.totalPaid)} €`}  sub={isAdmin?`${txPay.toFixed(1)}% des factures`:""}         c={C.green}  bg={C.greenL}/>
             <Kpi icon="ti-clock-exclamation" label="Factures échues"  val={echuesAmt>0?`${fmtK(echuesAmt)} €`:"—"}  sub={`${clientEchues.length} facture${clientEchues.length>1?"s":""} en retard`}  c={echuesAmt>0?C.redDk:C.t3}   bg={echuesAmt>0?C.redL:"#F8FAFC"}/>
             <Kpi icon="ti-hourglass"       label="En cours (non échu)" val={enCoursAmt>0?`${fmtK(enCoursAmt)} €`:"—"} sub={`${clientEnCours.length} facture${clientEnCours.length>1?"s":""} en attente`} c={enCoursAmt>0?C.amberDk:C.t3} bg={enCoursAmt>0?C.amberL:"#F8FAFC"}/>
-            <Kpi icon="ti-clock"           label="Open orders"        val={`${fmtK(stats.openOrders)} €`} sub="Remaining to invoice"                            c={C.purple} bg={C.purpleL}/>
+            <Kpi icon="ti-clock"           label="Open orders"        val={`${fmtK(stats.openOrders)} €`} sub={poPct!==null?`🎯 ${poPct.toFixed(0)}% de l'objectif (${fmtK(clientTarget.po)} €)`:"Remaining to invoice"}                            c={C.purple} bg={C.purpleL}/>
           </div>
         );
       })()}
@@ -11708,6 +11708,9 @@ function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetIn
 
 
   // ── Objectifs & Progression — run-rate projection vs cible annuelle ──────
+  // Note: Open Orders is a BALANCE (snapshot), not a cumulative flow like
+  // Facturé — so it's compared directly against its target, no run-rate
+  // projection (extrapolating a snapshot over the year wouldn't mean anything).
   let targetSectionHtml="";
   if(targetInfo&&(targetInfo.po>0||targetInfo.inv>0)){
     const currentCalendarYear=today.getFullYear();
@@ -11716,33 +11719,31 @@ function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetIn
     // Past year → fully elapsed; future year → not started yet; current year → actual elapsed days.
     const dayOfYear=year<currentCalendarYear?daysInYear:year>currentCalendarYear?0:Math.max(1,Math.round((today.getTime()-yearStart.getTime())/86400000)+1);
     const yearElapsedPct=dayOfYear/daysInYear*100;
-    const yearPO=totalPO,yearInv=totalInvoiced; // already scoped to `year` above
-    const projPO=dayOfYear>0?yearPO/dayOfYear*daysInYear:0;
+    const yearInv=totalInvoiced; // already scoped to `year` above
     const projInv=dayOfYear>0?yearInv/dayOfYear*daysInYear:0;
-    const poAttainPct=targetInfo.po>0?yearPO/targetInfo.po*100:null;
+    const ooAttainPct=targetInfo.po>0?openOrdersTotal/targetInfo.po*100:null; // "po" field now holds the Open Orders target
     const invAttainPct=targetInfo.inv>0?yearInv/targetInfo.inv*100:null;
-    const poProjPct=targetInfo.po>0?projPO/targetInfo.po*100:null;
     const invProjPct=targetInfo.inv>0?projInv/targetInfo.inv*100:null;
 
     const track=(attain:number|null,elapsed:number)=>attain===null?null:attain>=elapsed?"on":attain>=elapsed*0.85?"close":"off";
-    const poTrack=track(poAttainPct,yearElapsedPct),invTrack=track(invAttainPct,yearElapsedPct);
-    const trackLabel=(t:string|null)=>t==="on"?{l:"En avance / dans les temps",c:"#059669"}:t==="close"?{l:"Léger retard",c:"#D97706"}:t==="off"?{l:"Hors trajectoire",c:"#DC2626"}:{l:"—",c:"#8FA0B3"};
+    const ooTrack=ooAttainPct===null?null:ooAttainPct>=100?"on":ooAttainPct>=70?"close":"off";
+    const invTrack=track(invAttainPct,yearElapsedPct);
+    const trackLabel=(t:string|null)=>t==="on"?{l:"Objectif atteint",c:"#059669"}:t==="close"?{l:"Proche de l'objectif",c:"#D97706"}:t==="off"?{l:"Loin de l'objectif",c:"#DC2626"}:{l:"—",c:"#8FA0B3"};
+    const invTrackLabel=(t:string|null)=>t==="on"?{l:"En avance / dans les temps",c:"#059669"}:t==="close"?{l:"Léger retard",c:"#D97706"}:t==="off"?{l:"Hors trajectoire",c:"#DC2626"}:{l:"—",c:"#8FA0B3"};
 
-    if(poTrack==="off")findings.push({severity:"critical",category:"Objectifs",title:`Trajectoire PO hors cible — ${poAttainPct!==null?poAttainPct.toFixed(0):0}% atteint vs ${yearElapsedPct.toFixed(0)}% de l'année écoulée`,
-      detail:`Au rythme actuel, projection en fin d'année : ${fmt(projPO)} € contre un objectif de ${fmt(targetInfo.po)} € (${poProjPct!==null?poProjPct.toFixed(0):0}% de la cible).`});
-    else if(poTrack==="close")findings.push({severity:"warning",category:"Objectifs",title:`Trajectoire PO en léger retard sur la cible annuelle`,
-      detail:`${poAttainPct!==null?poAttainPct.toFixed(0):0}% de l'objectif atteint pour ${yearElapsedPct.toFixed(0)}% de l'année écoulée — à surveiller.`});
+    if(ooTrack==="off")findings.push({severity:"warning",category:"Objectifs",title:`Open Orders à ${fmt(openOrdersTotal)} € — sous l'objectif de ${fmt(targetInfo.po)} €`,
+      detail:`Le portefeuille de commandes non facturées (${ooAttainPct!==null?ooAttainPct.toFixed(0):0}% de la cible) est insuffisant pour alimenter la facturation à venir au rythme visé.`});
     if(invTrack==="off")findings.push({severity:"critical",category:"Objectifs",title:`Trajectoire Facturation hors cible — ${invAttainPct!==null?invAttainPct.toFixed(0):0}% atteint vs ${yearElapsedPct.toFixed(0)}% de l'année écoulée`,
       detail:`Au rythme actuel, projection en fin d'année : ${fmt(projInv)} € contre un objectif de ${fmt(targetInfo.inv)} € (${invProjPct!==null?invProjPct.toFixed(0):0}% de la cible). Écart à combler : ${fmt(Math.max(0,targetInfo.inv-projInv))} €.`});
     else if(invTrack==="close")findings.push({severity:"warning",category:"Objectifs",title:`Trajectoire Facturation en léger retard sur la cible annuelle`,
       detail:`${invAttainPct!==null?invAttainPct.toFixed(0):0}% de l'objectif atteint pour ${yearElapsedPct.toFixed(0)}% de l'année écoulée.`});
 
-    if(poTrack==="off"||poTrack==="close")recos.push({priority:poTrack==="off"?"Haute":"Moyenne",title:"Accélérer la prise de commandes pour rattraper la cible PO annuelle",
-      rationale:`Il manque ${fmt(Math.max(0,targetInfo.po-projPO))} € de commandes projetées par rapport à l'objectif ${fmt(targetInfo.po)} € pour tenir la trajectoire.`});
+    if(ooTrack==="off")recos.push({priority:"Moyenne",title:"Renforcer la prise de commandes pour reconstituer le portefeuille Open Orders",
+      rationale:`Il manque ${fmt(Math.max(0,targetInfo.po-openOrdersTotal))} € de commandes en carnet par rapport à l'objectif ${fmt(targetInfo.po)} € — un carnet trop faible limite la facturation future.`});
     if(invTrack==="off"||invTrack==="close")recos.push({priority:invTrack==="off"?"Haute":"Moyenne",title:"Accélérer le cycle de facturation pour rattraper la cible annuelle",
       rationale:`${fmt(openOrdersTotal)} € de commandes sont déjà en portefeuille mais non facturées — une partie peut combler l'écart sans nouvelle vente.`});
 
-    score-=poTrack==="off"?10:poTrack==="close"?4:0;
+    score-=ooTrack==="off"?8:ooTrack==="close"?3:0;
     score-=invTrack==="off"?10:invTrack==="close"?4:0;
     score=Math.max(0,Math.min(100,score));
 
@@ -11750,15 +11751,14 @@ function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetIn
     <h2>🎯 Objectifs & Progression ${year}</h2>
     <div class="kpigrid" style="margin-bottom:10px">
       <div class="kpi"><div class="lbl">Année écoulée</div><div class="val">${yearElapsedPct.toFixed(0)}%</div><div class="sub">${dayOfYear}/${daysInYear} jours</div></div>
-      ${targetInfo.po>0?`<div class="kpi"><div class="lbl">PO — Atteint / Cible</div><div class="val" style="color:${trackLabel(poTrack).c}">${fmt(yearPO)} € / ${fmt(targetInfo.po)} €</div><div class="sub">${trackLabel(poTrack).l} (${poAttainPct!==null?poAttainPct.toFixed(0):0}%)</div></div>`:""}
-      ${targetInfo.po>0?`<div class="kpi"><div class="lbl">PO — Projection fin d'année</div><div class="val" style="color:${poProjPct!==null&&poProjPct>=100?"#059669":"#D97706"}">${fmt(projPO)} €</div><div class="sub">${poProjPct!==null?poProjPct.toFixed(0):0}% de la cible</div></div>`:""}
-      ${targetInfo.inv>0?`<div class="kpi"><div class="lbl">Facturé — Atteint / Cible</div><div class="val" style="color:${trackLabel(invTrack).c}">${fmt(yearInv)} € / ${fmt(targetInfo.inv)} €</div><div class="sub">${trackLabel(invTrack).l} (${invAttainPct!==null?invAttainPct.toFixed(0):0}%)</div></div>`:""}
+      ${targetInfo.po>0?`<div class="kpi"><div class="lbl">Open Orders — Atteint / Cible</div><div class="val" style="color:${trackLabel(ooTrack).c}">${fmt(openOrdersTotal)} € / ${fmt(targetInfo.po)} €</div><div class="sub">${trackLabel(ooTrack).l} (${ooAttainPct!==null?ooAttainPct.toFixed(0):0}%)</div></div>`:""}
+      ${targetInfo.inv>0?`<div class="kpi"><div class="lbl">Facturé — Atteint / Cible</div><div class="val" style="color:${invTrackLabel(invTrack).c}">${fmt(yearInv)} € / ${fmt(targetInfo.inv)} €</div><div class="sub">${invTrackLabel(invTrack).l} (${invAttainPct!==null?invAttainPct.toFixed(0):0}%)</div></div>`:""}
       ${targetInfo.inv>0?`<div class="kpi"><div class="lbl">Facturé — Projection fin d'année</div><div class="val" style="color:${invProjPct!==null&&invProjPct>=100?"#059669":"#D97706"}">${fmt(projInv)} €</div><div class="sub">${invProjPct!==null?invProjPct.toFixed(0):0}% de la cible</div></div>`:""}
     </div>
-    <div style="height:10px;background:#F1F5F9;border-radius:99px;overflow:hidden;margin-bottom:4px" title="Progression PO">
-      <div style="height:100%;width:${Math.min(100,poAttainPct||0)}%;background:${trackLabel(poTrack).c}"></div>
+    <div style="height:10px;background:#F1F5F9;border-radius:99px;overflow:hidden;margin-bottom:4px" title="Progression Open Orders">
+      <div style="height:100%;width:${Math.min(100,ooAttainPct||0)}%;background:${trackLabel(ooTrack).c}"></div>
     </div>
-    <div style="font-size:10px;color:#8FA0B3;margin-bottom:10px">Barre PO : trait de repère à ${yearElapsedPct.toFixed(0)}% = rythme "dans les temps" pour tenir l'objectif annuel.</div>`;
+    <div style="font-size:10px;color:#8FA0B3;margin-bottom:10px">Barre Open Orders : proportion du portefeuille de commandes non facturées par rapport à l'objectif fixé.</div>`;
   }
 
   const extraSections=`${targetSectionHtml}
@@ -12554,7 +12554,7 @@ function TargetsModal({clients,targets,onSave,onClose,year}:any){
         <div style={{fontSize:11,fontWeight:700,color:C.blueDk,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><i className="ti ti-world" style={{fontSize:13}} aria-hidden="true"/> Objectif GLOBAL {selYear}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <div>
-            <label style={{fontSize:10,color:C.t3,fontWeight:700,textTransform:"uppercase"}}>Cible PO (€)</label>
+            <label style={{fontSize:10,color:C.t3,fontWeight:700,textTransform:"uppercase"}}>Cible Open Orders (€)</label>
             <input type="number" value={draft.global.po} onChange={(e:any)=>setDraft((p:any)=>({...p,global:{...p.global,po:e.target.value}}))} placeholder="ex: 2000000"
               style={{width:"100%",padding:"7px 9px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,boxSizing:"border-box",marginTop:3}}/>
           </div>
@@ -12564,14 +12564,15 @@ function TargetsModal({clients,targets,onSave,onClose,year}:any){
               style={{width:"100%",padding:"7px 9px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,boxSizing:"border-box",marginTop:3}}/>
           </div>
         </div>
-        <div style={{fontSize:10,color:C.blueDk,marginTop:8}}>Somme des cibles par client actuellement saisies : {fmt(sumClientsPo)} € (PO) · {fmt(sumClientsInv)} € (Facturé) — l'objectif global peut différer volontairement de cette somme.</div>
+        <div style={{fontSize:10,color:C.blueDk,marginTop:8}}>Somme des cibles par client actuellement saisies : {fmt(sumClientsPo)} € (Open Orders) · {fmt(sumClientsInv)} € (Facturé) — l'objectif global peut différer volontairement de cette somme.</div>
+        <div style={{fontSize:9,color:C.blueDk,marginTop:4,fontStyle:"italic"}}>La cible "Open Orders" représente le montant de commandes en portefeuille non encore facturées que tu vises à maintenir/atteindre.</div>
       </div>
 
       <div style={{fontSize:11,fontWeight:700,color:C.t2,marginBottom:8}}>Objectifs par client</div>
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
           <thead><tr style={{background:"#F8FAFC"}}>
-            {["Client","Cible PO (€)","Cible Facturé (€)"].map(h=>(
+            {["Client","Cible Open Orders (€)","Cible Facturé (€)"].map(h=>(
               <th key={h} style={{padding:"6px 8px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",borderBottom:`1px solid ${C.b}`}}>{h}</th>
             ))}
           </tr></thead>
