@@ -7156,6 +7156,9 @@ const PRODUCT_TYPE_RULES=[
   {code:"LCD",  label:"LCD — Coffret de commande relevage",segment:"WU"},
   {code:"LC",   label:"LC — Coffret de commande relevage",segment:"WU"},
   {code:"DWK",  label:"DWK — Pompe de drainage",segment:"WU"},
+  {code:"S3",   label:"S3 — Pompe submersible eaux usées",segment:"WU"},
+  {code:"S2",   label:"S2 — Pompe submersible eaux usées",segment:"WU"},
+  {code:"S1",   label:"S1 — Pompe submersible eaux usées",segment:"WU"},
 ].sort((a,b)=>b.code.length-a.code.length);
 const UNCLASSIFIED_TYPE={code:"AUTRE",label:"Autres / non classé",segment:""};
 const ACCESSORY_TYPE={code:"ACCESS",label:"Accessoires & pièces détachées",segment:"SERV"};
