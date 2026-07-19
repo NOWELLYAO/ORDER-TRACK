@@ -13190,12 +13190,16 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
 
     } else if(rtype==="unpaid"){
       title="Factures en cours";
-      const items=allOrders.flatMap((o:any)=>(o.invoices||[]).filter((i:any)=>inRange(i.date)).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);const rem=Math.max(0,(+i.amount||0)-paid);return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:payStatus(i).label};}).filter((i:any)=>i.rem>0));
+      // Deliberately NOT filtered by inRange(i.date) — an unpaid invoice is
+      // still owed today regardless of when it was issued. Scoping this
+      // report to the selected period silently hid genuinely outstanding
+      // invoices issued before the period start (e.g. from a prior year).
+      const items=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);const rem=Math.max(0,(+i.amount||0)-paid);return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:payStatus(i).label};}).filter((i:any)=>i.rem>0));
       const rowUnp=(i:any)=>`<tr><td>${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td>${fmtD(i.dueDate)}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:#DC2626">${fmt(i.rem)} €</td><td><span style="background:#FEE2E2;color:#B91C1C;padding:2px 8px;border-radius:4px;font-size:10px">${i.psLabel}</span></td></tr>`;
       const subUnp=(grp:any[],label:string)=>`<tr style="background:#FFF5F5;font-weight:700"><td colspan="7" style="text-align:right;color:#DC2626;font-style:italic;padding:6px 10px">Subtotal ${label}</td><td style="text-align:right;color:#DC2626;padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
       const totUnp=(all:any[])=>`<tr style="background:#FEE2E2;font-weight:800;font-size:12px"><td colspan="7" style="text-align:right;padding:8px 10px">TOTAL UNPAID</td><td style="text-align:right;padding:8px 10px">${fmt(all.reduce((s:number,i:any)=>s+i.rem,0))} €</td><td></td></tr>`;
       rows=withMonthly(items,"date",rowUnp,subUnp,totUnp);
-      printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>Invoice #</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th><th>Statut</th></tr>",rows);
+      printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>Invoice #</th><th>Date</th><th>Échéance</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th><th>Statut</th></tr>",rows,`Toutes factures impayées à ce jour (${fmtD(todayStr())}) — non limité à la période sélectionnée`);
 
     } else if(rtype==="all_invoices"){
       title="Toutes les factures sur la période";
@@ -13231,7 +13235,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
     onClose();
   };
 
-  const printReport=(title:string,from:string,to:string,headers:string,rows:string)=>{
+  const printReport=(title:string,from:string,to:string,headers:string,rows:string,periodLabelOverride?:string)=>{
     const w=window.open("","_blank","width=1100,height=800");
     if(!w)return;
     w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>
@@ -13256,7 +13260,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
     <style>@media print{.no-print{display:none!important}}</style>
     <div class="header">
       <div><div class="logo">OrderTrack</div><h1>${title}</h1></div>
-      <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Période : ${fmtD(from)} → ${fmtD(to)}</div>
+      <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Période : ${periodLabelOverride||`${fmtD(from)} → ${fmtD(to)}`}</div>
     </div>
     <table><thead>${headers}</thead><tbody>${rows}</tbody></table>
     <div class="footer"><span>OrderTrack — Rapport confidentiel</span><span>Page 1</span></div>
