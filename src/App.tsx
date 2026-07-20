@@ -7123,6 +7123,7 @@ const PRODUCT_TYPE_RULES=[
   {code:"CRT",  label:"CRT — Multicellulaire dessalement",segment:"IND"},
   {code:"CR",   label:"CR — Multicellulaire verticale",segment:"IND"},
   {code:"CME",  label:"CME — Multicellulaire horizontale électronique",segment:"IND"},
+  {code:"CMBE", label:"CMBE — Multicellulaire horizontale compacte",segment:"IND"},
   {code:"CM",   label:"CM — Multicellulaire horizontale",segment:"IND"},
   {code:"BM",   label:"BM — Pompe haute pression (booster/RO)",segment:"IND"},
   {code:"DMH",  label:"DMH — Doseuse hydraulique à membrane",segment:"IND"},
@@ -7138,13 +7139,21 @@ const PRODUCT_TYPE_RULES=[
   {code:"MQ",   label:"MQ — Groupe hydrophore compact",segment:"IND"},
   {code:"SBA",  label:"SBA — Surpression",segment:"IND"},
   {code:"SB",   label:"SB — Surpression",segment:"IND"},
+  {code:"CUE",  label:"CUE — Variateur de fréquence",segment:"IND"},
+  {code:"MP204",label:"MP204 — Protection & contrôle moteur",segment:"IND"},
+  {code:"MP",   label:"MP — Protection & contrôle moteur",segment:"IND"},
+  {code:"CP",   label:"CP — Coffret de protection/contrôle",segment:"IND"},
   // ── WU — Water Utility (réseaux & eaux usées) ──
   {code:"SQE",  label:"SQE — Submersible pilotée",segment:"WU"},
   {code:"SQFLEX",label:"SQFlex — Pompage solaire",segment:"WU"},
   {code:"SQF",  label:"SQF — Pompe solaire (gamme SQFlex)",segment:"WU"},
   {code:"SQ",   label:"SQ — Pompes submersibles (petit diamètre)",segment:"WU"},
   {code:"SP",   label:"SP — Pompes submersibles (eau propre/forage)",segment:"WU"},
+  {code:"MMS",  label:"MMS — Moteurs submersibles haute puissance",segment:"WU"},
   {code:"MS",   label:"MS — Moteurs submersibles",segment:"WU"},
+  {code:"CRIF", label:"CRIF — Multicellulaire Inox solaire (SQFlex)",segment:"WU"},
+  {code:"RSI",  label:"RSI — Variateur solaire (SQFlex)",segment:"WU"},
+  {code:"CU",   label:"CU — Contrôleur solaire (SQFlex)",segment:"WU"},
   {code:"SEG",  label:"SEG — Relevage broyeuse",segment:"WU"},
   {code:"SLV",  label:"SLV — Relevage vortex",segment:"WU"},
   {code:"SL",   label:"SL — Relevage",segment:"WU"},
@@ -7177,8 +7186,25 @@ const ACCESSORY_KEYWORDS=[
   "capteur","sonde","sensor","membrane","diaphragm","cartouche","filtre","filter",
   "vanne","joint torique","o-ring","garniture","accouplement","coupling","support",
   "alarme","alarm","interrupteur","inter.","switch","boîtier","boitier","armoire",
+  "spare","impeller","wear ring","stator","rotor","interconnector","strainer",
+  "stirrer","inject. unit","mfv","tank","sinewave","poweradapt","circuit breaker",
+  "surge protection","wire kit","flow transmitter","dryrun protector","ringstand",
+  "ring stand","flow sleeve",
+];
+// A handful of accessories happen to contain a real series code as a
+// substring by coincidence (e.g. a float switch model literally named
+// "MS1", or a sensor described as "Sensor dryrun SP+RSI") — without this
+// check they'd be misclassified as a submersible motor/pump instead of an
+// accessory. These are strong, unambiguous signals checked BEFORE the
+// series-code loop so they always win.
+const ACCESSORY_OVERRIDE_KEYWORDS=[
+  "float switch","sensor dryrun","flow sleeve","flow transmitter","strainer",
+  "ring stand","ringstand","stirrer","circuit breaker","surge protection",
+  "sinewave","spare,","spare ",
 ];
 function detectProductType(pn:string,description:string){
+  const lowerDesc=(description||"").toLowerCase();
+  if(ACCESSORY_OVERRIDE_KEYWORDS.some(k=>lowerDesc.includes(k)))return ACCESSORY_TYPE;
   const text=`${description||""} ${pn||""}`.toUpperCase();
   const tokens=text.split(/[^A-Z0-9]+/).filter(Boolean);
   for(const rule of PRODUCT_TYPE_RULES){
@@ -7186,7 +7212,6 @@ function detectProductType(pn:string,description:string){
       if(tok===rule.code||new RegExp(`^${rule.code}\\d`).test(tok))return rule;
     }
   }
-  const lowerDesc=(description||"").toLowerCase();
   if(ACCESSORY_KEYWORDS.some(k=>lowerDesc.includes(k)))return ACCESSORY_TYPE;
   return UNCLASSIFIED_TYPE;
 }
@@ -13188,6 +13213,32 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
       rows=withMonthly(items,"dueDate",rowUp,subUp,totUp);
       printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>Invoice #</th><th>Date émission</th><th>Échéance</th><th>Délai</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste dû (€)</th><th>Statut</th></tr>",rows);
 
+    } else if(rtype==="active_invoices"){
+      title="Factures actives";
+      // Deliberately NOT filtered by inRange — this is a snapshot of what's
+      // currently outstanding, not a period listing. Grouped by status
+      // (Échues / En cours d'échéance) rather than by month, since that's
+      // the operationally useful split for a receivables follow-up.
+      const items=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{
+        const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+        const rem=Math.max(0,(+i.amount||0)-paid);
+        const ps=payStatus(i);
+        return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:ps.label,isOverdue:["overdue","ov_part"].includes(ps.key),daysLate:i.dueDate?Math.abs(diffD(i.dueDate)):0,daysLeft:i.dueDate?diffD(i.dueDate):0};
+      }).filter((i:any)=>i.rem>0));
+      const overdueItems=items.filter((i:any)=>i.isOverdue).sort((a:any,b:any)=>b.daysLate-a.daysLate);
+      const pendingItems=items.filter((i:any)=>!i.isOverdue).sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||""));
+      const rowActive=(i:any,late:boolean)=>`<tr style="border-left:3px solid ${late?"#B91C1C":"#2563EB"}"><td style="font-weight:700">${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td style="font-weight:700;color:${late?"#B91C1C":"#1D4ED8"}">${fmtD(i.dueDate)}</td><td style="text-align:center;font-weight:800;color:${late?"#B91C1C":"#0369A1"}">${late?i.daysLate+"j de retard":(i.daysLeft===0?"Auj.":i.daysLeft+"j")}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:${late?"#B91C1C":"#1D4ED8"}">${fmt(i.rem)} €</td></tr>`;
+      const sectionHeader=(label:string,color:string,bg:string)=>`<tr><td colspan="9" style="background:${bg};color:${color};font-weight:800;font-size:12px;padding:8px 10px">${label}</td></tr>`;
+      const sectionTotal=(grp:any[],label:string,color:string,bg:string)=>`<tr style="background:${bg};font-weight:700"><td colspan="8" style="text-align:right;color:${color};font-style:italic;padding:6px 10px">Sous-total ${label} (${grp.length} facture${grp.length>1?"s":""})</td><td style="text-align:right;color:${color};padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      rows=sectionHeader(`🔴 ÉCHUES (${overdueItems.length})`,"#B91C1C","#FEE2E2")
+        +overdueItems.map((i:any)=>rowActive(i,true)).join("")
+        +(overdueItems.length>0?sectionTotal(overdueItems,"Échues","#B91C1C","#FFF0F0"):"")
+        +sectionHeader(`🔵 EN COURS D'ÉCHÉANCE (${pendingItems.length})`,"#1D4ED8","#DBEAFE")
+        +pendingItems.map((i:any)=>rowActive(i,false)).join("")
+        +(pendingItems.length>0?sectionTotal(pendingItems,"En cours","#1D4ED8","#EFF6FF"):"")
+        +`<tr style="background:#0D1B2A;font-weight:800;font-size:12px"><td colspan="8" style="text-align:right;padding:9px 10px;color:#fff">TOTAL FACTURES ACTIVES (${items.length})</td><td style="text-align:right;padding:9px 10px;color:#fff">${fmt(items.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>Invoice #</th><th>Date</th><th>Échéance</th><th>Délai</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th></tr>",rows,`Photo actuelle au ${fmtD(todayStr())} — toutes factures non soldées, non limité à une période`);
+
     } else if(rtype==="unpaid"){
       title="Factures en cours";
       // Deliberately NOT filtered by inRange(i.date) — an unpaid invoice is
@@ -13380,6 +13431,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
     {id:"ready_upcoming",label:"Commandes prêtes & à venir",desc:"Prêtes à expédier + en préparation, par client/période", icon:"ti-package-export", color:"#0D9488"},
     {id:"overdue",      label:"Factures échues",        desc:"Échéance dépassée, solde non réglé",    icon:"ti-clock-exclamation", color:C.red},
     {id:"upcoming",     label:"Échéances à venir",      desc:"Factures dues dans les 30 prochains jours", icon:"ti-clock",         color:C.purple},
+    {id:"active_invoices",label:"Factures actives",     desc:"Échues + en cours d'échéance, non soldées — photo actuelle",icon:"ti-list-check",color:C.red},
     {id:"unpaid",       label:"Factures en cours",      desc:"Solde non encore encaissé (toutes)",    icon:"ti-alert-circle",      color:"#0D9488"},
     {id:"all_invoices", label:"Toutes les factures",    desc:"Listing complet sur la période",        icon:"ti-receipt",           color:C.teal},
     ...(isAdmin?[{id:"summary",label:"Synthèse clients",desc:"Récapitulatif par client",icon:"ti-building-store",color:C.blue}]:[]),
