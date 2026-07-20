@@ -7113,7 +7113,6 @@ const PRODUCT_TYPE_RULES=[
   {code:"LS",   label:"LS — Pompes à volute (split case)",segment:"CBS"},
   {code:"HS",   label:"HS — Pompes à volute (split case)",segment:"CBS"},
   {code:"HYDRO",label:"HYDRO — Système de surpression",segment:"CBS"},
-  {code:"MPC",  label:"MPC — Contrôleur de surpression",segment:"CBS"},
   {code:"FIRE", label:"FIRE 2 / CRF — Groupe incendie",segment:"CBS"},
   // ── IND — Industrie ──
   {code:"CRN",  label:"CRN — Multicellulaire verticale Inox",segment:"IND"},
@@ -7122,9 +7121,7 @@ const PRODUCT_TYPE_RULES=[
   {code:"CRE",  label:"CRE — Multicellulaire électronique",segment:"IND"},
   {code:"CRT",  label:"CRT — Multicellulaire dessalement",segment:"IND"},
   {code:"CR",   label:"CR — Multicellulaire verticale",segment:"IND"},
-  {code:"CME",  label:"CME — Multicellulaire horizontale électronique",segment:"IND"},
-  {code:"CMBE", label:"CMBE — Multicellulaire horizontale compacte",segment:"IND"},
-  {code:"CM",   label:"CM — Multicellulaire horizontale",segment:"IND"},
+  {code:"CMFAM",label:"CM & CMBE — Multicellulaire horizontale",segment:"IND"},
   {code:"BM",   label:"BM — Pompe haute pression (booster/RO)",segment:"IND"},
   {code:"DMH",  label:"DMH — Doseuse hydraulique à membrane",segment:"IND"},
   {code:"DME",  label:"DME — Doseuse électromagnétique",segment:"IND"},
@@ -7139,21 +7136,14 @@ const PRODUCT_TYPE_RULES=[
   {code:"MQ",   label:"MQ — Groupe hydrophore compact",segment:"IND"},
   {code:"SBA",  label:"SBA — Surpression",segment:"IND"},
   {code:"SB",   label:"SB — Surpression",segment:"IND"},
-  {code:"CUE",  label:"CUE — Variateur de fréquence",segment:"IND"},
-  {code:"MP204",label:"MP204 — Protection & contrôle moteur",segment:"IND"},
-  {code:"MP",   label:"MP — Protection & contrôle moteur",segment:"IND"},
-  {code:"CP",   label:"CP — Coffret de protection/contrôle",segment:"IND"},
+  {code:"CONTROLS",label:"CONTROLS — CUE, MP204, LC, MPC",segment:"IND"},
   // ── WU — Water Utility (réseaux & eaux usées) ──
   {code:"SQE",  label:"SQE — Submersible pilotée",segment:"WU"},
-  {code:"SQFLEX",label:"SQFlex — Pompage solaire",segment:"WU"},
-  {code:"SQF",  label:"SQF — Pompe solaire (gamme SQFlex)",segment:"WU"},
   {code:"SQ",   label:"SQ — Pompes submersibles (petit diamètre)",segment:"WU"},
   {code:"SP",   label:"SP — Pompes submersibles (eau propre/forage)",segment:"WU"},
-  {code:"MMS",  label:"MMS — Moteurs submersibles haute puissance",segment:"WU"},
-  {code:"MS",   label:"MS — Moteurs submersibles",segment:"WU"},
-  {code:"CRIF", label:"CRIF — Multicellulaire Inox solaire (SQFlex)",segment:"WU"},
-  {code:"RSI",  label:"RSI — Variateur solaire (SQFlex)",segment:"WU"},
-  {code:"CU",   label:"CU — Contrôleur solaire (SQFlex)",segment:"WU"},
+  {code:"MOTORS",label:"MMS & MS — Moteurs submersibles",segment:"WU"},
+  {code:"SOLARPUMP",label:"SOLAR PUMPS — Pompage solaire (SQF/CRIF)",segment:"WU"},
+  {code:"SOLARACC",label:"SOLAR ACCESSORIES — Accessoires solaires (RSI/CU)",segment:"WU"},
   {code:"SEG",  label:"SEG — Relevage broyeuse",segment:"WU"},
   {code:"SLV",  label:"SLV — Relevage vortex",segment:"WU"},
   {code:"SL",   label:"SL — Relevage",segment:"WU"},
@@ -7162,41 +7152,63 @@ const PRODUCT_TYPE_RULES=[
   {code:"AMG",  label:"AMG — Broyeuse",segment:"WU"},
   {code:"MULTILIFT",label:"Multilift — Station de relevage",segment:"WU"},
   {code:"SOLOLIFT",label:"Sololift — Station de relevage compacte",segment:"WU"},
-  {code:"LCD",  label:"LCD — Coffret de commande relevage",segment:"WU"},
-  {code:"LC",   label:"LC — Coffret de commande relevage",segment:"WU"},
   {code:"DWK",  label:"DWK — Pompe de drainage",segment:"WU"},
   {code:"S3",   label:"S3 — Pompe submersible eaux usées",segment:"WU"},
   {code:"S2",   label:"S2 — Pompe submersible eaux usées",segment:"WU"},
   {code:"S1",   label:"S1 — Pompe submersible eaux usées",segment:"WU"},
-].sort((a,b)=>b.code.length-a.code.length);
+];
+// Merged/group codes above absorb several raw prefixes (e.g. "CMFAM" covers
+// both CM and CMBE tokens, "MOTORS" covers both MMS and MS, "CONTROLS"
+// covers CUE/MP/MP204/CP/LC/LCD/MPC, "SOLARPUMP" covers SQF/SQFLEX/CRIF) —
+// grouped per the user's own catalogue documents (CM_CMBE.pdf,
+// Controls_CUE_MP204_LC_MPC.pdf, SOLAR_PUMPS.pdf) rather than kept as
+// separate technical series. rawPrefixes lists every token pattern that
+// should resolve to that merged code.
+const MERGED_PREFIX_MAP:Record<string,string[]>=(()=>{
+  const specificity=(p:string)=>p.length;
+  return{
+    CMFAM:["CMBE","CM"].sort((a,b)=>specificity(b)-specificity(a)),
+    MOTORS:["MMS","MS"].sort((a,b)=>specificity(b)-specificity(a)),
+    CONTROLS:["MP204","CUE","MPC","LCD","LC","MP","CP"].sort((a,b)=>specificity(b)-specificity(a)),
+    SOLARPUMP:["SQFLEX","SQF","CRIF"].sort((a,b)=>specificity(b)-specificity(a)),
+    SOLARACC:["RSI","CU"].sort((a,b)=>specificity(b)-specificity(a)),
+  };
+})();
 const UNCLASSIFIED_TYPE={code:"AUTRE",label:"Autres / non classé",segment:""};
-const ACCESSORY_TYPE={code:"ACCESS",label:"Accessoires & pièces détachées",segment:"SERV"};
-// Second-pass fallback: many catalogue lines are generic spares/accessories
-// (câbles, joints, coffrets, flotteurs, chaînes de levage…) rather than a
-// pump series in their own right. Classifying them as "Accessoires" instead
-// of dumping them into "Autre" makes the AUTRE bucket meaningful again —
-// it should only catch genuinely unrecognized items. This matches Grundfos's
-// own segmentation, which carves out "SPARES & KITS" as its own line under
-// every segment — grouped here under SERV since the exact origin segment of
-// a given spare part isn't reliably inferable from the description alone.
-const ACCESSORY_KEYWORDS=[
-  "kit","câble","cable","joint","seal","bearing","roulement","float switch","flotteur",
-  "chaîne de levage","chain","pied d'assise","coffret","panneau","régulateur de niveau",
-  "injection","tubing","inlay","bride","raccord","flexible","valve","robinet","clapet",
-  "capteur","sonde","sensor","membrane","diaphragm","cartouche","filtre","filter",
-  "vanne","joint torique","o-ring","garniture","accouplement","coupling","support",
-  "alarme","alarm","interrupteur","inter.","switch","boîtier","boitier","armoire",
-  "spare","impeller","wear ring","stator","rotor","interconnector","strainer",
-  "stirrer","inject. unit","mfv","tank","sinewave","poweradapt","circuit breaker",
-  "surge protection","wire kit","flow transmitter","dryrun protector","ringstand",
-  "ring stand","flow sleeve",
+const ACCESSORY_TYPE={code:"ACCESS",label:"ACCESS — Accessoires & pièces détachées",segment:"SERV"};
+const DOSING_ACCESSORY_TYPE={code:"DOSACC",label:"DOSING ACCESSORIES — Accessoires de dosage",segment:"IND"};
+const SOLAR_ACCESSORY_TYPE={code:"SOLARACC",label:"SOLAR ACCESSORIES — Accessoires solaires (SQFlex)",segment:"WU"};
+// Fallback keyword buckets, split to match the user's own catalogue
+// documents (ACCESS.pdf/ACESS_2.pdf, Dosing_Accessories.pdf,
+// SOLAR_ACCESSORIES.pdf) instead of one generic "Accessoires" bucket —
+// checked in order, first match wins.
+const KEYWORD_BUCKETS:{type:any,keywords:string[]}[]=[
+  {type:DOSING_ACCESSORY_TYPE,keywords:[
+    "e-stirrer","stirrer","inject. unit","inject.unit","mfv","tank,",
+  ]},
+  {type:SOLAR_ACCESSORY_TYPE,keywords:[
+    "sinewave","poweradapt","wire kit","ovr pv","array wire","array to controller",
+    "sensor dryrun",
+  ]},
+  {type:ACCESSORY_TYPE,keywords:[
+    "kit","câble","cable","joint","seal","bearing","roulement","float switch","flotteur",
+    "chaîne de levage","chain","pied d'assise","coffret","panneau","régulateur de niveau",
+    "injection","tubing","inlay","bride","raccord","flexible","valve","robinet","clapet",
+    "capteur","sonde","sensor","membrane","diaphragm","cartouche","filtre","filter",
+    "vanne","joint torique","o-ring","garniture","accouplement","coupling","support",
+    "alarme","alarm","interrupteur","inter.","switch","boîtier","boitier","armoire",
+    "spare","impeller","wear ring","stator","rotor","interconnector","strainer",
+    "circuit breaker","surge protection","flow transmitter","dryrun protector",
+    "ringstand","ring stand","flow sleeve",
+  ]},
 ];
 // A handful of accessories happen to contain a real series code as a
 // substring by coincidence (e.g. a float switch model literally named
 // "MS1", or a sensor described as "Sensor dryrun SP+RSI") — without this
 // check they'd be misclassified as a submersible motor/pump instead of an
 // accessory. These are strong, unambiguous signals checked BEFORE the
-// series-code loop so they always win.
+// series-code loop so they always win. Mapped to the SAME bucket list so
+// they land in the right document-based category, not just generic ACCESS.
 const ACCESSORY_OVERRIDE_KEYWORDS=[
   "float switch","sensor dryrun","flow sleeve","flow transmitter","strainer",
   "ring stand","ringstand","stirrer","circuit breaker","surge protection",
@@ -7204,15 +7216,31 @@ const ACCESSORY_OVERRIDE_KEYWORDS=[
 ];
 function detectProductType(pn:string,description:string){
   const lowerDesc=(description||"").toLowerCase();
-  if(ACCESSORY_OVERRIDE_KEYWORDS.some(k=>lowerDesc.includes(k)))return ACCESSORY_TYPE;
+  if(ACCESSORY_OVERRIDE_KEYWORDS.some(k=>lowerDesc.includes(k))){
+    const bucket=KEYWORD_BUCKETS.find(b=>b.keywords.some(k=>lowerDesc.includes(k)));
+    return bucket?bucket.type:ACCESSORY_TYPE;
+  }
   const text=`${description||""} ${pn||""}`.toUpperCase();
   const tokens=text.split(/[^A-Z0-9]+/).filter(Boolean);
-  for(const rule of PRODUCT_TYPE_RULES){
+  // Merged-group codes first (longest raw prefix wins within each group)
+  for(const mergedCode of Object.keys(MERGED_PREFIX_MAP)){
+    for(const prefix of MERGED_PREFIX_MAP[mergedCode]){
+      for(const tok of tokens){
+        if(tok===prefix||new RegExp(`^${prefix}\\d`).test(tok)){
+          const rule=PRODUCT_TYPE_RULES.find(r=>r.code===mergedCode);
+          if(rule)return rule;
+        }
+      }
+    }
+  }
+  const sortedRules=[...PRODUCT_TYPE_RULES].sort((a,b)=>b.code.length-a.code.length);
+  for(const rule of sortedRules){
     for(const tok of tokens){
       if(tok===rule.code||new RegExp(`^${rule.code}\\d`).test(tok))return rule;
     }
   }
-  if(ACCESSORY_KEYWORDS.some(k=>lowerDesc.includes(k)))return ACCESSORY_TYPE;
+  const bucket=KEYWORD_BUCKETS.find(b=>b.keywords.some(k=>lowerDesc.includes(k)));
+  if(bucket)return bucket.type;
   return UNCLASSIFIED_TYPE;
 }
 
@@ -13217,24 +13245,37 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
       title="Factures actives";
       // Deliberately NOT filtered by inRange — this is a snapshot of what's
       // currently outstanding, not a period listing. Grouped by status
-      // (Échues / En cours d'échéance) rather than by month, since that's
-      // the operationally useful split for a receivables follow-up.
+      // first (Échues / En cours d'échéance), then by MONTH of échéance
+      // within each — with a subtotal per month, per the user's request.
       const items=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{
         const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
         const rem=Math.max(0,(+i.amount||0)-paid);
         const ps=payStatus(i);
         return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:ps.label,isOverdue:["overdue","ov_part"].includes(ps.key),daysLate:i.dueDate?Math.abs(diffD(i.dueDate)):0,daysLeft:i.dueDate?diffD(i.dueDate):0};
       }).filter((i:any)=>i.rem>0));
-      const overdueItems=items.filter((i:any)=>i.isOverdue).sort((a:any,b:any)=>b.daysLate-a.daysLate);
+      const overdueItems=items.filter((i:any)=>i.isOverdue).sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||""));
       const pendingItems=items.filter((i:any)=>!i.isOverdue).sort((a:any,b:any)=>(a.dueDate||"").localeCompare(b.dueDate||""));
       const rowActive=(i:any,late:boolean)=>`<tr style="border-left:3px solid ${late?"#B91C1C":"#2563EB"}"><td style="font-weight:700">${i._client}</td><td>${i._po||"—"}</td><td>${i.invoiceNumber||"—"}</td><td>${fmtD(i.date)}</td><td style="font-weight:700;color:${late?"#B91C1C":"#1D4ED8"}">${fmtD(i.dueDate)}</td><td style="text-align:center;font-weight:800;color:${late?"#B91C1C":"#0369A1"}">${late?i.daysLate+"j de retard":(i.daysLeft===0?"Auj.":i.daysLeft+"j")}</td><td style="text-align:right">${fmt(+i.amount||0)} €</td><td style="text-align:right">${fmt(i.paid)} €</td><td style="text-align:right;font-weight:700;color:${late?"#B91C1C":"#1D4ED8"}">${fmt(i.rem)} €</td></tr>`;
       const sectionHeader=(label:string,color:string,bg:string)=>`<tr><td colspan="9" style="background:${bg};color:${color};font-weight:800;font-size:12px;padding:8px 10px">${label}</td></tr>`;
-      const sectionTotal=(grp:any[],label:string,color:string,bg:string)=>`<tr style="background:${bg};font-weight:700"><td colspan="8" style="text-align:right;color:${color};font-style:italic;padding:6px 10px">Sous-total ${label} (${grp.length} facture${grp.length>1?"s":""})</td><td style="text-align:right;color:${color};padding:6px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      const monthSubtotal=(grp:any[],label:string,color:string,bg:string)=>`<tr style="background:${bg};font-weight:700"><td colspan="8" style="text-align:right;color:${color};font-style:italic;padding:5px 10px">Sous-total échéance ${label} (${grp.length} facture${grp.length>1?"s":""})</td><td style="text-align:right;color:${color};padding:5px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      const sectionTotal=(grp:any[],label:string,color:string,bg:string)=>`<tr style="background:${bg};font-weight:800"><td colspan="8" style="text-align:right;color:${color};padding:7px 10px">TOTAL ${label} (${grp.length} facture${grp.length>1?"s":""})</td><td style="text-align:right;color:${color};padding:7px 10px">${fmt(grp.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
+      // Group a status-list by month of dueDate, with a subtotal per month
+      const byDueMonth=(grp:any[],late:boolean,monthColor:string,monthBg:string)=>{
+        const byMonth:Record<string,any[]>={};
+        grp.forEach((i:any)=>{const k=monthKey(i.dueDate);if(!byMonth[k])byMonth[k]=[];byMonth[k].push(i);});
+        return Object.keys(byMonth).sort().map(k=>{
+          const mgrp=byMonth[k];
+          const label=monthLabel(mgrp[0].dueDate);
+          return`<tr><td colspan="9" style="padding:5px 10px;color:#4A5568;font-weight:700;font-size:10px;letter-spacing:.04em;text-transform:uppercase;background:#F8FAFC">📅 Échéance ${label}</td></tr>`
+            +mgrp.map((i:any)=>rowActive(i,late)).join("")
+            +monthSubtotal(mgrp,label,monthColor,monthBg);
+        }).join("");
+      };
       rows=sectionHeader(`🔴 ÉCHUES (${overdueItems.length})`,"#B91C1C","#FEE2E2")
-        +overdueItems.map((i:any)=>rowActive(i,true)).join("")
-        +(overdueItems.length>0?sectionTotal(overdueItems,"Échues","#B91C1C","#FFF0F0"):"")
+        +byDueMonth(overdueItems,true,"#B91C1C","#FFF0F0")
+        +(overdueItems.length>0?sectionTotal(overdueItems,"ÉCHUES","#B91C1C","#FEE2E2"):"")
         +sectionHeader(`🔵 EN COURS D'ÉCHÉANCE (${pendingItems.length})`,"#1D4ED8","#DBEAFE")
-        +pendingItems.map((i:any)=>rowActive(i,false)).join("")
+        +byDueMonth(pendingItems,false,"#1D4ED8","#EFF6FF")
         +(pendingItems.length>0?sectionTotal(pendingItems,"En cours","#1D4ED8","#EFF6FF"):"")
         +`<tr style="background:#0D1B2A;font-weight:800;font-size:12px"><td colspan="8" style="text-align:right;padding:9px 10px;color:#fff">TOTAL FACTURES ACTIVES (${items.length})</td><td style="text-align:right;padding:9px 10px;color:#fff">${fmt(items.reduce((s:number,i:any)=>s+i.rem,0))} €</td></tr>`;
       printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>Invoice #</th><th>Date</th><th>Échéance</th><th>Délai</th><th>Montant (€)</th><th>Payé (€)</th><th>Reste (€)</th></tr>",rows,`Photo actuelle au ${fmtD(todayStr())} — toutes factures non soldées, non limité à une période`);
