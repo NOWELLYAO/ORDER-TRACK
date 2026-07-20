@@ -3490,49 +3490,64 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
 function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,onClose}:any){
   const[items,setItems]=useState<any[]>([]);
   const[processing,setProcessing]=useState(false);
+  const[globalError,setGlobalError]=useState("");
   const fileRef=useRef<HTMLInputElement>(null);
 
-  const processFiles=async(files:FileList)=>{
-    setProcessing(true);
-    const newItems:any[]=[];
-    for(const file of Array.from(files)){
-      try{
-        let rows:any[][]=[];
-        let lines:any[]=[];
-        if(file.name.toLowerCase().endsWith(".pdf")){
-          rows=await extractPdfRows(file);
-          lines=parsePoLinesFromRows(rows).map(l=>({pn:l.pn,desc:l.desc,qtyInvoiced:l.qty,unitPrice:l.unitPrice}));
-        } else {
-          rows=await parseExcel(file);
-          const{headerIdx,colMap}=findHeaderRow(rows);
-          lines=rows.slice(headerIdx+1)
-            .filter((r:any[])=>r.some((x:any)=>x!==null&&x!==undefined&&x!==""))
-            .map((r:any[])=>({
-              pn:String(colMap.pn>=0?r[colMap.pn]:"").trim(),
-              desc:String(colMap.desc>=0?r[colMap.desc]:"").trim(),
-              qtyInvoiced:colMap.qty>=0?(+r[colMap.qty]||1):1,
-              unitPrice:colMap.price>=0?round2(+r[colMap.price]||0):0,
-            }))
-            .filter((l:any)=>(l.pn||l.desc)&&!isJunkRowLabel(l.pn||l.desc));
-        }
-        const meta=extractInvoiceMetaFromRows(rows);
-        const amount=round2(lines.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0));
-        newItems.push({_id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,fileName:file.name,
-          invoiceNumber:meta.invoiceNumber||"",date:meta.date||todayStr(),amount:amount>0?amount:"",lines,error:null});
-      }catch(err){
-        console.warn("[Bulk invoice import]",err);
-        newItems.push({_id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,fileName:file.name,
-          invoiceNumber:"",date:todayStr(),amount:"",lines:[],error:"Extraction impossible — complète manuellement ou retire ce fichier."});
+  const processOneFile=async(file:File):Promise<any>=>{
+    try{
+      let rows:any[][]=[];
+      let lines:any[]=[];
+      if(file.name.toLowerCase().endsWith(".pdf")){
+        rows=await extractPdfRows(file);
+        lines=parsePoLinesFromRows(rows).map(l=>({pn:l.pn,desc:l.desc,qtyInvoiced:l.qty,unitPrice:l.unitPrice}));
+      } else {
+        rows=await parseExcel(file);
+        const{headerIdx,colMap}=findHeaderRow(rows);
+        lines=rows.slice(headerIdx+1)
+          .filter((r:any[])=>r.some((x:any)=>x!==null&&x!==undefined&&x!==""))
+          .map((r:any[])=>({
+            pn:String(colMap.pn>=0?r[colMap.pn]:"").trim(),
+            desc:String(colMap.desc>=0?r[colMap.desc]:"").trim(),
+            qtyInvoiced:colMap.qty>=0?(+r[colMap.qty]||1):1,
+            unitPrice:colMap.price>=0?round2(+r[colMap.price]||0):0,
+          }))
+          .filter((l:any)=>(l.pn||l.desc)&&!isJunkRowLabel(l.pn||l.desc));
       }
+      const meta=extractInvoiceMetaFromRows(rows);
+      const amount=round2(lines.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0));
+      return{_id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,fileName:file.name,
+        invoiceNumber:meta.invoiceNumber||"",date:meta.date||todayStr(),amount:amount>0?amount:"",lines,error:null};
+    }catch(err){
+      console.warn("[Bulk invoice import]",file.name,err);
+      return{_id:`${Date.now()}_${Math.random().toString(36).slice(2,8)}`,fileName:file.name,
+        invoiceNumber:"",date:todayStr(),amount:"",lines:[],error:"Extraction impossible — complète manuellement ou retire ce fichier."};
     }
-    setItems(prev=>[...prev,...newItems]);
-    setProcessing(false);
+  };
+
+  const processFiles=async(fileArray:File[])=>{
+    setGlobalError("");
+    setProcessing(true);
+    try{
+      // Processed one at a time, added to the list as each one finishes —
+      // gives immediate visual feedback and means a slow/stuck file never
+      // makes it LOOK like nothing is happening.
+      for(const file of fileArray){
+        const item=await processOneFile(file);
+        setItems(prev=>[...prev,item]);
+      }
+    }catch(err:any){
+      console.error("[Bulk invoice import] unexpected failure",err);
+      setGlobalError("Une erreur inattendue a interrompu le traitement : "+(err?.message||String(err))+". Les fichiers déjà traités restent listés ci-dessous ; réessaie pour les autres.");
+    }finally{
+      setProcessing(false);
+    }
   };
 
   const handleFiles=(e:any)=>{
-    const files=e.target.files;
+    const fileArray=e.target.files?Array.from(e.target.files) as File[]:[];
     if(e.target)e.target.value="";
-    if(files&&files.length)processFiles(files);
+    if(fileArray.length===0){setGlobalError("Aucun fichier détecté dans la sélection — réessaie.");return;}
+    processFiles(fileArray);
   };
   const updateItem=(id:string,field:string,val:any)=>setItems(prev=>prev.map(it=>it._id===id?{...it,[field]:val}:it));
   const removeItem=(id:string)=>setItems(prev=>prev.filter(it=>it._id!==id));
@@ -3570,6 +3585,9 @@ function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,o
         </button>
         <div style={{fontSize:11,color:C.t3,marginTop:6}}>Chaque fichier devient une facture séparée. N°, date, montant et lignes sont détectés automatiquement — vérifie chaque fichier avant de valider.</div>
       </div>
+      {globalError&&<div style={{background:C.redL,border:`1px solid ${C.red}`,borderRadius:C.rSm,padding:"8px 12px",marginBottom:10,fontSize:11,color:C.redDk,display:"flex",alignItems:"center",gap:6}}>
+        <i className="ti ti-alert-triangle" style={{fontSize:14}} aria-hidden="true"/>{globalError}
+      </div>}
       {withDupInfo.length===0?(
         <div style={{textAlign:"center",color:C.t3,fontSize:12,padding:24,border:`1px dashed ${C.b}`,borderRadius:C.rSm}}>Aucun fichier sélectionné pour l'instant.</div>
       ):(
