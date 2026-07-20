@@ -7087,7 +7087,7 @@ const SEGMENT_LABELS:Record<string,string>={
 const PRODUCT_TYPE_RULES=[
   // ── DBS — Domestic Building Services ──
   {code:"JP",   label:"JP — Surpresseur domestique",segment:"DBS"},
-  {code:"SCALA",label:"SCALA — Surpresseur domestique",segment:"DBS"},
+  {code:"SCALA",label:"SCALA — Surpresseur domestique (remplace MQ, discontinué)",segment:"DBS"},
   {code:"UNILIFT",label:"Unilift — Relevage domestique",segment:"DBS"},
   {code:"GT",   label:"GT — Réservoir/vase (accessoire DBS)",segment:"DBS"},
   // ── CBS — Commercial Building Services ──
@@ -7101,14 +7101,6 @@ const PRODUCT_TYPE_RULES=[
   {code:"TPE",  label:"TPE/TPED — Circulateur in-line électronique",segment:"CBS"},
   {code:"TPD",  label:"TPD — Circulateurs in-line jumelés",segment:"CBS"},
   {code:"TP",   label:"TP — Circulateurs in-line",segment:"CBS"},
-  {code:"NBGE", label:"NBGE — Monocellulaire électronique (bride)",segment:"CBS"},
-  {code:"NBG",  label:"NBG — Monocellulaire (bride)",segment:"CBS"},
-  {code:"NBE",  label:"NBE — Monocellulaire électronique",segment:"CBS"},
-  {code:"NB",   label:"NB — Pompes monocellulaires",segment:"CBS"},
-  {code:"NKGE", label:"NKGE — Monocellulaire longue électronique (bride)",segment:"CBS"},
-  {code:"NKG",  label:"NKG — Monocellulaire longue (bride)",segment:"CBS"},
-  {code:"NKE",  label:"NKE — Monocellulaire longue électronique",segment:"CBS"},
-  {code:"NK",   label:"NK — Monocellulaire longue",segment:"CBS"},
   {code:"LSV",  label:"LSV — Pompes à volute (split case)",segment:"CBS"},
   {code:"LS",   label:"LS — Pompes à volute (split case)",segment:"CBS"},
   {code:"HS",   label:"HS — Pompes à volute (split case)",segment:"CBS"},
@@ -7123,27 +7115,22 @@ const PRODUCT_TYPE_RULES=[
   {code:"CR",   label:"CR — Multicellulaire verticale",segment:"IND"},
   {code:"CMFAM",label:"CM & CMBE — Multicellulaire horizontale",segment:"IND"},
   {code:"BM",   label:"BM — Pompe haute pression (booster/RO)",segment:"IND"},
-  {code:"DMH",  label:"DMH — Doseuse hydraulique à membrane",segment:"IND"},
-  {code:"DME",  label:"DME — Doseuse électromagnétique",segment:"IND"},
-  {code:"DMI",  label:"DMI — Pompe doseuse",segment:"IND"},
-  {code:"DMX",  label:"DMX — Pompe doseuse",segment:"IND"},
-  {code:"DDA",  label:"DDA — Doseuse digitale",segment:"IND"},
-  {code:"DDC",  label:"DDC — Doseuse digitale",segment:"IND"},
-  {code:"DDE",  label:"DDE — Doseuse digitale",segment:"IND"},
+  {code:"DOSMECH",label:"DOSING MECHANIC PUMPS — Doseuses mécaniques (DMH/DMX)",segment:"IND"},
+  {code:"DOSDIGI",label:"DOSING DIGITAL PUMPS — Doseuses digitales (DDA/DDC/DDE)",segment:"IND"},
   {code:"CONEX",label:"Conex — Contrôleurs/dosage",segment:"IND"},
   {code:"OXIPERM",label:"Oxiperm — Traitement/désinfection",segment:"IND"},
   {code:"SELCOPERM",label:"Selcoperm — Traitement/désinfection",segment:"IND"},
-  {code:"MQ",   label:"MQ — Groupe hydrophore compact",segment:"IND"},
   {code:"SBA",  label:"SBA — Surpression",segment:"IND"},
   {code:"SB",   label:"SB — Surpression",segment:"IND"},
   {code:"CONTROLS",label:"CONTROLS — CUE, MP204, LC, MPC",segment:"IND"},
   // ── WU — Water Utility (réseaux & eaux usées) ──
-  {code:"SQE",  label:"SQE — Submersible pilotée",segment:"WU"},
-  {code:"SQ",   label:"SQ — Pompes submersibles (petit diamètre)",segment:"WU"},
-  {code:"SP",   label:"SP — Pompes submersibles (eau propre/forage)",segment:"WU"},
+  {code:"SQE",  label:"SQE — Submersible pilotée",segment:"WU",note:"WU — Water Utility (Forage, Vitesse variable)"},
+  {code:"NB/NK_FAM",label:"NB/NBG/NK/NKG (+E) — Monocellulaires",segment:"WU"},
+  {code:"SQ",   label:"SQ — Pompes submersibles (petit diamètre)",segment:"WU",note:"WU — Water Utility (Forage, puits)"},
+  {code:"SP",   label:"SP — Pompes submersibles (eau propre/forage)",segment:"WU",note:"WU — Water Utility (Forage)"},
   {code:"MOTORS",label:"MMS & MS — Moteurs submersibles",segment:"WU"},
-  {code:"SOLARPUMP",label:"SOLAR PUMPS — Pompage solaire (SQF/CRIF)",segment:"WU"},
-  {code:"SOLARACC",label:"SOLAR ACCESSORIES — Accessoires solaires (RSI/CU)",segment:"WU"},
+  {code:"SOLAR_PUMP",label:"SOLAR PUMPS — Pompage solaire (SQF/CRIF)",segment:"WU",note:"WU — Water Utility (Solaire)"},
+  {code:"SOLAR_ACC",label:"SOLAR ACCESSORIES — Accessoires solaires (RSI/CU)",segment:"WU",note:"WU — Water Utility (Solaire)"},
   {code:"SEG",  label:"SEG — Relevage broyeuse",segment:"WU"},
   {code:"SLV",  label:"SLV — Relevage vortex",segment:"WU"},
   {code:"SL",   label:"SL — Relevage",segment:"WU"},
@@ -7159,7 +7146,7 @@ const PRODUCT_TYPE_RULES=[
 ];
 // Merged/group codes above absorb several raw prefixes (e.g. "CMFAM" covers
 // both CM and CMBE tokens, "MOTORS" covers both MMS and MS, "CONTROLS"
-// covers CUE/MP/MP204/CP/LC/LCD/MPC, "SOLARPUMP" covers SQF/SQFLEX/CRIF) —
+// covers CUE/MP/MP204/CP/LC/LCD/MPC, "SOLAR_PUMP" covers SQF/SQFLEX/CRIF) —
 // grouped per the user's own catalogue documents (CM_CMBE.pdf,
 // Controls_CUE_MP204_LC_MPC.pdf, SOLAR_PUMPS.pdf) rather than kept as
 // separate technical series. rawPrefixes lists every token pattern that
@@ -7168,16 +7155,20 @@ const MERGED_PREFIX_MAP:Record<string,string[]>=(()=>{
   const specificity=(p:string)=>p.length;
   return{
     CMFAM:["CMBE","CM"].sort((a,b)=>specificity(b)-specificity(a)),
+    SCALA:["SCALA","MQ"].sort((a,b)=>specificity(b)-specificity(a)),
+    "NB/NK_FAM":["NBGE","NBG","NBE","NB","NKGE","NKG","NKE","NK"].sort((a,b)=>specificity(b)-specificity(a)),
+    DOSMECH:["DMH","DMX"].sort((a,b)=>specificity(b)-specificity(a)),
+    DOSDIGI:["DDA","DDC","DDE"].sort((a,b)=>specificity(b)-specificity(a)),
     MOTORS:["MMS","MS"].sort((a,b)=>specificity(b)-specificity(a)),
     CONTROLS:["MP204","CUE","MPC","LCD","LC","MP","CP"].sort((a,b)=>specificity(b)-specificity(a)),
-    SOLARPUMP:["SQFLEX","SQF","CRIF"].sort((a,b)=>specificity(b)-specificity(a)),
-    SOLARACC:["RSI","CU"].sort((a,b)=>specificity(b)-specificity(a)),
+    SOLAR_PUMP:["SQFLEX","SQF","CRIF"].sort((a,b)=>specificity(b)-specificity(a)),
+    SOLAR_ACC:["RSI","CU"].sort((a,b)=>specificity(b)-specificity(a)),
   };
 })();
 const UNCLASSIFIED_TYPE={code:"AUTRE",label:"Autres / non classé",segment:""};
 const ACCESSORY_TYPE={code:"ACCESS",label:"ACCESS — Accessoires & pièces détachées",segment:"SERV"};
-const DOSING_ACCESSORY_TYPE={code:"DOSACC",label:"DOSING ACCESSORIES — Accessoires de dosage",segment:"IND"};
-const SOLAR_ACCESSORY_TYPE={code:"SOLARACC",label:"SOLAR ACCESSORIES — Accessoires solaires (SQFlex)",segment:"WU"};
+const DOSING_ACCESSORY_TYPE={code:"DOS_ACC",label:"DOSING ACCESSORIES — Accessoires de dosage",segment:"IND"};
+const SOLAR_ACCESSORY_TYPE={code:"SOLAR_ACC",label:"SOLAR ACCESSORIES — Accessoires solaires (SQFlex)",segment:"WU",note:"WU — Water Utility (Solaire)"};
 // Fallback keyword buckets, split to match the user's own catalogue
 // documents (ACCESS.pdf/ACESS_2.pdf, Dosing_Accessories.pdf,
 // SOLAR_ACCESSORIES.pdf) instead of one generic "Accessoires" bucket —
