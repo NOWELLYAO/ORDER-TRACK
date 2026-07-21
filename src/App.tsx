@@ -3405,7 +3405,7 @@ function CustomerModal({name,cfg,defaultTermId,onSave,onClose,lang="fr"}:any){
 function OrderModal({client,order,onSave,onClose,lang="fr"}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const isCimelec=client==="CIMELEC";
-  const[f,setF]=useState({date:order?.date||todayStr(),poNumber:order?.poNumber||"",soNumber:order?.soNumber||"",orderNumber:order?.orderNumber||"",amount:order?.amount||"",status:order?.status||"attente_fdi",deliveryMode:order?.deliveryMode||"Transitaire FCA",expectedDate:order?.expectedDate||"",notes:order?.notes||"",id:order?.id});
+  const[f,setF]=useState({date:order?.date||todayStr(),poNumber:order?.poNumber||"",soNumber:order?.soNumber||"",orderNumber:order?.orderNumber||"",amount:order?.amount||"",status:order?.status||"en_cours",deliveryMode:order?.deliveryMode||"Transitaire FCA",expectedDate:order?.expectedDate||"",notes:order?.notes||"",id:order?.id});
   const s=(k:string,v:any)=>setF(p=>({...p,[k]:v}));
   return(
     <Modal title={order?tr("edit_order"):tr("new_order")} sub={client} width={560} onClose={onClose}
@@ -3947,11 +3947,19 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
 
   return(
     <div key={order.id} id={`order-${order.id}`}
-      style={{background:"#fff",borderRadius:C.rLg,boxShadow:focusOrderId===order.id?`0 0 0 3px ${C.blue}40,${C.shMd}`:C.sh,border:`1px solid ${focusOrderId===order.id?C.blue:nbEchues>0?C.red+"50":nbUpcoming>0?C.amber+"40":C.b}`,overflow:"hidden",transition:"box-shadow .2s,border-color .2s"}}
+      style={{background:"#fff",borderRadius:C.rLg,boxShadow:focusOrderId===order.id?`0 0 0 3px ${C.blue}40,${C.shMd}`:isExp?C.shMd:C.sh,
+        border:`1px solid ${focusOrderId===order.id?C.blue:isExp?C.blue+"70":nbEchues>0?C.red+"50":nbUpcoming>0?C.amber+"40":C.b}`,
+        borderLeft:`4px solid ${isExp?C.blue:nbEchues>0?C.red:nbUpcoming>0?C.amber:"transparent"}`,
+        overflow:"hidden",transition:"box-shadow .2s,border-color .2s"}}
       onMouseEnter={(e:any)=>e.currentTarget.style.boxShadow=C.shMd}
-      onMouseLeave={(e:any)=>e.currentTarget.style.boxShadow=focusOrderId===order.id?`0 0 0 3px ${C.blue}40,${C.shMd}`:C.sh}>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",flexWrap:"wrap"}} onClick={()=>{tgl(order.id);if(focusOrderId===order.id&&onClearFocus)onClearFocus();}}>
-        <i className={`ti ${isExp?"ti-chevron-down":"ti-chevron-right"}`} style={{fontSize:15,color:C.t3,flexShrink:0}} aria-hidden="true"/>
+      onMouseLeave={(e:any)=>e.currentTarget.style.boxShadow=focusOrderId===order.id?`0 0 0 3px ${C.blue}40,${C.shMd}`:isExp?C.shMd:C.sh}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",flexWrap:"wrap",background:isExp?C.blueL+"90":"transparent",transition:"background .15s"}} onClick={()=>{tgl(order.id);if(focusOrderId===order.id&&onClearFocus)onClearFocus();}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+          <span style={{display:"flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:6,background:isExp?C.blue:"#F1F5F9",transition:"background .15s"}}>
+            <i className={`ti ${isExp?"ti-chevron-down":"ti-chevron-right"}`} style={{fontSize:13,color:isExp?"#fff":C.t3}} aria-hidden="true"/>
+          </span>
+          {isExp&&<span style={{fontSize:9,fontWeight:800,color:C.blueDk,background:"#fff",padding:"2px 7px",borderRadius:99,letterSpacing:".04em",whiteSpace:"nowrap"}}>OUVERTE</span>}
+        </div>
         <div style={{flex:"1 1 420px",display:"grid",gridTemplateColumns:client==="CIMELEC"?"1.2fr 0.9fr 0.9fr 0.9fr 1.1fr 1fr 1fr":"1.4fr 1fr 1fr 1.2fr 1.1fr 1.1fr",gap:10,alignItems:"center",minWidth:0}}>
           <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>PO #</div><div style={{fontWeight:700,fontSize:13,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{order.poNumber||"—"}</div></div>
           <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>S/O</div><div style={{fontSize:12,color:C.t2}}>{order.soNumber||"—"}</div></div>
@@ -4033,8 +4041,11 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
               if(onSaveOrder)onSaveOrder(upd);else onEditOrder(upd);
             }}
           />
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-            <h4 style={{margin:0,fontSize:13,fontWeight:700,color:C.t1}}>Expéditions & Factures</h4>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,paddingTop:16,borderTop:`1px solid ${C.b}`}}>
+            <h4 style={{margin:0,fontSize:13,fontWeight:700,color:C.t1,display:"flex",alignItems:"center",gap:6}}>
+              <i className="ti ti-receipt-2" style={{fontSize:15,color:C.teal}} aria-hidden="true"/> Expéditions & Factures
+              {(order.invoices||[]).length>0&&<span style={{background:C.tealL,color:C.teal,borderRadius:99,fontSize:10,padding:"1px 8px",fontWeight:700}}>{(order.invoices||[]).length}</span>}
+            </h4>
             <div style={{display:"flex",gap:6}}>
               {perms?.canEdit&&<Btn icon="ti-plus" label="Ajouter facture" onClick={()=>onAddInv(order)} variant="success" small/>}
               {perms?.canEdit&&onAddBulkInv&&<Btn icon="ti-files" label="Importer plusieurs" onClick={()=>onAddBulkInv(order)} variant="ghost" small/>}
@@ -4046,21 +4057,26 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {(order.invoices||[]).map((inv:any)=>{
                 const ps=payStatus(inv);const paidAmt=ps.paid;const pctPay=+inv.amount>0?Math.min(100,paidAmt/+inv.amount*100):0;
+                const isOverdue=ps.key.startsWith("over")||ps.key==="today";
+                const isSoon=ps.key==="soon"||ps.key==="soon_part";
+                const isPaid=ps.key==="paid";
+                const accentC=isOverdue?C.red:isSoon?C.amber:isPaid?C.green:C.teal;
+                const rowBg=isOverdue?"#FFFBFB":isSoon?"#FFFDF7":isPaid?"#F8FFF9":"#fff";
                 return(
-                  <div key={inv.id} style={{background:"#fff",borderRadius:C.r,border:`1px solid ${ps.key.startsWith("over")||ps.key==="today"?C.red+"50":C.b}`,overflow:"hidden"}}>
-                    <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr 1.2fr 1fr 1.5fr auto",gap:10,alignItems:"center",padding:"12px 14px"}}>
-                      <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Invoice #</div><div style={{fontWeight:700,fontSize:13,color:C.purple,display:"flex",alignItems:"center",gap:6}}>{inv.invoiceNumber||"—"}
+                  <div key={inv.id} style={{background:rowBg,borderRadius:C.r,border:`1px solid ${isOverdue?C.red+"50":C.b}`,borderLeft:`4px solid ${accentC}`,overflow:"hidden"}}>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:16,alignItems:"center",padding:"12px 14px"}}>
+                      <div style={{minWidth:130}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Invoice #</div><div style={{fontWeight:700,fontSize:13,color:C.purple,display:"flex",alignItems:"center",gap:6}}>{inv.invoiceNumber||"—"}
                         {inv.imported&&<span title="Créée depuis un fichier importé (PDF/Excel), pas de saisie manuelle" style={{display:"flex",alignItems:"center",gap:3,fontSize:9,fontWeight:700,color:C.blueDk,background:C.blueL,padding:"2px 6px",borderRadius:99}}><i className="ti ti-file-upload" style={{fontSize:10}} aria-hidden="true"/>Importé</span>}
                       </div></div>
-                      <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Date</div><div style={{fontSize:12,color:C.t2}}>{fmtD(inv.date)}</div></div>
-                      <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Montant</div><div style={{fontWeight:700,fontSize:13,color:C.teal}}>{fmt(inv.amount)} €</div></div>
-                      <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Échéance</div><div style={{fontSize:12,color:inv.dueDate?C.t2:C.t3}}>{fmtD(inv.dueDate)}</div></div>
-                      <div>
+                      <div style={{minWidth:80}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Date</div><div style={{fontSize:12,color:C.t2}}>{fmtD(inv.date)}</div></div>
+                      <div style={{minWidth:90}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Montant</div><div style={{fontWeight:700,fontSize:13,color:C.teal}}>{fmt(inv.amount)} €</div></div>
+                      <div style={{minWidth:80}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Échéance</div><div style={{fontSize:12,color:inv.dueDate?C.t2:C.t3}}>{fmtD(inv.dueDate)}</div></div>
+                      <div style={{minWidth:130}}>
                         <div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Paiement</div>
                         <Tag label={ps.label} c={ps.color} bg={ps.bg} sm/>
                         <div style={{height:3,background:"#F1F5F9",borderRadius:99,marginTop:4,width:120}}><div style={{height:"100%",width:`${pctPay}%`,background:ps.color,borderRadius:99}}/></div>
                       </div>
-                      <div style={{display:"flex",gap:4}}>
+                      <div style={{display:"flex",gap:4,marginLeft:"auto",flexWrap:"wrap"}}>
                         <IBtn icon="ti-file-type-pdf" title="Facture PDF" c={C.red} bg={C.redL} onClick={()=>printInvoiceDoc(inv,order,client)}/>
                         <IBtn icon="ti-file-spreadsheet" title="Facture Excel" c={C.green} bg={C.greenL} onClick={()=>exportInvoiceExcel(inv,order,client)}/>
                         <IBtn icon="ti-chart-pie" title="Analyse par type de produit" c={C.purple} bg={C.purpleL} onClick={()=>printProductTypeAnalysis(`${client} — Facture ${inv.invoiceNumber||"—"}`,inv.date?fmtD(inv.date):"—",
