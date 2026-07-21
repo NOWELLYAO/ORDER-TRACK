@@ -1069,6 +1069,19 @@ export default function App(){
     setTargets(next);
     try{await saveTargetsCloud(next);}catch(e){console.warn("[targets] save failed",e);}
   };
+  const[scoreNotes,setScoreNotes]=useState<any>(()=>loadScoreNotesLocal()||{});
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const cloud=await loadScoreNotesCloud();
+        if(cloud)setScoreNotes(cloud);
+      }catch(e){console.warn("[scoreNotes] load failed",e);}
+    })();
+  },[]);
+  const saveScoreNotes=async(next:any)=>{
+    setScoreNotes(next);
+    try{await saveScoreNotesCloud(next);}catch(e){console.warn("[scoreNotes] save failed",e);}
+  };
   const logout=()=>{localStorage.removeItem(AUTH_KEY);setSession(null);};
   const[configs,setConfigs]=useState<Record<string,any>>({});
   const[modal,setModal]=useState<any>(null);
@@ -1417,7 +1430,17 @@ export default function App(){
       if(over.length>0)_overInv.push({po:o.poNumber,client:o._client,items:over.map((l:any)=>l.pn)});
     });
     if(_overInv.length>0) alerts.push({level:"warning",icon:"ti-alert-triangle",text:`${_overInv.length} commande${_overInv.length>1?"s":""} avec écart articles/facturation`,detail:_overInv.map(o=>`${o.client} ${o.po} (${o.items.join(", ")})`).join(" · ")});
-    return alerts.slice(0,6);
+
+    // P7 — Articles dont la date de disponibilité est dépassée sans être soldés
+    const todayMid2=(()=>{const d=new Date();d.setHours(0,0,0,0);return d;})();
+    const _lateItems:{po:string,client:string,items:string[]}[]=[];
+    _allOrders.forEach((o:any)=>{
+      if(!(o.lines||[]).length||o.status==="annule")return;
+      const late=orderLineCoverage(o).filter((l:any)=>l.availDate&&l.qtyRemaining>0&&new Date(l.availDate+"T00:00:00")<todayMid2);
+      if(late.length>0)_lateItems.push({po:o.poNumber,client:o._client,items:late.map((l:any)=>l.pn)});
+    });
+    if(_lateItems.length>0) alerts.push({level:"critical",icon:"ti-calendar-exclamation",text:`${_lateItems.length} commande${_lateItems.length>1?"s":""} avec article(s) en retard de disponibilité`,detail:_lateItems.map(o=>`${o.client} ${o.po} (${o.items.join(", ")})`).join(" · ")});
+    return alerts.slice(0,7);
   };
   const tickerAlerts=globalAlerts();
 
@@ -1577,7 +1600,7 @@ export default function App(){
           </div>
         )}
         <main style={{flex:1,overflow:"auto",padding:isMobile?"16px":"28px 32px"}}>
-        {page==="kpi"&&<KpiPage clients={visibleClients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrdersScoped} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} canExport={perms.canExport} isAdmin={isAdmin} targets={targets}/>}
+        {page==="kpi"&&<KpiPage clients={visibleClients} data={data} configs={configs} getStats={getStats} getAllOrders={getAllOrdersScoped} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} canExport={perms.canExport} isAdmin={isAdmin} targets={targets} scoreNotes={scoreNotes}/>}
         {page==="dashboard"&&<CompilPage getStats={getStats} clients={visibleClients} configs={configs} setPage={setPage} setModal={setModal} selYear={selYear} setSelYear={setSelYear} lang={lang} isMobile={isMobile} isAdmin={isAdmin} targets={targets} getAllOrders={getAllOrdersScoped}/>}
         {page==="tresorerie"&&<TresoreriePage getAllOrders={getAllOrdersScoped} clients={visibleClients} lang={lang} isMobile={isMobile}/>}
         {page==="rapport"&&!restrictedClient&&perms.canViewReports&&<WeeklyReportPage getAllOrders={getAllOrders} clients={clients} data={data} configs={configs} lang={lang} isMobile={isMobile}/>}
@@ -1589,7 +1612,7 @@ export default function App(){
         {!special.includes(page)&&(!restrictedClient||page===restrictedClient)&&(
           <CustomerPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
-            perms={perms} isAdmin={isAdmin} targets={targets} selYear={selYear}
+            perms={perms} isAdmin={isAdmin} targets={targets} selYear={selYear} scoreNotes={scoreNotes}
             onSaveOrder={perms.canEdit?(f:any)=>saveOrder(page,f):deny}
             onAdd={perms.canEdit?()=>setModal({type:"order",client:page}):deny}
             onEditOrder={perms.canEdit?(o:any)=>setModal({type:"order",client:page,order:o}):deny}
@@ -1625,6 +1648,8 @@ export default function App(){
           {modal.type==="payment"&&<PaymentModal invoice={modal.invoice} payment={modal.payment} lang={lang} onSave={(f:any)=>savePayment(modal.client,modal.order.id,modal.invoice.id,f)} onClose={()=>setModal(null)}/>}
           {modal.type==="report"&&<ReportModal clients={visibleClients} data={data} configs={configs} lang={lang} isAdmin={isAdmin} onClose={()=>setModal(null)}/>}
           {modal.type==="targets"&&<TargetsModal clients={visibleClients} targets={targets} year={selYear} onSave={saveTargets} onClose={()=>setModal(null)}/>}
+          {modal.type==="score_motifs"&&<ClientScoreMotifsModal client={modal.client} breakdown={modal.breakdown} savedNotes={scoreNotes?.[modal.client]}
+            onSave={async(client:string,note:any)=>saveScoreNotes({...scoreNotes,[client]:note})} onClose={()=>setModal(null)}/>}
         </div>
       )}
     </div>
@@ -1725,7 +1750,7 @@ function AlertTicker({alerts,lang="fr"}:any){
 }
 
 // ─── KPI PAGE ────────────────────────────────────────────────────────────────
-function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,selYear,setSelYear,lang="fr",isMobile=false,canExport=true,isAdmin=true,targets}:any){
+function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,selYear,setSelYear,lang="fr",isMobile=false,canExport=true,isAdmin=true,targets,scoreNotes}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[simDso,setSimDso]=useState<number|null>(null);
   const all=getAllOrders();
@@ -1864,7 +1889,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
     const growthComponent=Math.max(0,Math.min(100,50+c.intel.growthRate));
     const cadenceComponent=c.intel.reorderStatus==="overdue"?20:c.intel.reorderStatus==="due_soon"?60:c.intel.reorderStatus==="on_track"?100:70;
     const composite=Math.round(paymentComponent*0.5+growthComponent*0.25+cadenceComponent*0.25);
-    return{name:c.name,composite};
+    return{name:c.name,composite,paymentComponent,growthComponent,cadenceComponent,risk:c.risk,intel:c.intel};
   }).sort((a:any,b:any)=>a.composite-b.composite);
 
   // Statistical outliers: orders well above a client's own historical average
@@ -2349,7 +2374,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
                   <div style={{fontSize:10,color:C.t3,marginBottom:8}}>{meta.desc}</div>
                   <div style={{display:"flex",flexDirection:"column",gap:3,maxHeight:110,overflowY:"auto"}}>
                     {list.slice(0,6).map((c:any)=>(
-                      <div key={c.name} onClick={()=>setPage(c.name)} style={{display:"flex",justifyContent:"space-between",fontSize:11,cursor:"pointer",background:"#fff",borderRadius:4,padding:"3px 8px"}}>
+                      <div key={c.name} onClick={()=>setPage(c.name)}
+                        title={`Croissance 6 mois : ${c.intel.growthRate>=0?"+":""}${c.intel.growthRate}% (seuil de classification : ≥10%)\nChiffre d'affaires 12 mois : ${fmt(c.intel.monetary)} € (médiane du portefeuille : ${fmt(medianMonetary)} €)\n→ Classé "${BCG_META[c.quadrant].label}" car ${c.intel.growthRate>=10?"croissance ≥10%":"croissance <10%"} et CA ${c.intel.monetary>=medianMonetary?"≥":"<"} médiane.`}
+                        style={{display:"flex",justifyContent:"space-between",fontSize:11,cursor:"pointer",background:"#fff",borderRadius:4,padding:"3px 8px"}}>
                         <span style={{fontWeight:600,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:110}}>{c.name}</span>
                         <span style={{color:C.t3}}>{fmtK(c.intel.monetary)} €</span>
                       </div>
@@ -2392,12 +2419,18 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
               <div style={{fontSize:10.5,color:C.t3,marginBottom:12}}>Fiabilité de paiement (50%) + dynamique commerciale (25%) + cadence de commande (25%)</div>
               <div style={{display:"flex",flexDirection:"column",gap:7}}>
                 {healthScores.slice(0,8).map((h:any)=>(
-                  <div key={h.name} onClick={()=>setPage(h.name)} style={{cursor:"pointer"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
-                      <span style={{fontWeight:600,color:C.t1}}>{h.name}</span>
-                      <span style={{fontWeight:700,color:h.composite>=70?C.greenDk:h.composite>=45?C.amberDk:C.redDk}}>{h.composite}/100</span>
+                  <div key={h.name}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,marginBottom:3}}>
+                      <span onClick={()=>setPage(h.name)} style={{fontWeight:600,color:C.t1,cursor:"pointer"}}>{h.name}</span>
+                      <span style={{display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{fontWeight:700,color:h.composite>=70?C.greenDk:h.composite>=45?C.amberDk:C.redDk}}>{h.composite}/100</span>
+                        <button onClick={()=>setModal({type:"score_motifs",client:h.name,breakdown:h})} title="Voir les motifs qui expliquent ce score"
+                          style={{display:"flex",alignItems:"center",gap:3,background:(scoreNotes?.[h.name]?.caveats?.length>0)?C.blueL:"#F1F5F9",color:(scoreNotes?.[h.name]?.caveats?.length>0)?C.blueDk:C.t2,border:"none",borderRadius:99,padding:"2px 8px",fontSize:9,fontWeight:700,cursor:"pointer"}}>
+                          <i className="ti ti-info-circle" style={{fontSize:11}} aria-hidden="true"/> Motifs{scoreNotes?.[h.name]?.caveats?.length>0?` (${scoreNotes[h.name].caveats.length})`:""}
+                        </button>
+                      </span>
                     </div>
-                    <div style={{height:6,background:"#F1F5F9",borderRadius:99,overflow:"hidden"}}>
+                    <div onClick={()=>setPage(h.name)} style={{height:6,background:"#F1F5F9",borderRadius:99,overflow:"hidden",cursor:"pointer"}}>
                       <div style={{width:`${h.composite}%`,height:"100%",background:h.composite>=70?C.green:h.composite>=45?C.amber:C.red,borderRadius:99}}/>
                     </div>
                   </div>
@@ -3058,7 +3091,7 @@ function computeClientIntelligence(orders:any[]){
     totalOrders:sorted.length,lastOrderDate,tenureDays,guanxiScore,regularityScore,monthsCoverage};
 }
 
-function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onAddBulkInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true,targets,selYear}:any){
+function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onAddBulkInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true,targets,selYear,scoreNotes}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
   const tgl=(id:string)=>setExp(p=>({...p,[id]:!p[id]}));
@@ -3115,7 +3148,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
         <div style={{display:"flex",gap:8}}>
           {perms?.canAddCustomer&&<Btn icon="ti-edit" label="Modifier" onClick={onEditCustomer} variant="ghost"/>}
           {isAdmin&&<Btn icon="ti-trash" label="Supprimer" onClick={onDelCustomer} variant="danger"/>}
-          {isAdmin&&<button onClick={()=>printFinancialAudit(client,orders.map((o:any)=>({...o,_client:client})),{[client]:cfg},getTarget(targets,selYear||new Date().getFullYear(),client),selYear||new Date().getFullYear())}
+          {isAdmin&&<button onClick={()=>printFinancialAudit(client,orders.map((o:any)=>({...o,_client:client})),{[client]:cfg},getTarget(targets,selYear||new Date().getFullYear(),client),selYear||new Date().getFullYear(),scoreNotes?.[client])}
             style={{display:"flex",alignItems:"center",gap:7,background:"#0D1B2A",color:"#fff",border:"none",borderRadius:C.r,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             <i className="ti ti-certificate" style={{fontSize:15}} aria-hidden="true"/> Audit Expert
           </button>}
@@ -4129,13 +4162,18 @@ function PoLinesPanel({order,onSave,canEdit}:any){
     const clean=(draftLines||[])
       .filter((l:any)=>(l.pn&&String(l.pn).trim())||(l.desc&&String(l.desc).trim()))
       .map((l:any)=>{
-        if(l.pn&&String(l.pn).trim())return{...l,pn:String(l.pn).trim()};
+        // Each line defaults to the order's own expected delivery date; if
+        // that hasn't been set either, it's left blank and shown as "TC"
+        // (à confirmer) until someone sets a real date for that line.
+        const availDate=l.availDate!==undefined?l.availDate:(order.expectedDate||"");
+        if(l.pn&&String(l.pn).trim())return{...l,pn:String(l.pn).trim(),availDate};
         miscCounter++;
         let candidate=`DIVERS-${miscCounter}`;
         while(usedPns.has(candidate)){miscCounter++;candidate=`DIVERS-${miscCounter}`;}
         usedPns.add(candidate);
-        return{...l,pn:candidate};
+        return{...l,pn:candidate,availDate};
       });
+
     onSave(clean);
     setDraftLines(null);setImportMsg("");
     const added=await autoAddMissingProducts(clean,"Import bon de commande");
@@ -4202,13 +4240,15 @@ function PoLinesPanel({order,onSave,canEdit}:any){
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead><tr style={{background:"#F8FAFC"}}>
-              {["Part Number","Description","Qté","Prix unit.","Total","Facturé","Restant","Statut",...(canEdit?[""]:[])].map(h=>(
+              {["Part Number","Description","Qté","Prix unit.","Total","Facturé","Restant","Disponibilité","Statut",...(canEdit?[""]:[])].map(h=>(
                 <th key={h} style={{padding:"5px 8px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase",borderBottom:`1px solid ${C.b}`}}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
               {cov.map((l:any,i:number)=>{
                 const si=statusInfo(l.status);
+                const availLate=l.availDate&&l.qtyRemaining>0&&new Date(l.availDate+"T00:00:00")<new Date(new Date().setHours(0,0,0,0));
+                const setAvailDate=(val:string)=>onSave(existingLines.map((x:any,idx:number)=>idx===i?{...x,availDate:val}:x));
                 return(
                 <tr key={i} style={{borderBottom:`1px solid ${C.b}`}}>
                   <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}{l.substitutedBy?.length>0&&<div style={{fontSize:9,color:C.amberDk,fontWeight:600}}>facturé sous {l.substitutedBy.join(", ")}</div>}</td>
@@ -4218,6 +4258,16 @@ function PoLinesPanel({order,onSave,canEdit}:any){
                   <td style={{padding:"5px 8px",color:C.t1,fontWeight:700}}>{fmt((+l.qty||0)*(+l.unitPrice||0))} €</td>
                   <td style={{padding:"5px 8px",color:C.t2}}>{l.qtyInvoiced}</td>
                   <td style={{padding:"5px 8px",color:l.qtyRemaining>0?C.amberDk:C.t3,fontWeight:l.qtyRemaining>0?700:400}}>{l.qtyRemaining}</td>
+                  <td style={{padding:"5px 8px"}}>
+                    {canEdit?(
+                      <input type="date" value={l.availDate||""} onChange={(e:any)=>setAvailDate(e.target.value)}
+                        style={{padding:"3px 5px",border:`1px solid ${availLate?C.red:C.b}`,borderRadius:4,fontSize:10,color:availLate?C.redDk:C.t2,width:118}}/>
+                    ):(
+                      l.availDate?<span style={{color:availLate?C.redDk:C.t2,fontWeight:availLate?700:400}}>{fmtD(l.availDate)}{availLate?" ⚠":""}</span>
+                        :<span style={{background:C.amberL,color:C.amberDk,padding:"2px 7px",borderRadius:99,fontSize:9,fontWeight:700}}>TC — à confirmer</span>
+                    )}
+                    {canEdit&&!l.availDate&&<div style={{fontSize:9,color:C.amberDk,marginTop:2}}>TC — à confirmer</div>}
+                  </td>
                   <td style={{padding:"5px 8px"}}><span style={{background:si.bg,color:si.c,padding:"2px 8px",borderRadius:99,fontSize:10,fontWeight:700}}>{si.label}</span></td>
                   {canEdit&&<td style={{padding:"5px 8px"}}>
                     <button onClick={()=>{if(window.confirm(`Supprimer la ligne ${l.pn} ?`))onSave(existingLines.filter((_:any,idx:number)=>idx!==i));}}
@@ -4231,7 +4281,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
               <td style={{padding:"7px 8px",color:C.t1,fontWeight:800,fontSize:12}}>{fmt(cov.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0))} €</td>
               <td style={{padding:"7px 8px",color:C.t2,fontWeight:700,fontSize:11}}>{fmt(cov.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0))} €</td>
               <td style={{padding:"7px 8px",color:C.amberDk,fontWeight:700,fontSize:11}}>{fmt(cov.reduce((s:number,l:any)=>s+(+l.qtyRemaining||0)*(+l.unitPrice||0),0))} €</td>
-              <td colSpan={canEdit?2:1}></td>
+              <td colSpan={canEdit?3:2}></td>
             </tr></tfoot>
           </table>
         </div>
@@ -5599,7 +5649,13 @@ tr:nth-child(even) td{background:#F8FAFC;}
         return inv<(+o.amount||0)*0.999&&o.status!=="annule";
       }).map((o:any)=>o._client+"|"+o.id)
     );
-    const validPlannedInvoices=plannedInvoices.filter((p:any)=>openOrderKeys.has(p.key));
+    const validPlannedInvoices=plannedInvoices.filter((p:any)=>openOrderKeys.has(p.key)).map((p:any)=>{
+      if(p.auto===false)return{...p,amount:+p.amount||0};
+      const o=allOrders.find((x:any)=>x._client+"|"+x.id===p.key);
+      if(!o)return{...p,amount:+p.amount||0};
+      const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+      return{...p,amount:Math.round(Math.max(0,(+o.amount||0)-inv)*100)/100};
+    });
 
     // ── Auto-generated narrative summary — highlights the week's key facts
     // from the same data already driving the tables below, instead of a
@@ -6274,16 +6330,24 @@ tr:nth-child(even) td{background:#F8FAFC;}
           return inv<(+o.amount||0)*0.999&&o.status!=="annule";
         });
         const openOrderKeysUI=new Set(openOrdersList.map((o:any)=>o._client+"|"+o.id));
-        const totalPlanned=plannedInvoices.filter((p:any)=>openOrderKeysUI.has(p.key)).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+        const getPlannedAmount=(p:any):number=>{
+          if(p.auto===false)return+p.amount||0;
+          const o=allOrders.find((x:any)=>x._client+"|"+x.id===p.key);
+          if(!o)return+p.amount||0;
+          const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+          return Math.round(Math.max(0,(+o.amount||0)-inv)*100)/100;
+        };
+        const totalPlanned=plannedInvoices.filter((p:any)=>openOrderKeysUI.has(p.key)).reduce((s:number,p:any)=>s+getPlannedAmount(p),0);
         const toggleOrder=(o:any)=>{
           const key=o._client+"|"+o.id;
           const exists=plannedInvoices.find((p:any)=>p.key===key);
           if(exists){
             setPlannedInvoices(prev=>prev.filter((p:any)=>p.key!==key));
           } else {
-            const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
-            const rem=Math.round(Math.max(0,(+o.amount||0)-inv)*100)/100;
-            setPlannedInvoices(prev=>[...prev,{key,client:o._client,poNumber:o.poNumber,soNumber:o.soNumber,amount:rem,fullAmount:rem}]);
+            // "auto:true" — Planned Amount tracks the order's live remaining
+            // balance automatically; it only freezes if the user overrides
+            // it by hand (auto becomes false), or resets it back to auto.
+            setPlannedInvoices(prev=>[...prev,{key,client:o._client,poNumber:o.poNumber,soNumber:o.soNumber,amount:0,auto:true}]);
           }
         };
         return(
@@ -6340,12 +6404,19 @@ tr:nth-child(even) td{background:#F8FAFC;}
                           <td style={{padding:"8px 14px",textAlign:"right",color:C.amberDk,fontWeight:600}}>{fmt(rem)} €</td>
                           <td style={{padding:"6px 14px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
                             {isSelected
-                              ?<input type="number" step="0.01"
-                                  value={Math.round((planned.amount||0)*100)/100}
-                                  onChange={e=>setPlannedInvoices(prev=>prev.map((p:any)=>p.key===key?{...p,amount:Math.round((+e.target.value||0)*100)/100}:p))}
-                                  onClick={e=>e.stopPropagation()}
-                                  style={{width:110,padding:"4px 8px",border:`2px solid ${C.teal}`,borderRadius:5,fontSize:12,fontWeight:600,color:C.teal,textAlign:"right",fontFamily:"inherit"}}
-                                />
+                              ?<div style={{display:"flex",alignItems:"center",gap:5,justifyContent:"flex-end"}}>
+                                  {planned.auto!==false&&<span title="Suit automatiquement le solde restant réel de la commande" style={{background:C.tealL,color:C.teal,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:99}}>AUTO</span>}
+                                  <input type="number" step="0.01"
+                                    value={Math.round(getPlannedAmount(planned)*100)/100}
+                                    onChange={e=>setPlannedInvoices(prev=>prev.map((p:any)=>p.key===key?{...p,amount:Math.round((+e.target.value||0)*100)/100,auto:false}:p))}
+                                    onClick={e=>e.stopPropagation()}
+                                    style={{width:100,padding:"4px 8px",border:`2px solid ${planned.auto!==false?C.teal:C.amber}`,borderRadius:5,fontSize:12,fontWeight:600,color:planned.auto!==false?C.teal:C.amberDk,textAlign:"right",fontFamily:"inherit"}}
+                                  />
+                                  {planned.auto===false&&<button title="Revenir au suivi automatique" onClick={e=>{e.stopPropagation();setPlannedInvoices(prev=>prev.map((p:any)=>p.key===key?{...p,auto:true}:p));}}
+                                    style={{background:"none",border:"none",color:C.t3,cursor:"pointer",padding:2}}>
+                                    <i className="ti ti-refresh" style={{fontSize:14}} aria-hidden="true"/>
+                                  </button>}
+                                </div>
                               :<span style={{color:C.t3,fontSize:11}}>—</span>
                             }
                           </td>
@@ -6503,6 +6574,7 @@ const DRAFT_LOGO_B64="iVBORw0KGgoAAAANSUhEUgAAApoAAACUCAYAAAAzmYmmAAAgAElEQVR4Xu
 const CAT_KEY="ordertrack-catalogue";
 const QUOT_KEY="ordertrack-quotes";
 const TARGETS_KEY="ordertrack-targets";
+const SCORE_NOTES_KEY="ordertrack-score-notes";
 const CAT_K="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
 const CAT_B="https://vxxrxnyxfmgcdzxcigdw.supabase.co";
 
@@ -6579,6 +6651,34 @@ const getTarget=(targets:any,year:number,client?:string|null):{po:number,inv:num
   const t=client?y.clients?.[client]:y.global;
   return{po:+t?.po||0,inv:+t?.inv||0};
 };
+
+// ── Score notes (Motifs) — contextual nuances a human attaches to a computed
+// score, per client. Shape: { [client:string]: { caveats:string[], note:string } }
+// The score itself is never altered by these — they're layered human context
+// shown alongside it (in-app and in reports) so the number is never taken
+// at face value without the story behind it.
+const SCORE_NOTES_LS_KEY="ordertrack_score_notes_cache";
+const saveScoreNotesLocal=(n:any)=>{try{localStorage.setItem(SCORE_NOTES_LS_KEY,JSON.stringify(n));}catch{}};
+const loadScoreNotesLocal=():any=>{try{const d=localStorage.getItem(SCORE_NOTES_LS_KEY);return d?JSON.parse(d):null;}catch{return null;}};
+async function loadScoreNotesCloud():Promise<any>{
+  try{const cloud=await sbGet(SCORE_NOTES_KEY);return cloud?.notes||null;}catch{return null;}
+}
+async function saveScoreNotesCloud(notes:any):Promise<boolean>{
+  saveScoreNotesLocal(notes);
+  return await sbSet(SCORE_NOTES_KEY,{notes,ts:new Date().toISOString()});
+}
+// Known methodological blind spots of the composite score — surfaced so a
+// human can flag which ones genuinely apply to a given client, instead of
+// the score being taken as an unquestionable verdict.
+const SCORE_CAVEATS=[
+  {id:"seasonal",label:"Client saisonnier — l'activité est concentrée sur certains mois, la fenêtre de croissance 6 mois/6 mois peut être trompeuse"},
+  {id:"new_client",label:"Nouveau client — historique de commandes trop court (<6 mois) pour une mesure fiable"},
+  {id:"dispute",label:"Litige commercial en cours expliquant un retard de paiement inhabituel"},
+  {id:"one_off",label:"Grosse commande ponctuelle non représentative du rythme habituel (fausse la cadence/croissance)"},
+  {id:"contact_change",label:"Changement récent d'interlocuteur ou de service achats chez le client"},
+  {id:"terms_change",label:"Conditions de paiement renégociées récemment — l'historique de retard n'est plus représentatif"},
+  {id:"unweighted_amount",label:"Le score de paiement ne pondère pas par montant — une petite facture en retard compte autant qu'une grosse"},
+];
 
 // ── Auto-add unknown articles to the catalogue ──────────────────────────────
 // Whenever a PO or invoice import contains a PN the catalogue doesn't know
@@ -11582,7 +11682,9 @@ function printOrderReport(order:any,client:string){
 
   const linesRows=cov.map((l:any)=>{
     const si=l.status==="complete"?{label:"Facturé",c:"#059669",bg:"#D1FAE5",row:"#F0FDF4"}:l.status==="partial"?{label:"Partiel",c:"#D97706",bg:"#FEF3C7",row:"#FFFBEB"}:{label:"Non facturé",c:"#6B7280",bg:"#F1F5F9",row:"#FAFAFA"};
-    return`<tr style="background:${si.row};border-left:3px solid ${si.c}"><td style="font-family:monospace;color:#2563EB;font-weight:700">${l.pn}</td><td>${l.desc||"—"}</td><td style="text-align:right">${l.qty}</td><td style="text-align:right">${fmt(l.unitPrice)} €</td><td style="text-align:right;font-weight:700">${fmt((+l.qty||0)*(+l.unitPrice||0))} €</td><td style="text-align:right">${l.qtyInvoiced}</td><td style="text-align:right;color:${l.qtyRemaining>0?"#D97706":"#059669"};font-weight:700">${l.qtyRemaining}</td><td><span style="background:${si.bg};color:${si.c};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${si.label}</span></td></tr>`;
+    const availLate=l.availDate&&l.qtyRemaining>0&&new Date(l.availDate+"T00:00:00")<new Date(new Date().setHours(0,0,0,0));
+    const availTxt=l.availDate?`${fmtD(l.availDate)}${availLate?" ⚠":""}`:`<span style="color:#D97706;font-weight:700">TC</span>`;
+    return`<tr style="background:${si.row};border-left:3px solid ${si.c}"><td style="font-family:monospace;color:#2563EB;font-weight:700">${l.pn}</td><td>${l.desc||"—"}</td><td style="text-align:right">${l.qty}</td><td style="text-align:right">${fmt(l.unitPrice)} €</td><td style="text-align:right;font-weight:700">${fmt((+l.qty||0)*(+l.unitPrice||0))} €</td><td style="text-align:right">${l.qtyInvoiced}</td><td style="text-align:right;color:${l.qtyRemaining>0?"#D97706":"#059669"};font-weight:700">${l.qtyRemaining}</td><td style="color:${availLate?"#DC2626":"#0D1B2A"};font-weight:${availLate?"700":"400"}">${availTxt}</td><td><span style="background:${si.bg};color:${si.c};padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700">${si.label}</span></td></tr>`;
   }).join("");
   const linesTotalOrdered=cov.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
   const linesTotalInvoiced=cov.reduce((s:number,l:any)=>s+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0);
@@ -11657,9 +11759,9 @@ function printOrderReport(order:any,client:string){
   ${order.notes?`<div class="sub" style="margin-top:6px">Notes : ${order.notes}</div>`:""}
   ${reconciliationHtml}
   ${hasLines?`<h2>📋 Articles commandés (${cov.length})</h2>
-  <table><thead><tr><th>Part Number</th><th>Description</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix unit.</th><th style="text-align:right">Total</th><th style="text-align:right">Facturé</th><th style="text-align:right">Restant</th><th>Statut</th></tr></thead>
+  <table><thead><tr><th>Part Number</th><th>Description</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix unit.</th><th style="text-align:right">Total</th><th style="text-align:right">Facturé</th><th style="text-align:right">Restant</th><th>Disponibilité</th><th>Statut</th></tr></thead>
   <tbody>${linesRows}</tbody>
-  <tfoot><tr><td colspan="4" style="text-align:right">TOTAL</td><td style="text-align:right">${fmt(linesTotalOrdered)} €</td><td style="text-align:right">${fmt(linesTotalInvoiced)} €</td><td style="text-align:right">${fmt(linesTotalRemaining)} €</td><td></td></tr></tfoot>
+  <tfoot><tr><td colspan="4" style="text-align:right">TOTAL</td><td style="text-align:right">${fmt(linesTotalOrdered)} €</td><td style="text-align:right">${fmt(linesTotalInvoiced)} €</td><td style="text-align:right">${fmt(linesTotalRemaining)} €</td><td></td><td></td></tr></tfoot>
   </table>`:`<h2>📋 Articles commandés</h2><div class="sub">Aucun détail ligne par ligne importé pour cette commande.</div>`}
   <h2>🧾 Expéditions & Factures (${(order.invoices||[]).length})</h2>
   <table><thead><tr><th>Invoice #</th><th>Date</th><th style="text-align:right">Montant</th><th>Échéance</th><th style="text-align:right">Payé</th><th style="text-align:right">Reste dû</th><th>Statut</th></tr></thead>
@@ -12108,7 +12210,7 @@ function renderAuditDocument(opts:{
 // Works at any scope: pass orders for one client, or all clients combined
 // (each order should carry order._client for the concentration-risk table).
 // ═══════════════════════════════════════════════════════════════════════════
-function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetInfo?:{po:number,inv:number},auditYear?:number){
+function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetInfo?:{po:number,inv:number},auditYear?:number,clientScoreNote?:{caveats:string[],note:string}){
   const w=window.open("","_blank","width=1100,height=1000");
   if(!w)return;
   // Scoped to a single year — same convention as the rest of the app: each
@@ -12309,7 +12411,14 @@ function printFinancialAudit(scopeLabel:string,orders:any[],configs:any,targetIn
     <div style="font-size:10px;color:#8FA0B3;margin-bottom:10px">Barre Open Orders : proportion du portefeuille de commandes non facturées par rapport à l'objectif fixé.</div>`;
   }
 
-  const extraSections=`${targetSectionHtml}
+  const motifsHtml=(clientScoreNote&&((clientScoreNote.caveats||[]).length>0||clientScoreNote.note))?`
+    <h2>🔎 Motifs & nuances déclarées sur ce client</h2>
+    <div style="background:#EFF6FF;border:1px solid #2563EB;border-radius:8px;padding:12px 16px;font-size:11.5px;color:#1E3A8A;line-height:1.6">
+      ${(clientScoreNote.caveats||[]).length>0?`<ul style="margin:0 0 ${clientScoreNote.note?"8px":"0"} 18px;padding:0">${(clientScoreNote.caveats||[]).map((id:string)=>{const cv=SCORE_CAVEATS.find((x:any)=>x.id===id);return cv?`<li>${cv.label}</li>`:"";}).join("")}</ul>`:""}
+      ${clientScoreNote.note?`<div style="font-style:italic">"${clientScoreNote.note}"</div>`:""}
+    </div>`:"";
+
+  const extraSections=`${targetSectionHtml}${motifsHtml}
     <h2>📅 Ancienneté des créances (aging)</h2>
     <table><thead><tr><th>Tranche</th><th style="text-align:right">Montant</th><th style="text-align:center">Nb factures</th></tr></thead><tbody>${agingRows}</tbody></table>
     <h2>🎯 Concentration du risque client</h2>
@@ -13052,6 +13161,93 @@ function Chip({label,c}:any){return<span style={{fontSize:10,background:c+"18",c
 // ═══════════════════════════════════════════════════════════════════════════
 // TARGETS / OBJECTIFS — set PO & Facturé goals per client and globally, by year
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// MOTIFS — explains a client's composite health score with the real numbers
+// behind each component, plus a checklist of methodological caveats the
+// user can flag as applicable. The checklist NEVER changes the computed
+// score itself — it's saved as human context shown alongside the number,
+// in-app and in reports, so the score is never read without its story.
+// ═══════════════════════════════════════════════════════════════════════════
+function ClientScoreMotifsModal({client,breakdown,savedNotes,onSave,onClose}:any){
+  const[caveats,setCaveats]=useState<string[]>(savedNotes?.caveats||[]);
+  const[note,setNote]=useState<string>(savedNotes?.note||"");
+  const[saving,setSaving]=useState(false);
+  const risk=breakdown?.risk;
+  const intel=breakdown?.intel;
+
+  const toggleCaveat=(id:string)=>setCaveats(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);
+  const handleSave=async()=>{
+    setSaving(true);
+    await onSave(client,{caveats,note,updatedAt:new Date().toISOString()});
+    setSaving(false);
+    onClose();
+  };
+
+  const trendLabel=(t:string)=>t==="improving"?{l:"En amélioration",c:C.greenDk}:t==="worsening"?{l:"En dégradation",c:C.redDk}:{l:"Stable",c:C.t2};
+  const reorderLabel=(s:string)=>s==="overdue"?{l:"En retard sur son rythme habituel",c:C.redDk}:s==="due_soon"?{l:"Réapprovisionnement bientôt attendu",c:C.amberDk}:s==="on_track"?{l:"Dans son rythme habituel",c:C.greenDk}:{l:"Rythme non déterminable (historique insuffisant)",c:C.t3};
+
+  return(
+    <Modal title={`🔎 Motifs — ${client}`} sub={`Score composite : ${breakdown.composite}/100`} width={640} onClose={onClose}
+      footer={<>
+        <button onClick={onClose} style={{background:"none",border:"none",color:C.t3,fontSize:13,cursor:"pointer"}}>Fermer sans enregistrer</button>
+        <Btn icon={saving?"ti-loader-2":"ti-check"} label={saving?"Enregistrement…":"Enregistrer les motifs"} onClick={handleSave} variant="primary"/>
+      </>}>
+      <div style={{fontSize:11,fontWeight:700,color:C.t2,marginBottom:8,textTransform:"uppercase",letterSpacing:".04em"}}>Décomposition du score</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
+        <div style={{background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:8,padding:"10px 12px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+            <span style={{fontWeight:700,fontSize:12,color:C.t1}}>💳 Fiabilité de paiement — poids 50%</span>
+            <span style={{fontWeight:800,fontSize:12,color:breakdown.paymentComponent>=80?C.greenDk:breakdown.paymentComponent>=50?C.amberDk:C.redDk}}>{breakdown.paymentComponent}/100</span>
+          </div>
+          {risk?(
+            <div style={{fontSize:11,color:C.t2,lineHeight:1.6}}>
+              Sur {risk.settledCount} facture{risk.settledCount>1?"s":""} soldée{risk.settledCount>1?"s":""} : <strong>{risk.pctLate}%</strong> ont été payées en retard, avec un retard moyen de <strong>{risk.avgLateDays} jour{risk.avgLateDays>1?"s":""}</strong>.
+              {risk.currentOverdueCount>0&&<> Actuellement, <strong style={{color:C.redDk}}>{risk.currentOverdueCount} facture{risk.currentOverdueCount>1?"s sont":" est"} en retard</strong> non soldée{risk.currentOverdueCount>1?"s":""}.</>}
+              <> Tendance récente : <strong style={{color:trendLabel(risk.trend).c}}>{trendLabel(risk.trend).l}</strong> (90 derniers jours vs période antérieure).</>
+            </div>
+          ):<div style={{fontSize:11,color:C.t3,fontStyle:"italic"}}>Pas assez de factures avec échéance pour calculer ce composant — valeur par défaut appliquée (70/100).</div>}
+        </div>
+        <div style={{background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:8,padding:"10px 12px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+            <span style={{fontWeight:700,fontSize:12,color:C.t1}}>📈 Dynamique commerciale — poids 25%</span>
+            <span style={{fontWeight:800,fontSize:12,color:breakdown.growthComponent>=60?C.greenDk:breakdown.growthComponent>=40?C.amberDk:C.redDk}}>{breakdown.growthComponent}/100</span>
+          </div>
+          <div style={{fontSize:11,color:C.t2,lineHeight:1.6}}>
+            Croissance de <strong style={{color:intel?.growthRate>=0?C.greenDk:C.redDk}}>{intel?.growthRate>=0?"+":""}{intel?.growthRate}%</strong> sur les commandes des 6 derniers mois, comparées aux 6 mois précédents.
+            Cette croissance est convertie en score sur 100 (50 = stable, +50pts si +50% ou plus, plafonné).
+          </div>
+        </div>
+        <div style={{background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:8,padding:"10px 12px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+            <span style={{fontWeight:700,fontSize:12,color:C.t1}}>🔁 Cadence de commande — poids 25%</span>
+            <span style={{fontWeight:800,fontSize:12,color:breakdown.cadenceComponent>=80?C.greenDk:breakdown.cadenceComponent>=50?C.amberDk:C.redDk}}>{breakdown.cadenceComponent}/100</span>
+          </div>
+          <div style={{fontSize:11,color:C.t2,lineHeight:1.6}}>
+            <strong style={{color:reorderLabel(intel?.reorderStatus).c}}>{reorderLabel(intel?.reorderStatus).l}</strong>.
+            {intel?.avgDaysBetween?<> Intervalle moyen habituel entre deux commandes : <strong>{Math.round(intel.avgDaysBetween)} jours</strong> — dernière commande il y a <strong>{intel.recencyDays} jours</strong>.</>:" Historique de commandes trop court pour établir un rythme fiable."}
+          </div>
+        </div>
+      </div>
+
+      <div style={{fontSize:11,fontWeight:700,color:C.t2,marginBottom:8,textTransform:"uppercase",letterSpacing:".04em"}}>Nuances à considérer (n'affectent pas le calcul — juste du contexte)</div>
+      <div style={{fontSize:10.5,color:C.t3,marginBottom:10,fontStyle:"italic"}}>Coche celles qui s'appliquent réellement à ce client — utile pour toi et visible dans les rapports client, pour ne jamais lire ce score hors contexte.</div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
+        {SCORE_CAVEATS.map((cv:any)=>(
+          <label key={cv.id} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:11.5,color:C.t2,cursor:"pointer",background:caveats.includes(cv.id)?C.blueL:"transparent",padding:"6px 8px",borderRadius:6}}>
+            <input type="checkbox" checked={caveats.includes(cv.id)} onChange={()=>toggleCaveat(cv.id)} style={{marginTop:2}}/>
+            <span>{cv.label}</span>
+          </label>
+        ))}
+      </div>
+      <div>
+        <label style={{fontSize:10,color:C.t3,fontWeight:700,textTransform:"uppercase",display:"block",marginBottom:4}}>Note libre (optionnel)</label>
+        <textarea value={note} onChange={(e:any)=>setNote(e.target.value)} rows={2} placeholder="Tout autre élément de contexte utile…"
+          style={{width:"100%",padding:"7px 9px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12,boxSizing:"border-box",fontFamily:"inherit",resize:"vertical"}}/>
+      </div>
+    </Modal>
+  );
+}
+
 function TargetsModal({clients,targets,onSave,onClose,year}:any){
   const[selYear,setSelYear]=useState(year||new Date().getFullYear());
   const[draft,setDraft]=useState<any>(()=>{
