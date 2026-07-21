@@ -1315,7 +1315,25 @@ export default function App(){
   const delCustomer=(name:string)=>{const nc=clients!.filter(c=>c!==name);const nd={...data};delete nd[name];const nf={...configs};delete nf[name];if(page===name)setPage("kpi");persist(nc,nd,nf);};
 
   // ORDER CRUD
-  const saveOrder=(client:string,f:any)=>{const orders=[...getOrders(client)];if(f.id){const i=orders.findIndex((o:any)=>o.id===f.id);if(i>=0)orders[i]={...orders[i],...f};}else orders.push({...f,id:Date.now().toString(),invoices:[]});persist(null,{...data,[client]:orders},null);setModal(null);};
+  const saveOrder=(client:string,f:any)=>{
+    const orders=[...getOrders(client)];
+    if(f.id){
+      const i=orders.findIndex((o:any)=>o.id===f.id);
+      if(i>=0){
+        const prev=orders[i];
+        const dateChanged=f.expectedDate!==prev.expectedDate;
+        // Propagate the new expected delivery date to every line that
+        // hasn't been manually overridden — a manually-set line date is a
+        // deliberate exception (e.g. a specific item confirmed on a
+        // different date) and must never be silently clobbered.
+        const lines=dateChanged&&(prev.lines||[]).length>0
+          ?prev.lines.map((l:any)=>l.availDateManual?l:{...l,availDate:f.expectedDate||""})
+          :f.lines!==undefined?f.lines:prev.lines;
+        orders[i]={...prev,...f,lines};
+      }
+    } else orders.push({...f,id:Date.now().toString(),invoices:[]});
+    persist(null,{...data,[client]:orders},null);setModal(null);
+  };
   const delOrder=(client:string,id:string)=>persist(null,{...data,[client]:getOrders(client).filter((o:any)=>o.id!==id)},null);
 
   // INVOICE CRUD
@@ -2690,6 +2708,23 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
     printProductTypeAnalysis(`Tous clients (${clients.length} comptes)`,`${fmtD(typeAnalysisFrom)} → ${fmtD(typeAnalysisTo)}`,orderedItems,invoicedItems);
   };
 
+  // ── Le Journal — événements détaillés de toute l'application, période libre ──
+  const[journalFrom,setJournalFrom]=useState(`${selYear}-01-01`);
+  const[journalTo,setJournalTo]=useState(todayStr());
+  const[journalLoading,setJournalLoading]=useState(false);
+  const runJournal=async()=>{
+    setJournalLoading(true);
+    try{
+      const orders=getAllOrders();
+      const products=await loadCatalogueProducts();
+      const notes=await loadScoreNotesCloud().catch(()=>null);
+      const events=buildJournalEvents(orders,products,notes||{},journalFrom,journalTo);
+      printJournal(`Tous clients (${clients.length} comptes)`,events,journalFrom,journalTo);
+    }finally{
+      setJournalLoading(false);
+    }
+  };
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:24}}>
 
@@ -2783,6 +2818,29 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
             <i className="ti ti-chart-pie" style={{fontSize:14}} aria-hidden="true"/> Analyser (tous clients)
           </button>
           <span style={{fontSize:10,color:C.t3}}>SP, CR, SEG, SL, DMX… — répartition, concentration, écarts commandé/facturé</span>
+        </div>
+      )}
+
+      {/* ── Le Journal — événements détaillés, période libre ── */}
+      {isAdmin&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 20px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+            <i className="ti ti-notebook" style={{fontSize:18,color:"#0D1B2A"}} aria-hidden="true"/>
+            <span style={{fontWeight:700,fontSize:13,color:C.t1}}>Le Journal</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <label style={{fontSize:11,color:C.t3}}>Du</label>
+            <input type="date" value={journalFrom} onChange={(e:any)=>setJournalFrom(e.target.value)}
+              style={{padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12}}/>
+            <label style={{fontSize:11,color:C.t3}}>au</label>
+            <input type="date" value={journalTo} onChange={(e:any)=>setJournalTo(e.target.value)}
+              style={{padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12}}/>
+          </div>
+          <button onClick={runJournal} disabled={journalLoading}
+            style={{display:"flex",alignItems:"center",gap:6,background:"#0D1B2A",color:"#fff",border:"none",borderRadius:C.r,padding:"8px 16px",fontSize:12,fontWeight:700,cursor:journalLoading?"wait":"pointer"}}>
+            <i className={`ti ${journalLoading?"ti-loader-2":"ti-notebook"}`} style={{fontSize:14}} aria-hidden="true"/> {journalLoading?"Génération…":"Générer le journal"}
+          </button>
+          <span style={{fontSize:10,color:C.t3}}>Commandes, factures, paiements, prix catalogue, échéances, motifs — trié par importance</span>
         </div>
       )}
       <div style={{display:"grid",gridTemplateColumns:"380px 1fr",gap:16,alignItems:"start"}}>
@@ -3117,6 +3175,20 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
     const invoicedItems=orders.flatMap((o:any)=>o.invoices||[]).filter((i:any)=>inRange(i.date)).flatMap((i:any)=>i.lines||[]);
     printProductTypeAnalysis(client,`${fmtD(typeAnalysisFrom)} → ${fmtD(typeAnalysisTo)}`,orderedItems,invoicedItems);
   };
+  const[journalFrom,setJournalFrom]=useState(`${selYear||new Date().getFullYear()}-01-01`);
+  const[journalTo,setJournalTo]=useState(todayStr());
+  const[journalLoading,setJournalLoading]=useState(false);
+  const runClientJournal=async()=>{
+    setJournalLoading(true);
+    try{
+      const products=await loadCatalogueProducts();
+      const notes=await loadScoreNotesCloud().catch(()=>null);
+      const events=buildJournalEvents(orders.map((o:any)=>({...o,_client:client})),products,notes||{},journalFrom,journalTo);
+      printJournal(client,events,journalFrom,journalTo);
+    }finally{
+      setJournalLoading(false);
+    }
+  };
   const txFact=stats.totalPO>0?(stats.totalInv/stats.totalPO*100):0;
   const txPay=stats.totalInv>0?(stats.totalPaid/stats.totalInv*100):0;
   const lateOrders=orders.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
@@ -3177,6 +3249,28 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
           <button onClick={runClientPeriodTypeAnalysis}
             style={{display:"flex",alignItems:"center",gap:6,background:C.purple,color:"#fff",border:"none",borderRadius:C.r,padding:"7px 14px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
             <i className="ti ti-chart-pie" style={{fontSize:13}} aria-hidden="true"/> Analyser {client}
+          </button>
+        </div>
+      )}
+
+      {/* ── Le Journal — événements détaillés, période libre (ce client) ── */}
+      {isAdmin&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+            <i className="ti ti-notebook" style={{fontSize:16,color:"#0D1B2A"}} aria-hidden="true"/>
+            <span style={{fontWeight:700,fontSize:12,color:C.t1}}>Le Journal</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <label style={{fontSize:11,color:C.t3}}>Du</label>
+            <input type="date" value={journalFrom} onChange={(e:any)=>setJournalFrom(e.target.value)}
+              style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:11}}/>
+            <label style={{fontSize:11,color:C.t3}}>au</label>
+            <input type="date" value={journalTo} onChange={(e:any)=>setJournalTo(e.target.value)}
+              style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:11}}/>
+          </div>
+          <button onClick={runClientJournal} disabled={journalLoading}
+            style={{display:"flex",alignItems:"center",gap:6,background:"#0D1B2A",color:"#fff",border:"none",borderRadius:C.r,padding:"7px 14px",fontSize:11,fontWeight:700,cursor:journalLoading?"wait":"pointer"}}>
+            <i className={`ti ${journalLoading?"ti-loader-2":"ti-notebook"}`} style={{fontSize:13}} aria-hidden="true"/> {journalLoading?"Génération…":`Générer pour ${client}`}
           </button>
         </div>
       )}
@@ -4267,7 +4361,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
               {cov.map((l:any,i:number)=>{
                 const si=statusInfo(l.status);
                 const availLate=l.availDate&&l.qtyRemaining>0&&new Date(l.availDate+"T00:00:00")<new Date(new Date().setHours(0,0,0,0));
-                const setAvailDate=(val:string)=>onSave(existingLines.map((x:any,idx:number)=>idx===i?{...x,availDate:val}:x));
+                const setAvailDate=(val:string)=>onSave(existingLines.map((x:any,idx:number)=>idx===i?{...x,availDate:val,availDateManual:true}:x));
                 return(
                 <tr key={i} style={{borderBottom:`1px solid ${C.b}`}}>
                   <td style={{padding:"5px 8px",fontFamily:"monospace",color:C.blue,fontWeight:700}}>{l.pn}{l.substitutedBy?.length>0&&<div style={{fontSize:9,color:C.amberDk,fontWeight:600}}>facturé sous {l.substitutedBy.join(", ")}</div>}</td>
@@ -11572,6 +11666,167 @@ function computeTypeBreakdown(items:{pn:string,desc:string,qty:number,unitPrice:
   // >2500 = fortement concentré sur peu de familles de produits.
   const hhi=withPct.reduce((s,t)=>s+Math.pow(t.pct,2),0);
   return{byType:withPct,bySegment:segArr,total,hhi,typeCount:withPct.length};
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LE JOURNAL — a detailed, importance-sorted event log across every dated
+// activity in the app for a given period: orders registered, invoices
+// issued, payments received, catalogue price changes, due dates reached
+// without payment, and client score annotations. Built entirely from real
+// timestamped data already in the system — never a fabricated event.
+// ═══════════════════════════════════════════════════════════════════════════
+type JournalEvent={date:string,severity:"critique"|"important"|"info",icon:string,category:string,title:string,detail:string,client:string,amount?:number};
+
+function buildJournalEvents(allOrders:any[],products:any[],scoreNotesObj:any,from:string,to:string):JournalEvent[]{
+  const inRange=(d:string)=>!!d&&d>=from&&d<=to;
+  const events:JournalEvent[]=[];
+  const BIG_ORDER=20000,BIG_INVOICE=15000,BIG_PAYMENT=15000,BIG_PRICE_MOVE=20;
+
+  allOrders.forEach((o:any)=>{
+    // Commandes enregistrées
+    if(inRange(o.date)){
+      const amt=+o.amount||0;
+      events.push({date:o.date,severity:amt>=BIG_ORDER?"important":"info",icon:"ti-file-invoice",category:"Commande",
+        title:`Commande enregistrée — ${o.poNumber||"—"}`,
+        detail:`${fmt(amt)} € · Statut actuel : ${getStatusMeta(o.status).label||o.status}${o.soNumber?` · S/O ${o.soNumber}`:""}`,
+        client:o._client,amount:amt});
+    }
+    // Factures émises
+    (o.invoices||[]).forEach((inv:any)=>{
+      if(inRange(inv.date)){
+        const amt=+inv.amount||0;
+        events.push({date:inv.date,severity:amt>=BIG_INVOICE?"important":"info",icon:"ti-receipt",category:"Facture",
+          title:`Facture émise — ${inv.invoiceNumber||"—"}`,
+          detail:`${fmt(amt)} € · Commande ${o.poNumber||"—"}${inv.imported?" · Importée":" · Saisie manuelle"}${inv.dueDate?` · Échéance ${fmtD(inv.dueDate)}`:""}`,
+          client:o._client,amount:amt});
+      }
+      // Paiements reçus
+      (inv.payments||[]).forEach((p:any)=>{
+        if(inRange(p.date)){
+          const amt=+p.amount||0;
+          events.push({date:p.date,severity:amt>=BIG_PAYMENT?"important":"info",icon:"ti-cash",category:"Paiement",
+            title:`Paiement reçu — Facture ${inv.invoiceNumber||"—"}`,
+            detail:`${fmt(amt)} € · ${p.method||"Méthode non précisée"}${p.reference?` · Réf. ${p.reference}`:""}`,
+            client:o._client,amount:amt});
+        }
+      });
+      // Échéances atteintes sans paiement (observé à la date de génération —
+      // si soldée depuis, elle ne remonte plus comme "impayée à l'échéance")
+      if(inv.dueDate&&inRange(inv.dueDate)){
+        const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+        const rem=Math.max(0,(+inv.amount||0)-paid);
+        if(rem>0.5){
+          events.push({date:inv.dueDate,severity:"critique",icon:"ti-alert-triangle",category:"Recouvrement",
+            title:`Échéance atteinte sans solde — Facture ${inv.invoiceNumber||"—"}`,
+            detail:`${fmt(rem)} € restant dû sur ${fmt(+inv.amount||0)} € facturés`,
+            client:o._client,amount:rem});
+        }
+      }
+    });
+  });
+
+  // Changements de prix catalogue
+  (products||[]).forEach((p:any)=>{
+    const prices=[...(p.prices||[])].sort((a:any,b:any)=>(a.date||"").localeCompare(b.date||""));
+    for(let i=1;i<prices.length;i++){
+      const prev=prices[i-1],cur=prices[i];
+      if(!inRange(cur.date))continue;
+      const prevP=+prev.price||0,curP=+cur.price||0;
+      if(prevP<=0)continue;
+      const pct=((curP-prevP)/prevP)*100;
+      if(Math.abs(pct)<1)continue;
+      events.push({date:cur.date,severity:Math.abs(pct)>=BIG_PRICE_MOVE?"important":"info",icon:"ti-tag",category:"Catalogue",
+        title:`Changement de prix — ${p.pn}`,
+        detail:`${fmt(prevP)} € → ${fmt(curP)} € (${pct>0?"+":""}${pct.toFixed(1)}%)${p.description?` · ${p.description}`:""}`,
+        client:"—",amount:curP});
+    }
+  });
+
+  // Motifs (nuances) mis à jour sur un client
+  Object.keys(scoreNotesObj||{}).forEach((client:string)=>{
+    const n=scoreNotesObj[client];
+    const d=n?.updatedAt?n.updatedAt.slice(0,10):null;
+    if(d&&inRange(d)){
+      events.push({date:d,severity:"info",icon:"ti-info-circle",category:"Score client",
+        title:`Motifs mis à jour — ${client}`,
+        detail:`${(n.caveats||[]).length} nuance(s) déclarée(s)${n.note?" · avec note libre":""}`,
+        client,amount:undefined});
+    }
+  });
+
+  const sevWeight:Record<string,number>={critique:0,important:1,info:2};
+  return events.sort((a,b)=>sevWeight[a.severity]-sevWeight[b.severity]||b.date.localeCompare(a.date));
+}
+
+function printJournal(scopeLabel:string,events:JournalEvent[],from:string,to:string){
+  const w=window.open("","_blank","width=1100,height=1000");
+  if(!w)return;
+  const counts={critique:events.filter(e=>e.severity==="critique").length,important:events.filter(e=>e.severity==="important").length,info:events.filter(e=>e.severity==="info").length};
+  const byCategory:Record<string,number>={};
+  events.forEach(e=>{byCategory[e.category]=(byCategory[e.category]||0)+1;});
+
+  const sevMeta=(s:string)=>s==="critique"?{c:"#B91C1C",bg:"#FEE2E2",label:"CRITIQUE"}:s==="important"?{c:"#B45309",bg:"#FEF3C7",label:"IMPORTANT"}:{c:"#1D4ED8",bg:"#DBEAFE",label:"INFO"};
+  const rows=events.map(e=>{
+    const m=sevMeta(e.severity);
+    return`<tr style="border-left:3px solid ${m.c}">
+      <td><span style="background:${m.c};color:#fff;font-size:8.5px;font-weight:800;padding:2px 7px;border-radius:99px;letter-spacing:.03em">${m.label}</span></td>
+      <td style="font-weight:700;white-space:nowrap">${fmtD(e.date)}</td>
+      <td><span style="background:#F1F5F9;color:#4A5568;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:5px">${e.category}</span></td>
+      <td style="font-weight:700">${e.client!=="—"?e.client:""}</td>
+      <td>${e.title}</td>
+      <td style="color:#4A5568;font-size:10.5px">${e.detail}</td>
+      <td style="text-align:right;font-weight:700">${e.amount!==undefined?fmt(e.amount)+" €":""}</td>
+    </tr>`;
+  }).join("")||`<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:24px">Aucun événement sur cette période.</td></tr>`;
+
+  const catRows=Object.entries(byCategory).sort((a,b)=>b[1]-a[1]).map(([cat,n])=>
+    `<tr><td style="font-weight:700">${cat}</td><td style="text-align:right">${n}</td></tr>`).join("");
+
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Le Journal — ${scopeLabel}</title><style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:0;}
+    .page{padding:32px 38px;max-width:1150px;margin:0 auto;}
+    .masthead{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:4px solid #0D1B2A;padding-bottom:16px;margin-bottom:22px;}
+    .logo{font-size:12px;font-weight:800;color:#2563EB;letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px;}
+    h1{font-size:22px;font-weight:800;color:#0D1B2A;letter-spacing:-.02em;}
+    .subtitle{font-size:12px;color:#4A5568;margin-top:3px;}
+    .meta{text-align:right;font-size:10.5px;color:#8FA0B3;line-height:1.6;}
+    h2{font-size:13.5px;font-weight:800;color:#0D1B2A;margin:22px 0 10px;padding-bottom:5px;border-bottom:2px solid #E5EAF0;}
+    .kpigrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px;}
+    .kpi{background:#F8FAFC;border:1px solid #E5EAF0;border-radius:10px;padding:12px 14px;}
+    .kpi .lbl{font-size:9px;color:#8FA0B3;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
+    .kpi .val{font-size:19px;font-weight:800;}
+    table{width:100%;border-collapse:collapse;font-size:11px;}
+    th{background:#0D1B2A;color:#fff;padding:7px 9px;text-align:left;font-weight:600;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;}
+    td{padding:7px 9px;border-bottom:1px solid #E5EAF0;vertical-align:top;}
+    tr:nth-child(even){background:#FAFBFC;}
+    .footer{margin-top:26px;padding-top:12px;border-top:1px solid #E5EAF0;font-size:9.5px;color:#8FA0B3;display:flex;justify-content:space-between;}
+    @media print{.no-print{display:none!important}.page{padding:16px 20px}}
+  </style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px">
+    <button onclick="window.print()" style="background:#1D4ED8;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨️ Print / PDF</button>
+    <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">✕ Close</button>
+  </div>
+  <div class="page">
+    <div class="masthead">
+      <div><div class="logo">OrderTrack · Le Journal</div><h1>Journal détaillé des événements</h1><div class="subtitle">${scopeLabel}</div></div>
+      <div class="meta">Période : ${fmtD(from)} → ${fmtD(to)}<br/>Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>${events.length} événement${events.length>1?"s":""} au total</div>
+    </div>
+    <div class="kpigrid">
+      <div class="kpi"><div class="lbl">🔴 Critique</div><div class="val" style="color:#DC2626">${counts.critique}</div></div>
+      <div class="kpi"><div class="lbl">🟠 Important</div><div class="val" style="color:#D97706">${counts.important}</div></div>
+      <div class="kpi"><div class="lbl">🔵 Info</div><div class="val" style="color:#2563EB">${counts.info}</div></div>
+      <div class="kpi"><div class="lbl">Total</div><div class="val" style="color:#0D1B2A">${events.length}</div></div>
+    </div>
+    <h2>📊 Répartition par sujet</h2>
+    <table style="margin-bottom:8px"><thead><tr><th>Sujet</th><th style="text-align:right">Nb événements</th></tr></thead><tbody>${catRows||`<tr><td colspan="2" style="text-align:center;color:#8FA0B3;padding:12px">—</td></tr>`}</tbody></table>
+    <h2>📋 Journal détaillé — trié par ordre d'importance</h2>
+    <table><thead><tr><th style="width:75px">Niveau</th><th style="width:80px">Date</th><th style="width:90px">Sujet</th><th style="width:100px">Client</th><th>Événement</th><th>Détail</th><th style="text-align:right;width:90px">Montant</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="footer"><span>OrderTrack — Journal généré automatiquement à partir des données réelles de l'application</span><span>Page 1</span></div>
+  </div>
+  </body></html>`);
+  w.document.close();
 }
 
 function printProductTypeAnalysis(scopeLabel:string,periodLabel:string,orderedItems:any[],invoicedItems:any[],label1:string="Commandé",label2:string="Facturé"){
