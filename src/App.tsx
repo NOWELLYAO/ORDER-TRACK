@@ -3094,11 +3094,14 @@ function computeClientIntelligence(orders:any[]){
 function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onAddBulkInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true,targets,selYear,scoreNotes}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
-  const tgl=(id:string)=>setExp(p=>({...p,[id]:!p[id]}));
+  // Accordion behavior: opening an order closes any other that was open —
+  // never more than one expanded at a time, so it's always clear which
+  // order you're looking at.
+  const tgl=(id:string)=>setExp(p=>p[id]?{}:{[id]:true});
   // Auto-expand focused order on navigation from search
   useEffect(()=>{
     if(focusOrderId){
-      setExp(p=>({...p,[focusOrderId]:true}));
+      setExp({[focusOrderId]:true});
       setTimeout(()=>{
         const el=document.getElementById(`order-${focusOrderId}`);
         if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
