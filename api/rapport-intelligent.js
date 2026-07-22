@@ -7,16 +7,22 @@
 // 1. Ce fichier doit rester à la racine du repo, dans un dossier `api/`
 //    (Vercel le détecte automatiquement comme une fonction serverless —
 //    aucune config supplémentaire nécessaire).
-// 2. Dans Vercel → ton projet → Settings → Environment Variables, ajoute :
+// 2. Dans Vercel → ton projet → Settings → Environments → Production →
+//    Add Environment Variable, ajoute :
 //      ANTHROPIC_API_KEY = sk-ant-xxxxxxxxxxxxxxxx
 //    (clé récupérable sur https://console.anthropic.com/settings/keys)
 // 3. Redéployer après avoir ajouté la variable (elle n'est prise en compte
 //    qu'au prochain déploiement).
 //
 // Le front-end (App.tsx, composant <RapportIntelligent/>) envoie un JSON
-// {scope, title, context, messages} et reçoit {text}. Aucune donnée n'est
-// stockée côté serveur : chaque appel est indépendant, l'historique de la
+// {title, context, messages} et reçoit {text}. Aucune donnée n'est stockée
+// côté serveur : chaque appel est indépendant, l'historique de la
 // conversation est renvoyé en entier à chaque tour par le front-end.
+//
+// Toute la logique est enveloppée dans un try/catch global : quelle que
+// soit l'erreur (body mal formé, clé absente, API Anthropic en panne...),
+// la réponse reste toujours un JSON exploitable par le front-end plutôt
+// qu'une page d'erreur HTML générique de la plateforme.
 
 const MODEL = "claude-sonnet-5";
 const MAX_TOKENS = 1600;
@@ -39,38 +45,58 @@ Consignes de style et de fond :
 - Utilise des chiffres exacts tirés du contexte, jamais d'estimations vagues.
 - Reste sous les 220 mots pour le rapport initial, et sous 150 mots pour chaque réponse de suivi, sauf si l'utilisateur demande explicitement plus de détails.`;
 
-module.exports = async (req, res) => {
-  if (req.method !== "POST") {
-    res.status(405).json({ error: "Méthode non autorisée." });
-    return;
-  }
+// Lit le corps brut de la requête si le runtime ne l'a pas déjà parsé
+// automatiquement (filet de sécurité selon la configuration exacte du
+// projet Vercel).
+async function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk) => { data += chunk; });
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
+}
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    res.status(500).json({
-      error:
-        "ANTHROPIC_API_KEY n'est pas configurée côté serveur. Ajoute-la dans Vercel → Settings → Environment Variables, puis redéploie.",
-    });
-    return;
-  }
-
-  let body = req.body;
-  if (typeof body === "string") {
-    try { body = JSON.parse(body); } catch { body = {}; }
-  }
-  const { title, context, messages } = body || {};
-
-  if (!context) {
-    res.status(400).json({ error: "Contexte manquant dans la requête." });
-    return;
-  }
-
-  const conversation =
-    Array.isArray(messages) && messages.length > 0
-      ? messages
-      : [{ role: "user", content: "Génère le Rapport Intelligent maintenant, en suivant la structure demandée." }];
-
+export default async function handler(req, res) {
   try {
+    if (req.method !== "POST") {
+      res.status(405).json({ error: "Méthode non autorisée (POST attendu)." });
+      return;
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      res.status(500).json({
+        error:
+          "ANTHROPIC_API_KEY n'est pas configurée côté serveur. Ajoute-la dans Vercel → Settings → Environments → Production, puis redéploie.",
+      });
+      return;
+    }
+
+    let body = req.body;
+    if (!body || (typeof body === "object" && Object.keys(body).length === 0)) {
+      try {
+        const raw = await readRawBody(req);
+        body = raw ? JSON.parse(raw) : {};
+      } catch {
+        body = {};
+      }
+    } else if (typeof body === "string") {
+      try { body = JSON.parse(body); } catch { body = {}; }
+    }
+
+    const { title, context, messages } = body || {};
+
+    if (!context) {
+      res.status(400).json({ error: "Contexte manquant dans la requête." });
+      return;
+    }
+
+    const conversation =
+      Array.isArray(messages) && messages.length > 0
+        ? messages
+        : [{ role: "user", content: "Génère le Rapport Intelligent maintenant, en suivant la structure demandée." }];
+
     const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -86,11 +112,17 @@ module.exports = async (req, res) => {
       }),
     });
 
-    const data = await anthropicRes.json();
+    let data = {};
+    try { data = await anthropicRes.json(); }
+    catch {
+      const raw = await anthropicRes.text().catch(() => "");
+      res.status(502).json({ error: `Réponse non-JSON de l'API Anthropic (HTTP ${anthropicRes.status}): ${raw.slice(0,300)}` });
+      return;
+    }
 
     if (!anthropicRes.ok) {
       res.status(anthropicRes.status).json({
-        error: data?.error?.message || "Erreur de l'API Anthropic.",
+        error: data?.error?.message || `Erreur de l'API Anthropic (HTTP ${anthropicRes.status}).`,
       });
       return;
     }
@@ -103,6 +135,7 @@ module.exports = async (req, res) => {
 
     res.status(200).json({ text: text || "(Réponse vide)" });
   } catch (e) {
-    res.status(500).json({ error: String((e && e.message) || e) });
+    // Filet de sécurité ultime : quoi qu'il arrive, on répond en JSON.
+    res.status(500).json({ error: "Erreur serveur inattendue : " + String((e && e.message) || e) });
   }
-};
+}
