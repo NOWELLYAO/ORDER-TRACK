@@ -183,7 +183,7 @@ const T:Record<Lang,Record<string,string>>={
     so_number:"S/O # *", order_number_cimelec:"N° Commande (CIMELEC)",
     amount:"Montant (€) *", delivery_mode:"Mode de livraison",
     expected_date:"Date livraison prévue", order_notes:"Notes",
-    order_status_title:"Statut de la commande *",
+    order_status_title:"Statut de la commande",
     create_order:"Créer la commande", save_order:"Enregistrer",
     new_invoice:"Nouvelle expédition / Facture", edit_invoice:"Modifier la facture",
     invoice_number:"Invoice # *", invoice_date:"Date facture *",
@@ -215,12 +215,7 @@ const T:Record<Lang,Record<string,string>>={
     a_fdi:"{n} commande{s} en attente FDI",
     a_late:"{n} livraison{s} en retard",
     // Status labels
-    s_en_cours:"En cours", s_attente_fdi:"En attente FDI",
-    s_partiel:"Prête (partielle)", s_prete:"Prête (complète)",
-    s_expediee:"Expédiée", s_exp_fact:"Expédiée + Facturée",
-    s_fact_non_exp:"Facturée non expédiée", s_livree:"Livrée",
-    s_livree_part:"Livrée (partielle)", s_annule:"Annulée",
-    s_fact_partielle:"Facturée (partielle)", s_closed:"Closed",
+    s_en_cours:"En cours", s_partial:"Partial", s_full:"Full", s_annule:"Annulée",
     // Search
     search_placeholder:"Rechercher un PO #, S/O, facture, référence…",
     search_hint:"Tapez au moins 2 caractères pour rechercher",
@@ -316,7 +311,7 @@ const T:Record<Lang,Record<string,string>>={
     so_number:"SO # *", order_number_cimelec:"Order # (CIMELEC)",
     amount:"Amount (€) *", delivery_mode:"Delivery mode",
     expected_date:"Expected delivery date", order_notes:"Notes",
-    order_status_title:"Order status *",
+    order_status_title:"Order status",
     create_order:"Create order", save_order:"Save",
     new_invoice:"New shipment / Invoice", edit_invoice:"Edit invoice",
     invoice_number:"Invoice # *", invoice_date:"Invoice date *",
@@ -348,12 +343,7 @@ const T:Record<Lang,Record<string,string>>={
     a_fdi:"{n} order{s} awaiting FDI",
     a_late:"{n} late delivery{s}",
     // Status labels
-    s_en_cours:"In progress", s_attente_fdi:"Awaiting FDI",
-    s_partiel:"Ready (partial)", s_prete:"Ready (complete)",
-    s_expediee:"Shipped", s_exp_fact:"Shipped + Invoiced",
-    s_fact_non_exp:"Invoiced, not shipped", s_livree:"Delivered",
-    s_livree_part:"Delivered (partial)", s_annule:"Cancelled",
-    s_fact_partielle:"Invoiced (partial)", s_closed:"Closed",
+    s_en_cours:"In progress", s_partial:"Partial", s_full:"Full", s_annule:"Cancelled",
     // Search
     search_placeholder:"Search PO #, SO, invoice, reference…",
     search_hint:"Type at least 2 characters to search",
@@ -380,19 +370,17 @@ const t=(lang:Lang,key:string,vars?:Record<string,any>)=>{
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 const DEFAULT_CLIENTS = ["BERNABE","CIMELEC","SA INDUSTRIE","SAPE","CEDEX","VINCI","SEG","EPA","MCT"];
 // Statuts avec métadonnées (icon, couleur, alerte, position dans le flux)
+// Simplifié à 4 statuts seulement (juillet 2026) : la marchandise est
+// expédiée ET facturée en même temps dans ce métier, donc un seul champ
+// suffit à représenter l'avancement de la commande — plus besoin de
+// distinguer "expédiée" de "facturée" ou "livrée" de "closed". Les 3
+// premiers statuts sont calculés AUTOMATIQUEMENT à partir du montant
+// facturé (voir autoAdvanceOrderStatus) ; seul "annule" est manuel.
 const ORDER_STATUSES = [
-  {id:"en_cours",      label:"En cours",                  icon:"ti-clock",             step:1, alert:false, desc:"Commande en cours de traitement"},
-  {id:"attente_fdi",   label:"En attente FDI",            icon:"ti-file-alert",        step:2, alert:true,  desc:"En attente de Fonds/Documents d'Importation"},
-  {id:"partiel",       label:"Prête (partielle)",          icon:"ti-package",           step:3, alert:false, desc:"Marchandise partiellement disponible"},
-  {id:"prete",         label:"Prête (complète)",           icon:"ti-package-export",    step:4, alert:false, desc:"Marchandise entièrement disponible, prête à expédier"},
-  {id:"expediee",      label:"Expédiée",                   icon:"ti-truck",             step:5, alert:false, desc:"En cours d'acheminement"},
-  {id:"exp_fact",      label:"Expédiée + Facturée",        icon:"ti-circle-check",      step:6, alert:false, desc:"Expédiée et facturée — en attente de livraison"},
-  {id:"fact_non_exp",  label:"Facturée non expédiée",      icon:"ti-alert-circle",      step:5, alert:true,  desc:"⚠ Facture émise mais marchandise non encore expédiée"},
-  {id:"livree",        label:"Livrée",                     icon:"ti-checks",            step:7, alert:false, desc:"Livraison confirmée chez le client"},
-  {id:"livree_part",   label:"Livrée (partielle)",          icon:"ti-check",             step:7, alert:false, desc:"Livraison partielle — reliquat en attente"},
-  {id:"fact_partielle",label:"Facturée (partielle)",        icon:"ti-file-percent",      step:6, alert:true,  desc:"Facturée partiellement — reliquat à facturer"},
-  {id:"closed",        label:"Closed",                      icon:"ti-square-check",      step:9, alert:false, desc:"Commande intégralement facturée — clôturée"},
-  {id:"annule",        label:"Annulée",                     icon:"ti-x",                 step:0, alert:false, desc:"Commande annulée"},
+  {id:"en_cours", label:"En cours", icon:"ti-clock",         step:1, alert:false, desc:"Commande passée, rien n'a encore été expédié/facturé"},
+  {id:"partial",  label:"Partial",  icon:"ti-chart-pie",     step:2, alert:false, desc:"Expédiée et facturée partiellement — reliquat en cours"},
+  {id:"full",     label:"Full",     icon:"ti-square-check",  step:3, alert:false, desc:"Intégralement expédiée et facturée"},
+  {id:"annule",   label:"Annulée",  icon:"ti-x",             step:0, alert:false, desc:"Commande annulée"},
 ];
 const STATUSES = ORDER_STATUSES.map(s=>s.id);
 const DELIVERY_MODES  = ["Transitaire FCA","Air","PL","Air Abidjan","Maritime","Express"];
@@ -560,18 +548,10 @@ const payStatus=(inv:any)=>{
 
 // Status style lookup by id
 const SS:Record<string,any>={
-  "en_cours":     {c:C.amber,bg:C.amberL,alert:false},
-  "attente_fdi":  {c:"#9333EA",bg:"#F3E8FF",alert:true},
-  "partiel":      {c:C.amberDk,bg:C.amberL,alert:false},
-  "prete":        {c:"#0369A1",bg:"#E0F2FE",alert:false},
-  "expediee":     {c:C.teal,bg:C.tealL,alert:false},
-  "exp_fact":     {c:C.greenDk,bg:C.greenL,alert:false},
-  "fact_non_exp": {c:C.redDk,bg:C.redL,alert:true},
-  "livree":       {c:"#065F46",bg:"#ECFDF5",alert:false},
-  "livree_part":  {c:"#0D9488",bg:"#CCFBF1",alert:false},
-  "fact_partielle":{c:C.amberDk,bg:C.amberL,alert:true},
-  "closed":       {c:"#065F46",bg:"#D1FAE5",alert:false},
-  "annule":       {c:C.t3,bg:"#F1F5F9",alert:false},
+  "en_cours": {c:C.amber,bg:C.amberL,alert:false},
+  "partial":  {c:"#0369A1",bg:"#E0F2FE",alert:false},
+  "full":     {c:"#065F46",bg:"#D1FAE5",alert:false},
+  "annule":   {c:C.t3,bg:"#F1F5F9",alert:false},
 };
 const getStatusMeta=(id:string,lang:Lang="fr")=>{
   const base=ORDER_STATUSES.find(s=>s.id===id)||{id,label:id,icon:"ti-circle",step:0,alert:false,desc:""};
@@ -581,65 +561,42 @@ const getStatusMeta=(id:string,lang:Lang="fr")=>{
 };
 
 // ── Auto status transition on invoicing ─────────────────────────────────────
-// Invoicing (partial or complete) is reflected in the order's status
-// automatically — no need to remember to update it by hand:
-// - Invoice exists but doesn't cover the full PO amount → "fact_partielle"
-//   (Facturée partielle) — there's still a reliquat to bill.
-// - Invoice(s) cover ≥99% of the PO amount → "closed" — fully invoiced.
-// - No invoices left (e.g. last one deleted) → revert an auto-set status
-//   back to "en_cours" so it doesn't linger wrongly.
-// - "annule" is the only status never touched automatically — a cancelled
-//   order stays cancelled regardless of what happens to its invoices.
+// Dans ce métier, la marchandise est expédiée ET facturée en même temps :
+// le statut de la commande est donc entièrement dérivé du montant facturé,
+// automatiquement, à chaque modification des factures — pas de saisie
+// manuelle possible (sauf "annule", qui est le seul statut manuel) :
+// - Aucune facture (0 €)                → "en_cours"
+// - Facturé < 99% du montant PO         → "partial"
+// - Facturé ≥ 99% du montant PO         → "full" (intégralement expédiée + facturée)
+// - "annule" n'est jamais touché automatiquement — une commande annulée le
+//   reste quoi qu'il arrive à ses factures.
 const autoAdvanceOrderStatus=(order:any):any=>{
   if(!order||order.status==="annule")return order;
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
   const pct=+order.amount>0?invoiced/+order.amount:0;
-  if(invoiced<=0){
-    if(["fact_partielle","closed","fact_non_exp"].includes(order.status))return{...order,status:"en_cours"};
-    return order;
-  }
-  if(pct>=0.99)return{...order,status:"closed"};
-  return{...order,status:"fact_partielle"};
-};
-
-// ── Suivi de la livraison, indépendant du statut de facturation ─────────────
-// Le champ "status" sert au fil de facturation et est réécrit automatiquement
-// par autoAdvanceOrderStatus dès qu'une facture existe (→ "fact_partielle" ou
-// "closed"), ce qui écrasait auparavant un statut "Livrée" choisi à la main :
-// une commande réellement livrée pouvait donc se retrouver considérée comme
-// "non livrée" simplement parce qu'elle avait ensuite été facturée. Pour
-// éviter cette incohérence, la livraison est maintenant suivie via son
-// propre champ booléen `delivered`, jamais touché par la logique de
-// facturation. Pour les commandes déjà en statut "Livrée" avant l'ajout de
-// ce champ (donc jamais explicitement basculées), on retombe sur le statut
-// comme valeur par défaut.
-const isDelivered=(order:any):boolean=>{
-  if(!order)return false;
-  if(typeof order.delivered==="boolean")return order.delivered;
-  return order.status==="livree";
+  if(invoiced<=0)return{...order,status:"en_cours"};
+  if(pct>=0.99)return{...order,status:"full"};
+  return{...order,status:"partial"};
 };
 
 // ── Archivage des commandes ──────────────────────────────────────────────
 // Une commande est "archivable" quand elle n'a plus besoin d'être suivie
-// activement : la livraison est intégralement faite ET toutes les factures
-// émises sur cette commande sont entièrement soldées. Une commande sans
-// aucune facture n'est jamais archivable (rien n'a encore été facturé/payé).
-// Renvoie le détail (livraison / facturation / paiement) pour permettre à
-// l'interface d'expliquer précisément ce qu'il manque, plutôt qu'un simple
-// refus muet.
+// activement : elle est intégralement expédiée/facturée (statut "full") ET
+// toutes ses factures sont entièrement soldées. Le statut "full" faisant
+// déjà foi d'expédition + facturation complètes (les deux sont simultanées
+// dans ce métier), il n'y a plus besoin d'un champ "livrée" séparé.
+// Renvoie le détail (facturation / paiement) pour permettre à l'interface
+// d'expliquer précisément ce qu'il manque, plutôt qu'un simple refus muet.
 const getArchiveEligibility=(order:any)=>{
-  const deliveryOk=isDelivered(order);
   const invoices=order?.invoices||[];
-  const invoiced=invoices.reduce((s:number,i:any)=>s+(+i.amount||0),0);
-  const amount=+order?.amount||0;
-  const invoicedOk=invoices.length>0&&(amount<=0||invoiced>=amount*0.99);
+  const invoicedOk=order?.status==="full";
   const paidOk=invoices.length>0&&invoices.every((i:any)=>{
     const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
     return paid>=(+i.amount||0)*0.99;
   });
   return{
-    deliveryOk,invoicedOk,paidOk,
-    archivable:!!order&&!order.archived&&deliveryOk&&invoicedOk&&paidOk,
+    deliveryOk:invoicedOk,invoicedOk,paidOk,
+    archivable:!!order&&!order.archived&&invoicedOk&&paidOk,
   };
 };
 const isOrderArchivable=(order:any):boolean=>getArchiveEligibility(order).archivable;
@@ -1305,9 +1262,13 @@ export default function App(){
 
   const migrateStatus=(s:string)=>{
     const map:Record<string,string>={
-      "En cours":"en_cours","Expédié":"expediee","Livré":"livree",
-      "Facturé":"exp_fact","Annulé":"annule","PL":"prete","Prêt":"prete",
-      "OC":"prete","Transitaire FCA":"expediee","Air Abidjan":"expediee","RDT":"expediee"
+      "En cours":"en_cours","Expédié":"full","Livré":"full",
+      "Facturé":"full","Annulé":"annule","PL":"partial","Prêt":"partial",
+      "OC":"partial","Transitaire FCA":"full","Air Abidjan":"full","RDT":"full",
+      // Anciens ids (avant simplification à 4 statuts) → nouveaux ids
+      "attente_fdi":"en_cours","partiel":"partial","prete":"partial",
+      "expediee":"full","exp_fact":"full","fact_non_exp":"partial",
+      "livree":"full","livree_part":"partial","fact_partielle":"partial","closed":"full"
     };
     return map[s]||s;
   };
@@ -1439,9 +1400,16 @@ export default function App(){
         const lines=(prev.lines||[]).length>0
           ?prev.lines.map((l:any)=>l.availDateManual?l:{...l,availDate:f.expectedDate||""})
           :f.lines!==undefined?f.lines:prev.lines;
-        orders[i]=applyAutoArchive({...prev,...f,lines});
+        let merged={...prev,...f,lines};
+        // Status is auto-derived from the invoiced amount (En cours / Partial
+        // / Full) on every save — "annule" is the only manual state, set
+        // via the cancellation toggle in the order form. This also
+        // self-heals a reactivated order (uncancelling recomputes the
+        // correct automatic status instead of leaving it stale).
+        merged=f.status==="annule"?{...merged,status:"annule"}:autoAdvanceOrderStatus({...merged,status:"en_cours"});
+        orders[i]=applyAutoArchive(merged);
       }
-    } else orders.push({...f,id:Date.now().toString(),invoices:[]});
+    } else orders.push({...f,id:Date.now().toString(),invoices:[],status:f.status==="annule"?"annule":"en_cours"});
     persist(null,{...data,[client]:orders},null);setModal(null);
   };
   const delOrder=(client:string,id:string)=>persist(null,{...data,[client]:getOrders(client).filter((o:any)=>o.id!==id)},null);
@@ -1541,16 +1509,14 @@ export default function App(){
     const _echues=_allInvoices.filter((i:any)=>["overdue","ov_part"].includes(payStatus(i).key));
     const _echuesAmt=_echues.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
     if(_echues.length>0) alerts.push({level:"critical",icon:"ti-clock-exclamation",text:`${_echues.length} facture${_echues.length>1?"s":""} échue${_echues.length>1?"s":""}`,detail:`${fmt(_echuesAmt)} € à recouvrer`});
-    // P2 — Facturées non expédiées
-    const _factNonExp=_allOrders.filter((o:any)=>o.status==="fact_non_exp");
-    if(_factNonExp.length>0) alerts.push({level:"critical",icon:"ti-alert-circle",text:`${_factNonExp.length} commande${_factNonExp.length>1?"s":""} facturée${_factNonExp.length>1?"s":""} non expédiée${_factNonExp.length>1?"s":""}`,detail:_factNonExp.map((o:any)=>o.poNumber).join(", ")});
+    // P2 — (obsolète depuis la simplification des statuts — expédition et
+    // facturation sont désormais simultanées, ce cas ne peut plus exister)
     // P3 — Échéances dans 7 jours
     const _soon=_allInvoices.filter((i:any)=>["today","soon","soon_part"].includes(payStatus(i).key));
     const _soonAmt=_soon.reduce((s:number,i:any)=>s+payStatus(i).rem,0);
     if(_soon.length>0) alerts.push({level:"warning",icon:"ti-bell-ringing",text:`${_soon.length} échéance${_soon.length>1?"s":""} dans les 7 prochains jours`,detail:`${fmt(_soonAmt)} € à encaisser`});
-    // P4 — En attente FDI
-    const _fdi=_allOrders.filter((o:any)=>o.status==="attente_fdi");
-    if(_fdi.length>0) alerts.push({level:"warning",icon:"ti-file-alert",text:`${_fdi.length} commande${_fdi.length>1?"s":""} en attente FDI`,detail:_fdi.map((o:any)=>o.poNumber).join(", ")});
+    // P4 — (obsolète depuis la simplification des statuts — "En attente FDI"
+    // n'existe plus)
     // P5 — Retards livraison
     const _late=_allOrders.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
     if(_late.length>0) alerts.push({level:"info",icon:"ti-truck-off",text:`${_late.length} livraison${_late.length>1?"s":""} en retard`,detail:_late.map((o:any)=>`${o._client} ${o.poNumber}`).join(", ")});
@@ -1916,9 +1882,6 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
 
   // Commandes sans facture (hors annulé)
   const noInv=all.filter((o:any)=>o.status!=="annule"&&(o.invoices||[]).length===0);
-  // Alertes statuts critiques
-  const factNonExp=all.filter((o:any)=>o.status==="fact_non_exp");
-  const attentesFDI=all.filter((o:any)=>o.status==="attente_fdi");
   // Commandes en retard livraison
   const lateDelivery=all.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
 
@@ -3618,11 +3581,22 @@ function CustomerModal({name,cfg,defaultTermId,onSave,onClose,lang="fr"}:any){
 function OrderModal({client,order,onSave,onClose,lang="fr"}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const isCimelec=client==="CIMELEC";
-  const[f,setF]=useState({date:order?.date||todayStr(),poNumber:order?.poNumber||"",soNumber:order?.soNumber||"",orderNumber:order?.orderNumber||"",amount:order?.amount||"",status:order?.status||"en_cours",deliveryMode:order?.deliveryMode||"Transitaire FCA",expectedDate:order?.expectedDate||"",notes:order?.notes||"",id:order?.id});
+  const[f,setF]=useState({date:order?.date||todayStr(),poNumber:order?.poNumber||"",soNumber:order?.soNumber||"",orderNumber:order?.orderNumber||"",amount:order?.amount||"",deliveryMode:order?.deliveryMode||"Transitaire FCA",expectedDate:order?.expectedDate||"",notes:order?.notes||"",id:order?.id});
+  const[cancelled,setCancelled]=useState(order?.status==="annule");
   const s=(k:string,v:any)=>setF(p=>({...p,[k]:v}));
+  // Statut affiché à titre indicatif : calculé automatiquement à partir du
+  // montant facturé (marchandise expédiée = facturée dans ce métier), donc
+  // non éditable ici — seule l'annulation reste une action manuelle.
+  // Aperçu du statut qui sera réellement enregistré : recalculé à partir des
+  // factures existantes (comme le fera saveOrder), pour que la réactivation
+  // d'une commande annulée déjà facturée affiche tout de suite "Partial"/
+  // "Full" plutôt qu'un "En cours" trompeur.
+  const previewStatus=cancelled?"annule":autoAdvanceOrderStatus({...(order||{}),status:"en_cours"}).status;
+  const previewMeta=getStatusMeta(previewStatus,lang as Lang);
+  const previewSty=SS[previewStatus]||{c:C.t2,bg:"#F1F5F9"};
   return(
     <Modal title={order?tr("edit_order"):tr("new_order")} sub={client} width={560} onClose={onClose}
-      footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon="ti-check" label={order?tr("save_order"):tr("create_order")} onClick={()=>{if(!f.poNumber||!f.amount){alert("PO # et montant requis");return;}onSave(f);}} variant="primary"/></>}>
+      footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon="ti-check" label={order?tr("save_order"):tr("create_order")} onClick={()=>{if(!f.poNumber||!f.amount){alert("PO # et montant requis");return;}onSave({...f,status:cancelled?"annule":"en_cours"});}} variant="primary"/></>}>
       {/* Infos de base */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <Fld label="Date commande *" type="date" value={f.date} onChange={(v:any)=>s("date",v)}/>
@@ -3637,34 +3611,29 @@ function OrderModal({client,order,onSave,onClose,lang="fr"}:any){
         <Fld label="Date livraison prévue" type="date" value={f.expectedDate} onChange={(v:any)=>s("expectedDate",v)}/>
         <Fld label="Notes" value={f.notes} onChange={(v:any)=>s("notes",v)} placeholder="Remarques…" span={2} rows={2}/>
       </div>
-      {/* Sélecteur de statut visuel */}
+      {/* Statut : automatique (En cours / Partial / Full selon la facturation), annulation manuelle */}
       <div style={{marginBottom:4}}>
         <Label t={tr("order_status_title")}/>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:6}}>
-          {ORDER_STATUSES.map(st=>{ const stMeta=getStatusMeta(st.id,lang as Lang);
-            const sel=f.status===st.id;
-            const sty=SS[st.id]||{c:C.t2,bg:"#F1F5F9"};
-            return(
-              <button key={st.id} type="button" onClick={()=>s("status",st.id)}
-                style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",borderRadius:C.r,
-                  border:`2px solid ${sel?sty.c:C.b}`,
-                  background:sel?sty.bg+"CC":"#fff",
-                  cursor:"pointer",textAlign:"left",transition:"all .15s",
-                  boxShadow:sel?`0 0 0 3px ${sty.c}20`:"none"}}>
-                <div style={{width:28,height:28,borderRadius:7,background:sel?sty.c:C.b,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>
-                  <i className={`ti ${st.icon}`} style={{fontSize:14,color:sel?"#fff":C.t3}} aria-hidden="true"/>
-                </div>
-                <div style={{minWidth:0}}>
-                  <div style={{fontSize:12,fontWeight:sel?700:500,color:sel?sty.c:C.t1,display:"flex",alignItems:"center",gap:5}}>
-                    {stMeta.label||st.label}
-                    {st.alert&&<span style={{width:6,height:6,borderRadius:99,background:C.red,display:"inline-block",flexShrink:0}}/>}
-                  </div>
-                  <div style={{fontSize:10,color:C.t3,marginTop:2,lineHeight:1.3}}>{st.desc}</div>
-                </div>
-              </button>
-            );
-          })}
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{display:"flex",alignItems:"center",gap:6,fontSize:12,background:previewSty.bg,color:previewSty.c,padding:"7px 12px",borderRadius:C.rSm,fontWeight:700,border:`1px solid ${previewSty.c}30`}}>
+            <i className={`ti ${previewMeta.icon||"ti-circle"}`} style={{fontSize:14}} aria-hidden="true"/>
+            {previewMeta.label}
+          </span>
+          <span style={{fontSize:11,color:C.t3}}>
+            {cancelled?"Statut manuel — la facturation ne le modifiera plus.":"Calculé automatiquement selon le montant facturé (En cours → Partial → Full)."}
+          </span>
         </div>
+        <button type="button" onClick={()=>setCancelled(p=>!p)}
+          style={{display:"flex",alignItems:"center",gap:8,marginTop:10,padding:"9px 12px",borderRadius:C.r,
+            border:`1.5px solid ${cancelled?C.red:C.b}`,background:cancelled?C.redL:"#fff",cursor:"pointer",width:"100%",textAlign:"left"}}>
+          <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${cancelled?C.red:C.b}`,background:cancelled?C.red:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            {cancelled&&<i className="ti ti-check" style={{fontSize:12,color:"#fff"}} aria-hidden="true"/>}
+          </div>
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:cancelled?C.redDk:C.t1}}>Commande annulée</div>
+            <div style={{fontSize:10,color:C.t3,marginTop:1}}>À cocher uniquement si cette commande est définitivement annulée.</div>
+          </div>
+        </button>
       </div>
     </Modal>
   );
@@ -3928,7 +3897,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
   const scopedOrders=orders.filter((o:any)=>bucketOf(o)===viewBucket);
   const archiveAllReady=()=>{
     if(!onToggleArchive||archivableOrders.length===0)return;
-    if(!window.confirm(`Archiver ${archivableOrders.length} commande${archivableOrders.length>1?"s":""} livrée${archivableOrders.length>1?"s":""} et soldée${archivableOrders.length>1?"s":""} ?`))return;
+    if(!window.confirm(`Archiver ${archivableOrders.length} commande${archivableOrders.length>1?"s":""} "Full" et soldée${archivableOrders.length>1?"s":""} ?`))return;
     archivableOrders.forEach((o:any)=>onToggleArchive(o.id));
   };
 
@@ -3971,7 +3940,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"9px 14px",marginBottom:12,flexWrap:"wrap"}}>
           <span style={{fontSize:11.5,color:C.t2,display:"flex",alignItems:"center",gap:7}}>
             <i className="ti ti-archive" style={{fontSize:14,color:C.t3}} aria-hidden="true"/>
-            {archivableOrders.length} commande{archivableOrders.length>1?"s":""} livrée{archivableOrders.length>1?"s":""} et intégralement soldée{archivableOrders.length>1?"s":""} peu{archivableOrders.length>1?"vent":"t"} être archivée{archivableOrders.length>1?"s":""}.
+            {archivableOrders.length} commande{archivableOrders.length>1?"s":""} au statut "Full" et intégralement soldée{archivableOrders.length>1?"s":""} peu{archivableOrders.length>1?"vent":"t"} être archivée{archivableOrders.length>1?"s":""}.
           </span>
           <button onClick={archiveAllReady} style={{background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:6,padding:"6px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
             Archiver maintenant
@@ -4205,7 +4174,6 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
   const hasEnCours=nbEnCours>0;
   const archiveElig=getArchiveEligibility(order);
   const archivable=archiveElig.archivable;
-  const delivered=isDelivered(order);
 
   return(
     <div key={order.id} id={`order-${order.id}`}
@@ -4237,17 +4205,6 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           {nbEchues===0&&nbUpcoming>0&&<Tag label={`🔔 ${nbUpcoming} ÉCHÉANCE${nbUpcoming>1?"S":""} PROCHE${nbUpcoming>1?"S":""}`} c={C.amberDk} bg={C.amberL}/>}
           {nbEchues===0&&nbUpcoming===0&&nbEnCours>0&&payPct>0&&payPct<100&&<Tag label={`${payPct.toFixed(0)}% ENCAISSÉ`} c={C.teal} bg={C.tealL}/>}
           {allPaid&&invoiced>0&&<Tag label="✓ SOLDÉ" c={C.greenDk} bg={C.greenL}/>}
-          {perms?.canEdit&&onSaveOrder
-            ?<button onClick={(e:any)=>{e.stopPropagation();onSaveOrder({...order,delivered:!delivered});}}
-                title={delivered?"Livraison confirmée — cliquer pour annuler":"Marquer la livraison comme complète"}
-                style={{display:"flex",alignItems:"center",gap:5,fontSize:11,background:delivered?C.greenL:"#F1F5F9",color:delivered?C.greenDk:C.t3,padding:"4px 10px",borderRadius:5,fontWeight:600,whiteSpace:"nowrap",border:`1px solid ${delivered?C.green+"40":C.b}`,cursor:"pointer"}}>
-                <i className={`ti ${delivered?"ti-package-export":"ti-package"}`} style={{fontSize:13}} aria-hidden="true"/>
-                {delivered?"Livrée":"Non livrée"}
-              </button>
-            :<span style={{display:"flex",alignItems:"center",gap:5,fontSize:11,background:delivered?C.greenL:"#F1F5F9",color:delivered?C.greenDk:C.t3,padding:"4px 10px",borderRadius:5,fontWeight:600,whiteSpace:"nowrap",border:`1px solid ${delivered?C.green+"40":C.b}`}}>
-                <i className={`ti ${delivered?"ti-package-export":"ti-package"}`} style={{fontSize:13}} aria-hidden="true"/>
-                {delivered?"Livrée":"Non livrée"}
-              </span>}
           {order.archived&&<span style={{fontSize:9.5,fontWeight:700,color:"#fff",background:C.t3,padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}><i className="ti ti-archive" style={{fontSize:9}} aria-hidden="true"/>ARCHIVÉE</span>}
           <span style={{display:"flex",alignItems:"center",gap:5,fontSize:11,background:sty.bg,color:sty.c,padding:"4px 10px",borderRadius:5,fontWeight:600,whiteSpace:"nowrap",border:`1px solid ${sty.c}30`}}>
             <i className={`ti ${meta.icon||"ti-circle"}`} style={{fontSize:13}} aria-hidden="true"/>
@@ -4282,8 +4239,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
               ?<IBtn icon="ti-archive-off" title="Désarchiver" c={C.t2} bg="#F1F5F9" onClick={()=>onToggleArchive(order.id)}/>
               :(()=>{
                 const missing=[];
-                if(!archiveElig.deliveryOk)missing.push("la livraison n'est pas marquée comme complète");
-                if(!archiveElig.invoicedOk)missing.push("la commande n'est pas intégralement facturée");
+                if(!archiveElig.invoicedOk)missing.push("la commande n'est pas encore au statut \"Full\" (intégralement expédiée/facturée)");
                 if(archiveElig.invoicedOk&&!archiveElig.paidOk)missing.push("les factures ne sont pas toutes soldées");
                 const tooltip=archivable?"Archiver cette commande":`Pas encore archivable : ${missing.join(" · ")}`;
                 return(
@@ -13842,7 +13798,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
   const[selCustomers,setSelCustomers]=useState<string[]>(clients||[]);
   const toggleCustomer=(c:string)=>setSelCustomers(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
 
-  // "Commandes prêtes & à venir" looks forward (readiness/delivery dates in
+  // "Commandes Partial & En cours" looks forward (readiness/delivery dates in
   // the future, e.g. "prêt fin juillet") — the other reports default to
   // "since Jan 1st through today", which would silently exclude any future
   // date. Switch to a forward-looking window automatically for this type.
@@ -13900,8 +13856,8 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
       // never hide them behind the date filter. Upcoming orders ARE filtered
       // by their expected (readiness/delivery) date, and orders missing that
       // date are still kept (surfaced under "Sans date") rather than dropped.
-      const readyItems=allOrders.filter((o:any)=>["prete","partiel"].includes(o.status));
-      const upcomingItems=allOrders.filter((o:any)=>["en_cours","attente_fdi"].includes(o.status)&&(!o.expectedDate||inRange(o.expectedDate)));
+      const readyItems=allOrders.filter((o:any)=>o.status==="partial");
+      const upcomingItems=allOrders.filter((o:any)=>o.status==="en_cours"&&(!o.expectedDate||inRange(o.expectedDate)));
       printReadyUpcoming(fromDate,toDate,readyItems,upcomingItems);
 
     } else if(rtype==="overdue"){
@@ -14058,7 +14014,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
     w.document.close();
   };
 
-  // Commandes prêtes à expédier (status prete/partiel) + commandes à venir
+  // Commandes Partial (partiellement expédiées/facturées) + commandes En cours (pas encore commencées)
   // (en_cours/attente_fdi avec date attendue) — groupées par mois (période)
   // et récapitulées par client, dans un même document.
   const printReadyUpcoming=(from:string,to:string,readyItems:any[],upcomingItems:any[])=>{
@@ -14082,18 +14038,16 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
     };
 
     const READY_META:Record<string,{label:string,color:string,bg:string}>={
-      prete:{label:"Prête (complète)",color:"#059669",bg:"#D1FAE5"},
-      partiel:{label:"Prête (partielle)",color:"#D97706",bg:"#FEF3C7"},
+      partial:{label:"Partial",color:"#0369A1",bg:"#E0F2FE"},
     };
     const UPCOMING_META:Record<string,{label:string,color:string,bg:string}>={
       en_cours:{label:"En cours",color:"#2563EB",bg:"#DBEAFE"},
-      attente_fdi:{label:"En attente FDI",color:"#DC2626",bg:"#FEE2E2"},
     };
 
     const rowReady=(o:any)=>{const meta=READY_META[o.status]||{label:o.status,color:"#374151",bg:"#F1F5F9"};
       return `<tr><td style="font-weight:700">${o._client}</td><td>${o.poNumber||"—"}</td><td>${o.soNumber||"—"}</td><td><span style="background:${meta.bg};color:${meta.color};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">${meta.label}</span></td><td>${fmtD(o.expectedDate||o.date)}</td><td style="text-align:right;font-weight:700">${fmt(+o.amount||0)} €</td></tr>`;};
     const subReady=(grp:any[],label:string)=>`<tr style="background:#F0FDFA;font-weight:700"><td colspan="5" style="text-align:right;color:#0D9488;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#0D9488;padding:6px 10px">${fmt(grp.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
-    const totReady=(all:any[])=>`<tr style="background:#CCFBF1;font-weight:800;font-size:12px"><td colspan="5" style="text-align:right;padding:8px 10px">TOTAL PRÊTES</td><td style="text-align:right;padding:8px 10px">${fmt(all.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
+    const totReady=(all:any[])=>`<tr style="background:#CCFBF1;font-weight:800;font-size:12px"><td colspan="5" style="text-align:right;padding:8px 10px">TOTAL PARTIAL</td><td style="text-align:right;padding:8px 10px">${fmt(all.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
     const readyRows=withMonthly2(readyItems,"expectedDate",rowReady,subReady,totReady);
 
     const rowUp=(o:any)=>{const meta=UPCOMING_META[o.status]||{label:o.status,color:"#374151",bg:"#F1F5F9"};
@@ -14114,7 +14068,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
     const totR=readyItems.reduce((s:number,o:any)=>s+(+o.amount||0),0);
     const totU=upcomingItems.reduce((s:number,o:any)=>s+(+o.amount||0),0);
 
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Commandes prêtes & à venir</title><style>
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Commandes Partial & En cours</title><style>
       *{margin:0;padding:0;box-sizing:border-box;}
       body{font-family:Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:28px 32px;}
       .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:16px;border-bottom:3px solid #0D1B2A;}
@@ -14138,24 +14092,24 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
     <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">✕ Close</button>
     </div>
     <div class="header">
-      <div><div class="logo">OrderTrack</div><h1>Commandes prêtes & à venir</h1></div>
+      <div><div class="logo">OrderTrack</div><h1>Commandes Partial & En cours</h1></div>
       <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Période : ${fmtD(from)} → ${fmtD(to)}</div>
     </div>
 
     <div class="kpis">
-      <div class="kpi"><div class="l">Prêtes à expédier</div><div class="v" style="color:#0D9488">${fmt(totR)} €</div></div>
+      <div class="kpi"><div class="l">Partial (en cours d'expédition)</div><div class="v" style="color:#0D9488">${fmt(totR)} €</div></div>
       <div class="kpi"><div class="l">À venir</div><div class="v" style="color:#1D4ED8">${fmt(totU)} €</div></div>
       <div class="kpi"><div class="l">Total</div><div class="v">${fmt(totR+totU)} €</div></div>
     </div>
 
-    <h2>📦 Commandes prêtes à expédier (${readyItems.length})</h2>
-    <table><thead><tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Statut</th><th>Date</th><th>Montant (€)</th></tr></thead><tbody>${readyRows||'<tr><td colspan="6" style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande prête</td></tr>'}</tbody></table>
+    <h2>📦 Commandes Partial (${readyItems.length})</h2>
+    <table><thead><tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Statut</th><th>Date</th><th>Montant (€)</th></tr></thead><tbody>${readyRows||'<tr><td colspan="6" style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande Partial</td></tr>'}</tbody></table>
 
     <h2>📅 Commandes à venir (${upcomingItems.length})</h2>
     <table><thead><tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Statut</th><th>Date attendue</th><th>Délai</th><th>Montant (€)</th></tr></thead><tbody>${upRows||'<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande à venir</td></tr>'}</tbody></table>
 
     <h2>🏢 Récapitulatif par client</h2>
-    <table><thead><tr><th>Customer</th><th style="text-align:right">Prêtes (€)</th><th style="text-align:right">À venir (€)</th><th style="text-align:right">Total (€)</th></tr></thead>
+    <table><thead><tr><th>Customer</th><th style="text-align:right">Partial (€)</th><th style="text-align:right">À venir (€)</th><th style="text-align:right">Total (€)</th></tr></thead>
     <tbody>${clientRows||'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucune donnée</td></tr>'}
     <tr style="background:#DBEAFE;font-weight:800"><td>TOTAL</td><td style="text-align:right">${fmt(totR)} €</td><td style="text-align:right">${fmt(totU)} €</td><td style="text-align:right">${fmt(totR+totU)} €</td></tr>
     </tbody></table>
@@ -14167,7 +14121,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
 
   const REPORT_TYPES=[
     {id:"open_orders",  label:"Open Orders",           desc:"Commandes non entièrement facturées",   icon:"ti-hourglass-low",     color:C.amber},
-    {id:"ready_upcoming",label:"Commandes prêtes & à venir",desc:"Prêtes à expédier + en préparation, par client/période", icon:"ti-package-export", color:"#0D9488"},
+    {id:"ready_upcoming",label:"Commandes Partial & En cours",desc:"Partiellement expédiées/facturées + pas encore commencées, par client/période", icon:"ti-package-export", color:"#0D9488"},
     {id:"overdue",      label:"Factures échues",        desc:"Échéance dépassée, solde non réglé",    icon:"ti-clock-exclamation", color:C.red},
     {id:"upcoming",     label:"Échéances à venir",      desc:"Factures dues dans les 30 prochains jours", icon:"ti-clock",         color:C.purple},
     {id:"active_invoices",label:"Factures actives",     desc:"Échues + en cours d'échéance, non soldées — photo actuelle",icon:"ti-list-check",color:C.red},
