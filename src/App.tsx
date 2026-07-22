@@ -602,28 +602,47 @@ const autoAdvanceOrderStatus=(order:any):any=>{
   return{...order,status:"fact_partielle"};
 };
 
+// ── Suivi de la livraison, indépendant du statut de facturation ─────────────
+// Le champ "status" sert au fil de facturation et est réécrit automatiquement
+// par autoAdvanceOrderStatus dès qu'une facture existe (→ "fact_partielle" ou
+// "closed"), ce qui écrasait auparavant un statut "Livrée" choisi à la main :
+// une commande réellement livrée pouvait donc se retrouver considérée comme
+// "non livrée" simplement parce qu'elle avait ensuite été facturée. Pour
+// éviter cette incohérence, la livraison est maintenant suivie via son
+// propre champ booléen `delivered`, jamais touché par la logique de
+// facturation. Pour les commandes déjà en statut "Livrée" avant l'ajout de
+// ce champ (donc jamais explicitement basculées), on retombe sur le statut
+// comme valeur par défaut.
+const isDelivered=(order:any):boolean=>{
+  if(!order)return false;
+  if(typeof order.delivered==="boolean")return order.delivered;
+  return order.status==="livree";
+};
+
 // ── Archivage des commandes ──────────────────────────────────────────────
 // Une commande est "archivable" quand elle n'a plus besoin d'être suivie
-// activement : la livraison est intégralement faite (statut "Livrée") ET
-// toutes les factures émises sur cette commande sont entièrement soldées.
-// Une commande sans aucune facture n'est jamais archivable (rien n'a
-// encore été payé), et une commande annulée n'est pas concernée par ce
-// critère (elle peut être archivée manuellement si besoin, mais n'est pas
-// suggérée automatiquement).
-const isOrderArchivable=(order:any):boolean=>{
-  if(!order||order.archived)return false;
-  if(order.status!=="livree")return false;
-  const invoices=order.invoices||[];
-  if(invoices.length===0)return false;
+// activement : la livraison est intégralement faite ET toutes les factures
+// émises sur cette commande sont entièrement soldées. Une commande sans
+// aucune facture n'est jamais archivable (rien n'a encore été facturé/payé).
+// Renvoie le détail (livraison / facturation / paiement) pour permettre à
+// l'interface d'expliquer précisément ce qu'il manque, plutôt qu'un simple
+// refus muet.
+const getArchiveEligibility=(order:any)=>{
+  const deliveryOk=isDelivered(order);
+  const invoices=order?.invoices||[];
   const invoiced=invoices.reduce((s:number,i:any)=>s+(+i.amount||0),0);
-  const amount=+order.amount||0;
-  if(amount>0&&invoiced<amount*0.99)return false;
-  const allPaid=invoices.every((i:any)=>{
+  const amount=+order?.amount||0;
+  const invoicedOk=invoices.length>0&&(amount<=0||invoiced>=amount*0.99);
+  const paidOk=invoices.length>0&&invoices.every((i:any)=>{
     const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
     return paid>=(+i.amount||0)*0.99;
   });
-  return allPaid;
+  return{
+    deliveryOk,invoicedOk,paidOk,
+    archivable:!!order&&!order.archived&&deliveryOk&&invoicedOk&&paidOk,
+  };
 };
+const isOrderArchivable=(order:any):boolean=>getArchiveEligibility(order).archivable;
 
 // ─── APP ────────────────────────────────────────────────────────────────────
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
@@ -4151,7 +4170,9 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
   const payPct=invoiced>0?Math.min(100,totalPaid/invoiced*100):0;
   const hasUpcoming=nbUpcoming>0;
   const hasEnCours=nbEnCours>0;
-  const archivable=isOrderArchivable(order);
+  const archiveElig=getArchiveEligibility(order);
+  const archivable=archiveElig.archivable;
+  const delivered=isDelivered(order);
 
   return(
     <div key={order.id} id={`order-${order.id}`}
@@ -4183,6 +4204,17 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           {nbEchues===0&&nbUpcoming>0&&<Tag label={`🔔 ${nbUpcoming} ÉCHÉANCE${nbUpcoming>1?"S":""} PROCHE${nbUpcoming>1?"S":""}`} c={C.amberDk} bg={C.amberL}/>}
           {nbEchues===0&&nbUpcoming===0&&nbEnCours>0&&payPct>0&&payPct<100&&<Tag label={`${payPct.toFixed(0)}% ENCAISSÉ`} c={C.teal} bg={C.tealL}/>}
           {allPaid&&invoiced>0&&<Tag label="✓ SOLDÉ" c={C.greenDk} bg={C.greenL}/>}
+          {perms?.canEdit&&onSaveOrder
+            ?<button onClick={(e:any)=>{e.stopPropagation();onSaveOrder({...order,delivered:!delivered});}}
+                title={delivered?"Livraison confirmée — cliquer pour annuler":"Marquer la livraison comme complète"}
+                style={{display:"flex",alignItems:"center",gap:5,fontSize:11,background:delivered?C.greenL:"#F1F5F9",color:delivered?C.greenDk:C.t3,padding:"4px 10px",borderRadius:5,fontWeight:600,whiteSpace:"nowrap",border:`1px solid ${delivered?C.green+"40":C.b}`,cursor:"pointer"}}>
+                <i className={`ti ${delivered?"ti-package-export":"ti-package"}`} style={{fontSize:13}} aria-hidden="true"/>
+                {delivered?"Livrée":"Non livrée"}
+              </button>
+            :<span style={{display:"flex",alignItems:"center",gap:5,fontSize:11,background:delivered?C.greenL:"#F1F5F9",color:delivered?C.greenDk:C.t3,padding:"4px 10px",borderRadius:5,fontWeight:600,whiteSpace:"nowrap",border:`1px solid ${delivered?C.green+"40":C.b}`}}>
+                <i className={`ti ${delivered?"ti-package-export":"ti-package"}`} style={{fontSize:13}} aria-hidden="true"/>
+                {delivered?"Livrée":"Non livrée"}
+              </span>}
           {order.archived&&<span style={{fontSize:9.5,fontWeight:700,color:"#fff",background:C.t3,padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}><i className="ti ti-archive" style={{fontSize:9}} aria-hidden="true"/>ARCHIVÉE</span>}
           <span style={{display:"flex",alignItems:"center",gap:5,fontSize:11,background:sty.bg,color:sty.c,padding:"4px 10px",borderRadius:5,fontWeight:600,whiteSpace:"nowrap",border:`1px solid ${sty.c}30`}}>
             <i className={`ti ${meta.icon||"ti-circle"}`} style={{fontSize:13}} aria-hidden="true"/>
@@ -4215,8 +4247,17 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
             {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditOrder(order)}/>}
             {perms?.canEdit&&onToggleArchive&&(order.archived
               ?<IBtn icon="ti-archive-off" title="Désarchiver" c={C.t2} bg="#F1F5F9" onClick={()=>onToggleArchive(order.id)}/>
-              :<IBtn icon="ti-archive" title={archivable?"Archiver cette commande":"Archivage suggéré une fois la commande livrée et intégralement soldée"} c={archivable?C.t2:C.t3} bg={archivable?"#F1F5F9":"#F8FAFC"}
-                onClick={()=>{if(!archivable&&!window.confirm("Cette commande n'est pas encore livrée et intégralement soldée. L'archiver quand même ?"))return;onToggleArchive(order.id);}}/>)}
+              :(()=>{
+                const missing=[];
+                if(!archiveElig.deliveryOk)missing.push("la livraison n'est pas marquée comme complète");
+                if(!archiveElig.invoicedOk)missing.push("la commande n'est pas intégralement facturée");
+                if(archiveElig.invoicedOk&&!archiveElig.paidOk)missing.push("les factures ne sont pas toutes soldées");
+                const tooltip=archivable?"Archiver cette commande":`Pas encore archivable : ${missing.join(" · ")}`;
+                return(
+                  <IBtn icon="ti-archive" title={tooltip} c={archivable?C.t2:C.t3} bg={archivable?"#F1F5F9":"#F8FAFC"}
+                    onClick={()=>{if(!archivable&&!window.confirm(`Pas encore archivable : ${missing.join(" · ")}. L'archiver quand même ?`))return;onToggleArchive(order.id);}}/>
+                );
+              })())}
             {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_order")))onDelOrder(order.id);}}/>}
           </div>
         </div>
