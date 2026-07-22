@@ -602,6 +602,29 @@ const autoAdvanceOrderStatus=(order:any):any=>{
   return{...order,status:"fact_partielle"};
 };
 
+// ── Archivage des commandes ──────────────────────────────────────────────
+// Une commande est "archivable" quand elle n'a plus besoin d'être suivie
+// activement : la livraison est intégralement faite (statut "Livrée") ET
+// toutes les factures émises sur cette commande sont entièrement soldées.
+// Une commande sans aucune facture n'est jamais archivable (rien n'a
+// encore été payé), et une commande annulée n'est pas concernée par ce
+// critère (elle peut être archivée manuellement si besoin, mais n'est pas
+// suggérée automatiquement).
+const isOrderArchivable=(order:any):boolean=>{
+  if(!order||order.archived)return false;
+  if(order.status!=="livree")return false;
+  const invoices=order.invoices||[];
+  if(invoices.length===0)return false;
+  const invoiced=invoices.reduce((s:number,i:any)=>s+(+i.amount||0),0);
+  const amount=+order.amount||0;
+  if(amount>0&&invoiced<amount*0.99)return false;
+  const allPaid=invoices.every((i:any)=>{
+    const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+    return paid>=(+i.amount||0)*0.99;
+  });
+  return allPaid;
+};
+
 // ─── APP ────────────────────────────────────────────────────────────────────
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 const DEFAULT_ADMIN_PIN="1234";
@@ -1378,6 +1401,10 @@ export default function App(){
     persist(null,{...data,[client]:orders},null);setModal(null);
   };
   const delOrder=(client:string,id:string)=>persist(null,{...data,[client]:getOrders(client).filter((o:any)=>o.id!==id)},null);
+  const toggleArchiveOrder=(client:string,id:string)=>{
+    const orders=getOrders(client).map((o:any)=>o.id===id?{...o,archived:!o.archived}:o);
+    persist(null,{...data,[client]:orders},null);
+  };
 
   // INVOICE CRUD
   // Blocks saving an invoice whose number is already used elsewhere in the
@@ -1678,6 +1705,7 @@ export default function App(){
             onAdd={perms.canEdit?()=>setModal({type:"order",client:page}):deny}
             onEditOrder={perms.canEdit?(o:any)=>setModal({type:"order",client:page,order:o}):deny}
             onDelOrder={perms.canDelete?(id:string)=>delOrder(page,id):deny}
+            onToggleArchive={perms.canEdit?(id:string)=>toggleArchiveOrder(page,id):deny}
             onAddInv={perms.canEdit?(o:any)=>setModal({type:"invoice",client:page,order:o,cfg:getConfig(page)}):deny}
             onAddBulkInv={perms.canEdit?(o:any)=>setModal({type:"bulk_invoice",client:page,order:o,cfg:getConfig(page)}):deny}
             onEditInv={perms.canEdit?(o:any,i:any)=>setModal({type:"invoice",client:page,order:o,invoice:i,cfg:getConfig(page)}):deny}
@@ -3192,7 +3220,7 @@ function computeClientIntelligence(orders:any[]){
     totalOrders:sorted.length,lastOrderDate,tenureDays,guanxiScore,regularityScore,monthsCoverage};
 }
 
-function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAddInv,onAddBulkInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true,targets,selYear,scoreNotes}:any){
+function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onToggleArchive,onAddInv,onAddBulkInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true,targets,selYear,scoreNotes}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
   // Accordion behavior: opening an order closes any other that was open —
@@ -3363,6 +3391,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onAd
       {/* Commandes */}
       <OrderTabsPanel client={client} orders={orders} exp={exp} tgl={tgl}
         onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder}
+        onToggleArchive={onToggleArchive}
         onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay}
         onEditInv={onEditInv} onDelInv={onDelInv}
         focusOrderId={focusOrderId} onClearFocus={onClearFocus} onAdd={onAdd} lang={lang}
@@ -3838,15 +3867,26 @@ function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
 }
 
 // ─── ORDER TABS PANEL ────────────────────────────────────────────────────────
-function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms}:any){
+function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[tab,setTab]=useState<"orders"|"invoices"|"payments">("orders");
   const[search,setSearch]=useState("");
   const[showAll,setShowAll]=useState(false);
+  const[showArchived,setShowArchived]=useState(false);
   const DEFAULT_SHOWN=4;
 
+  // ── archive scope (only affects the "Commandes" tab) ──
+  const nbArchived=orders.filter((o:any)=>o.archived).length;
+  const archivableOrders=orders.filter((o:any)=>isOrderArchivable(o));
+  const scopedOrders=orders.filter((o:any)=>showArchived?!!o.archived:!o.archived);
+  const archiveAllReady=()=>{
+    if(!onToggleArchive||archivableOrders.length===0)return;
+    if(!window.confirm(`Archiver ${archivableOrders.length} commande${archivableOrders.length>1?"s":""} livrée${archivableOrders.length>1?"s":""} et soldée${archivableOrders.length>1?"s":""} ?`))return;
+    archivableOrders.forEach((o:any)=>onToggleArchive(o.id));
+  };
+
   // ── flat lists ──
-  const sorted=[...orders].sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
+  const sorted=[...scopedOrders].sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
   const allInvoices=sorted.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_order:o,_po:o.poNumber,_oid:o.id})))
     .sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
   const allPayments=allInvoices.flatMap((i:any)=>(i.payments||[]).map((p:any)=>({...p,_inv:i,_po:i._po,_invNum:i.invoiceNumber,_oid:i._oid})))
@@ -3879,6 +3919,19 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
+      {/* ── Suggestion d'archivage groupée ── */}
+      {!showArchived&&onToggleArchive&&archivableOrders.length>0&&(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"9px 14px",marginBottom:12,flexWrap:"wrap"}}>
+          <span style={{fontSize:11.5,color:C.t2,display:"flex",alignItems:"center",gap:7}}>
+            <i className="ti ti-archive" style={{fontSize:14,color:C.t3}} aria-hidden="true"/>
+            {archivableOrders.length} commande{archivableOrders.length>1?"s":""} livrée{archivableOrders.length>1?"s":""} et intégralement soldée{archivableOrders.length>1?"s":""} peu{archivableOrders.length>1?"vent":"t"} être archivée{archivableOrders.length>1?"s":""}.
+          </span>
+          <button onClick={archiveAllReady} style={{background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:6,padding:"6px 12px",fontSize:11.5,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+            Archiver maintenant
+          </button>
+        </div>
+      )}
+
       {/* ── TAB BAR + SEARCH ── */}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}}>
         <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
@@ -3895,6 +3948,20 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
             </button>
           ))}
         </div>
+        {/* Toggle Actives / Archivées */}
+        {onToggleArchive&&(
+          <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh,flexShrink:0}}>
+            <button onClick={()=>{setShowArchived(false);setSearch("");setShowAll(false);}}
+              style={{padding:"9px 14px",border:"none",borderRight:`1px solid ${C.b}`,background:!showArchived?"#0D1B2A":"transparent",color:!showArchived?"#fff":C.t2,fontWeight:!showArchived?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+              Actives
+            </button>
+            <button onClick={()=>{setShowArchived(true);setSearch("");setShowAll(false);}}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"9px 14px",border:"none",background:showArchived?"#0D1B2A":"transparent",color:showArchived?"#fff":C.t2,fontWeight:showArchived?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+              <i className="ti ti-archive" style={{fontSize:13}} aria-hidden="true"/> Archivées
+              {nbArchived>0&&<span style={{marginLeft:2,background:showArchived?"rgba(255,255,255,.25)":C.b,color:showArchived?"#fff":C.t3,fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99}}>{nbArchived}</span>}
+            </button>
+          </div>
+        )}
         {/* Search */}
         <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"7px 12px",boxShadow:C.sh,flex:1,minWidth:180,maxWidth:340}}>
           <i className="ti ti-search" style={{fontSize:14,color:C.t3,flexShrink:0}} aria-hidden="true"/>
@@ -3915,8 +3982,8 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
         const hiddenCount=filterOrders.length-DEFAULT_SHOWN;
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>Aucune commande trouvée</div>}
-            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
+            {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{showArchived?"Aucune commande archivée":"Aucune commande trouvée"}</div>}
+            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
                 onMouseEnter={(e:any)=>{e.currentTarget.style.background=C.blueL;e.currentTarget.style.borderColor=C.blue;}}
@@ -4065,7 +4132,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
 }
 
 // ─── ORDER CARD (extracted from CustomerPage) ───────────────────────────────────
-function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
+function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
   const open=Math.max(0,(+order.amount||0)-invoiced);
@@ -4084,6 +4151,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
   const payPct=invoiced>0?Math.min(100,totalPaid/invoiced*100):0;
   const hasUpcoming=nbUpcoming>0;
   const hasEnCours=nbEnCours>0;
+  const archivable=isOrderArchivable(order);
 
   return(
     <div key={order.id} id={`order-${order.id}`}
@@ -4115,6 +4183,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           {nbEchues===0&&nbUpcoming>0&&<Tag label={`🔔 ${nbUpcoming} ÉCHÉANCE${nbUpcoming>1?"S":""} PROCHE${nbUpcoming>1?"S":""}`} c={C.amberDk} bg={C.amberL}/>}
           {nbEchues===0&&nbUpcoming===0&&nbEnCours>0&&payPct>0&&payPct<100&&<Tag label={`${payPct.toFixed(0)}% ENCAISSÉ`} c={C.teal} bg={C.tealL}/>}
           {allPaid&&invoiced>0&&<Tag label="✓ SOLDÉ" c={C.greenDk} bg={C.greenL}/>}
+          {order.archived&&<span style={{fontSize:9.5,fontWeight:700,color:"#fff",background:C.t3,padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}><i className="ti ti-archive" style={{fontSize:9}} aria-hidden="true"/>ARCHIVÉE</span>}
           <span style={{display:"flex",alignItems:"center",gap:5,fontSize:11,background:sty.bg,color:sty.c,padding:"4px 10px",borderRadius:5,fontWeight:600,whiteSpace:"nowrap",border:`1px solid ${sty.c}30`}}>
             <i className={`ti ${meta.icon||"ti-circle"}`} style={{fontSize:13}} aria-hidden="true"/>
             {meta.label||order.status||"N/A"}
@@ -4144,6 +4213,10 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
             {perms?.canEdit&&<IBtn icon="ti-plus" title="Ajouter facture" c={C.teal} bg={C.tealL} onClick={()=>onAddInv(order)}/>}
             {perms?.canEdit&&onAddBulkInv&&<IBtn icon="ti-files" title="Importer plusieurs factures" c={C.purple} bg={C.purpleL} onClick={()=>onAddBulkInv(order)}/>}
             {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditOrder(order)}/>}
+            {perms?.canEdit&&onToggleArchive&&(order.archived
+              ?<IBtn icon="ti-archive-off" title="Désarchiver" c={C.t2} bg="#F1F5F9" onClick={()=>onToggleArchive(order.id)}/>
+              :<IBtn icon="ti-archive" title={archivable?"Archiver cette commande":"Archivage suggéré une fois la commande livrée et intégralement soldée"} c={archivable?C.t2:C.t3} bg={archivable?"#F1F5F9":"#F8FAFC"}
+                onClick={()=>{if(!archivable&&!window.confirm("Cette commande n'est pas encore livrée et intégralement soldée. L'archiver quand même ?"))return;onToggleArchive(order.id);}}/>)}
             {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_order")))onDelOrder(order.id);}}/>}
           </div>
         </div>
