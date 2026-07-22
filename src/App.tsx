@@ -1364,12 +1364,12 @@ export default function App(){
       const i=orders.findIndex((o:any)=>o.id===f.id);
       if(i>=0){
         const prev=orders[i];
-        const dateChanged=f.expectedDate!==prev.expectedDate;
-        // Propagate the new expected delivery date to every line that
-        // hasn't been manually overridden — a manually-set line date is a
-        // deliberate exception (e.g. a specific item confirmed on a
-        // different date) and must never be silently clobbered.
-        const lines=dateChanged&&(prev.lines||[]).length>0
+        // Propagate the expected delivery date to every line that hasn't
+        // been manually overridden, on EVERY save (not only when the date
+        // actually changed) — a manually-set line date is a deliberate
+        // exception (e.g. a specific item confirmed on a different date)
+        // and must never be silently clobbered.
+        const lines=(prev.lines||[]).length>0
           ?prev.lines.map((l:any)=>l.availDateManual?l:{...l,availDate:f.expectedDate||""})
           :f.lines!==undefined?f.lines:prev.lines;
         orders[i]={...prev,...f,lines};
