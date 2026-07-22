@@ -486,6 +486,49 @@ const orderLineCoverage=(order:any,excludeInvId?:string)=>{
   });
 };
 
+// ── Realistic "ready to invoice" balance — respects per-line availability
+// dates. A remaining balance only counts here once the line's own
+// availability date has arrived (or has none at all, i.e. always available).
+// Falls back to the whole order's remaining balance when there's no
+// line-level detail to work from. Used to keep "Planned Amount" (Weekly
+// Report) honest now that a single order can have staggered delivery dates.
+// ── Time-bucketed availability breakdown ────────────────────────────────────
+// "Remaining" (order total) is untouched by this — it always shows the full
+// order balance. This function feeds two DIFFERENT things instead:
+//  - Planned Amount = only what's realistically invoiceable soon: overdue
+//    lines + lines available this month + lines available next month.
+//  - Expected Dispo = a full time breakdown (5 buckets) so you see not just
+//    ONE date but the actual SHAPE of when the money becomes available.
+// Lines with no confirmed date ("TC") are never counted as planned — they're
+// their own bucket, since "unconfirmed" isn't the same as "not yet due".
+type AvailBuckets={overdue:number,thisMonth:number,nextMonth:number,later:number,tc:number};
+const computeAvailableToInvoice=(order:any):{total:number,planned:number,buckets:AvailBuckets,hasLineDetail:boolean}=>{
+  const invAmt=(order?.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+  const total=Math.max(0,(+order?.amount||0)-invAmt);
+  const empty:AvailBuckets={overdue:0,thisMonth:0,nextMonth:0,later:0,tc:0};
+  if(!(order?.lines||[]).length)return{total,planned:total,buckets:empty,hasLineDetail:false};
+
+  const todayIso=todayStr();
+  const curMonthKey=todayIso.slice(0,7);
+  const nextMonthD=new Date();nextMonthD.setDate(1);nextMonthD.setMonth(nextMonthD.getMonth()+1);
+  const nextMonthKey=nextMonthD.toISOString().slice(0,7);
+
+  const cov=orderLineCoverage(order);
+  const buckets:AvailBuckets={...empty};
+  cov.forEach((l:any)=>{
+    const val=(+l.qtyRemaining||0)*(+l.unitPrice||0);
+    if(val<=0)return;
+    if(!l.availDate)buckets.tc+=val;
+    else if(l.availDate<todayIso)buckets.overdue+=val;
+    else if(l.availDate.slice(0,7)===curMonthKey)buckets.thisMonth+=val;
+    else if(l.availDate.slice(0,7)===nextMonthKey)buckets.nextMonth+=val;
+    else buckets.later+=val;
+  });
+  (Object.keys(buckets) as (keyof AvailBuckets)[]).forEach(k=>buckets[k]=Math.round(buckets[k]*100)/100);
+  const planned=Math.round((buckets.overdue+buckets.thisMonth+buckets.nextMonth)*100)/100;
+  return{total,planned,buckets,hasLineDetail:true};
+};
+
 const payStatus=(inv:any)=>{
   const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
   const total=+inv.amount||0;
@@ -5766,8 +5809,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
       if(p.auto===false)return{...p,amount:+p.amount||0};
       const o=allOrders.find((x:any)=>x._client+"|"+x.id===p.key);
       if(!o)return{...p,amount:+p.amount||0};
-      const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
-      return{...p,amount:Math.round(Math.max(0,(+o.amount||0)-inv)*100)/100};
+      return{...p,amount:computeAvailableToInvoice(o).planned};
     });
 
     // ── Auto-generated narrative summary — highlights the week's key facts
@@ -6447,8 +6489,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
           if(p.auto===false)return+p.amount||0;
           const o=allOrders.find((x:any)=>x._client+"|"+x.id===p.key);
           if(!o)return+p.amount||0;
-          const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
-          return Math.round(Math.max(0,(+o.amount||0)-inv)*100)/100;
+          return computeAvailableToInvoice(o).planned;
         };
         const totalPlanned=plannedInvoices.filter((p:any)=>openOrderKeysUI.has(p.key)).reduce((s:number,p:any)=>s+getPlannedAmount(p),0);
         const toggleOrder=(o:any)=>{
@@ -6482,7 +6523,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>Customer</th>
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>PO #</th>
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11}}>S/O #</th>
-                      <th style={{padding:"8px 14px",textAlign:"center",color:C.t3,fontWeight:500,fontSize:11}}>Expected Dispo</th>
+                      <th title="Répartition du reste à facturer dans le temps, par ligne : rouge = en retard, ambre = ce mois-ci, bleu = mois prochain, gris = plus tard/non confirmé. Survole la barre pour le détail chiffré." style={{padding:"8px 14px",textAlign:"center",color:C.t3,fontWeight:500,fontSize:11,cursor:"help"}}>Expected Dispo</th>
                       <th style={{padding:"8px 14px",textAlign:"right",color:C.t3,fontWeight:500,fontSize:11}}>Remaining</th>
                       <th style={{padding:"8px 14px",textAlign:"right",color:C.teal,fontWeight:600,fontSize:11}}>Planned Amount (€)</th>
                     </tr>
@@ -6493,6 +6534,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
                       const planned=plannedInvoices.find((p:any)=>p.key===key);
                       const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
                       const rem=Math.max(0,(+o.amount||0)-inv);
+                      const avail=computeAvailableToInvoice(o);
                       const isSelected=!!planned;
                       return(
                         <tr key={idx} style={{borderBottom:`1px solid ${C.b}`,background:isSelected?C.tealL+"60":"transparent",cursor:"pointer"}}
@@ -6506,29 +6548,59 @@ tr:nth-child(even) td{background:#F8FAFC;}
                           <td style={{padding:"8px 14px",color:C.t2,fontFamily:"monospace",fontSize:11}}>{o.poNumber||"—"}</td>
                           <td style={{padding:"8px 14px",color:C.t2,fontFamily:"monospace",fontSize:11}}>{o.soNumber||"—"}</td>
                           <td style={{padding:"8px 14px",textAlign:"center"}}>
-                            {o.expectedDate?(()=>{
+                            {avail.hasLineDetail?(()=>{
+                              const b=avail.buckets;
+                              const segTotal=b.overdue+b.thisMonth+b.nextMonth+b.later+b.tc;
+                              const seg=(v:number)=>segTotal>0?Math.max(v>0?4:0,v/segTotal*100):0;
+                              const parts=[
+                                {v:b.overdue,c:C.red,label:"En retard"},
+                                {v:b.thisMonth,c:C.amber,label:"Ce mois-ci"},
+                                {v:b.nextMonth,c:C.teal,label:"Mois prochain"},
+                                {v:b.later,c:"#94A3B8",label:"Plus tard"},
+                                {v:b.tc,c:"#CBD5E1",label:"Non confirmé (TC)"},
+                              ].filter(p=>p.v>0);
+                              const tooltip=parts.map(p=>`${p.label} : ${fmt(p.v)} €`).join("\n");
+                              return(
+                                <div title={tooltip} style={{cursor:"help",display:"inline-flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                                  <div style={{display:"flex",width:90,height:9,borderRadius:99,overflow:"hidden",background:"#F1F5F9"}}>
+                                    {parts.map((p,pi)=><div key={pi} style={{width:`${seg(p.v)}%`,background:p.c}}/>)}
+                                  </div>
+                                  <span style={{fontSize:9,color:C.t3,fontWeight:600}}>
+                                    {b.overdue>0?<span style={{color:C.redDk}}>⏰ </span>:null}
+                                    {avail.planned>0?`${fmtK(avail.planned)} € proches`:"rien de proche"}
+                                  </span>
+                                </div>
+                              );
+                            })():(o.expectedDate?(()=>{
                               const isPast=new Date(o.expectedDate+"T00:00:00")<today;
                               const d=diffD(o.expectedDate);
                               return <span style={{fontSize:11,fontWeight:600,color:isPast?C.redDk:d<=14?C.amberDk:C.greenDk,background:isPast?C.redL:d<=14?C.amberL:C.greenL,padding:"2px 8px",borderRadius:4,whiteSpace:"nowrap"}}>
                                 {fmtD(o.expectedDate)}{isPast?" ⚠️":""}
                               </span>;
-                            })():<span style={{color:C.t3,fontSize:11}}>—</span>}
+                            })():<span style={{color:C.t3,fontSize:11}}>—</span>)}
                           </td>
                           <td style={{padding:"8px 14px",textAlign:"right",color:C.amberDk,fontWeight:600}}>{fmt(rem)} €</td>
                           <td style={{padding:"6px 14px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
                             {isSelected
-                              ?<div style={{display:"flex",alignItems:"center",gap:5,justifyContent:"flex-end"}}>
-                                  {planned.auto!==false&&<span title="Suit automatiquement le solde restant réel de la commande" style={{background:C.tealL,color:C.teal,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:99}}>AUTO</span>}
-                                  <input type="number" step="0.01"
-                                    value={Math.round(getPlannedAmount(planned)*100)/100}
-                                    onChange={e=>setPlannedInvoices(prev=>prev.map((p:any)=>p.key===key?{...p,amount:Math.round((+e.target.value||0)*100)/100,auto:false}:p))}
-                                    onClick={e=>e.stopPropagation()}
-                                    style={{width:100,padding:"4px 8px",border:`2px solid ${planned.auto!==false?C.teal:C.amber}`,borderRadius:5,fontSize:12,fontWeight:600,color:planned.auto!==false?C.teal:C.amberDk,textAlign:"right",fontFamily:"inherit"}}
-                                  />
-                                  {planned.auto===false&&<button title="Revenir au suivi automatique" onClick={e=>{e.stopPropagation();setPlannedInvoices(prev=>prev.map((p:any)=>p.key===key?{...p,auto:true}:p));}}
-                                    style={{background:"none",border:"none",color:C.t3,cursor:"pointer",padding:2}}>
-                                    <i className="ti ti-refresh" style={{fontSize:14}} aria-hidden="true"/>
-                                  </button>}
+                              ?<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:5,justifyContent:"flex-end"}}>
+                                    {planned.auto!==false&&<span title="Suit automatiquement les lignes en retard + ce mois + mois prochain" style={{background:C.tealL,color:C.teal,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:99}}>AUTO</span>}
+                                    <input type="number" step="0.01"
+                                      value={Math.round(getPlannedAmount(planned)*100)/100}
+                                      onChange={e=>setPlannedInvoices(prev=>prev.map((p:any)=>p.key===key?{...p,amount:Math.round((+e.target.value||0)*100)/100,auto:false}:p))}
+                                      onClick={e=>e.stopPropagation()}
+                                      style={{width:100,padding:"4px 8px",border:`2px solid ${planned.auto!==false?C.teal:C.amber}`,borderRadius:5,fontSize:12,fontWeight:600,color:planned.auto!==false?C.teal:C.amberDk,textAlign:"right",fontFamily:"inherit"}}
+                                    />
+                                    {planned.auto===false&&<button title="Revenir au suivi automatique" onClick={e=>{e.stopPropagation();setPlannedInvoices(prev=>prev.map((p:any)=>p.key===key?{...p,auto:true}:p));}}
+                                      style={{background:"none",border:"none",color:C.t3,cursor:"pointer",padding:2}}>
+                                      <i className="ti ti-refresh" style={{fontSize:14}} aria-hidden="true"/>
+                                    </button>}
+                                  </div>
+                                  {planned.auto!==false&&avail.hasLineDetail&&avail.planned<=0.5&&(
+                                    <span title="Aucune ligne en retard, de ce mois ou du mois prochain — cette commande n'a rien de réaliste à facturer bientôt" style={{display:"flex",alignItems:"center",gap:3,fontSize:9,fontWeight:700,color:C.redDk,background:C.redL,padding:"2px 7px",borderRadius:99,cursor:"help"}}>
+                                      <i className="ti ti-alert-triangle" style={{fontSize:10}} aria-hidden="true"/> Non disponible
+                                    </span>
+                                  )}
                                 </div>
                               :<span style={{color:C.t3,fontSize:11}}>—</span>
                             }
