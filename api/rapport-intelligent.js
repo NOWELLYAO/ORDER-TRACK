@@ -25,7 +25,7 @@
 // qu'une page d'erreur HTML générique de la plateforme.
 
 const MODEL = "claude-sonnet-5";
-const MAX_TOKENS = 1600;
+const MAX_TOKENS = 2000;
 
 const SYSTEM_PROMPT = (title, context) => `Tu es l'analyste intégré de l'application OrderTrack, un outil de suivi de commandes/factures/paiements B2B. Un utilisateur (responsable commercial/ADV) te demande un "Rapport Intelligent" sur : "${title}".
 
@@ -41,9 +41,11 @@ Consignes de style et de fond :
   4. Une phrase de résumé.
   5. Termine TOUJOURS par UNE question de suivi pertinente et concrète proposée à l'utilisateur (jamais plus d'une).
 - Pour les messages suivants (questions de l'utilisateur), réponds directement à la question posée, en restant ancré dans les données du contexte.
+- Le contexte peut contenir un tableau 'commandes' (avec 'lignes' par article et 'factures' par facture) et/ou un tableau 'articles' (avec prix actuel et historique). Utilise-les pour répondre PRÉCISÉMENT à des questions ponctuelles : statut ou disponibilité d'une commande (cherche par 'po', 'so', ou 'numeroCommandeInterne'), statut d'une facture ('factures[].numero'), prix ou disponibilité d'un article ('articles[]' ou 'commandes[].lignes[]', cherche par référence article ou description, y compris une correspondance partielle/approximative). Une question de recherche ponctuelle n'a pas besoin de suivre la structure en 5 points ci-dessus — réponds directement avec les données trouvées (référence, statut, quantités, dates, montants), sans détour.
+- Si 'troncature' ou 'troncatureArticles' est présent et que la commande/l'article cherché n'apparaît pas dans les données fournies, dis-le explicitement (il est peut-être hors de la période/liste incluse) plutôt que de conclure qu'il n'existe pas.
 - N'utilise QUE les données fournies ci-dessus. Si l'utilisateur pose une question dont la réponse n'est pas dans ce contexte, dis-le honnêtement ("je n'ai pas cette donnée dans ce qui m'a été transmis — peux-tu me la donner ou me dire où la trouver ?") plutôt que d'inventer un chiffre ou un fait.
 - Utilise des chiffres exacts tirés du contexte, jamais d'estimations vagues.
-- Reste sous les 220 mots pour le rapport initial, et sous 150 mots pour chaque réponse de suivi, sauf si l'utilisateur demande explicitement plus de détails.`;
+- Reste sous les 220 mots pour le rapport initial ; pour les réponses de suivi, reste concis (sous 150 mots) sauf pour une recherche précise où lister les détails pertinents (lignes, quantités, dates) prime sur la limite de mots.`;
 
 // Lit le corps brut de la requête si le runtime ne l'a pas déjà parsé
 // automatiquement (filet de sécurité selon la configuration exacte du
