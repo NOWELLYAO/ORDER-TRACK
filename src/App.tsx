@@ -474,6 +474,47 @@ const orderLineCoverage=(order:any,excludeInvId?:string)=>{
   });
 };
 
+// ── Données détaillées pour le Rapport Intelligent ───────────────────────
+// Contrairement aux résumés agrégés (scores, totaux...), le chat du Rapport
+// Intelligent doit pouvoir répondre à des questions précises sur UNE
+// commande, UNE facture ou UN article ("la commande T526 est-elle
+// disponible ?", "quel est le statut de la facture X ?"). On construit donc
+// ici un jeu de données compact mais complet : chaque commande avec ses
+// lignes (dispo, statut de facturation par ligne) et ses factures/paiements.
+// `limit` borne la taille envoyée à l'API (les plus récentes en premier)
+// pour rester rapide et peu coûteux même sur un gros historique — le
+// contexte le signale via `troncature` si des commandes ont été omises.
+const buildOrdersDetailForReport=(orders:any[],limit:number=250)=>{
+  const sorted=[...(orders||[])].sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
+  const kept=sorted.slice(0,limit);
+  return{
+    troncature:sorted.length>limit?`${sorted.length-limit} commande(s) plus ancienne(s) non incluses — demande une période plus précise si besoin.`:null,
+    commandes:kept.map((o:any)=>{
+      const invoiced=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
+      const paid=(o.invoices||[]).reduce((s:number,i:any)=>s+(i.payments||[]).reduce((ss:number,p:any)=>ss+(+p.amount||0),0),0);
+      return{
+        po:o.poNumber,so:o.soNumber,numeroCommandeInterne:o.orderNumber,
+        client:o._client||undefined,
+        statut:o.status,archivee:!!o.archived,
+        dateCommande:o.date,dateLivraisonPrevue:o.expectedDate||null,modeLivraison:o.deliveryMode,
+        montantCommande:Math.round(+o.amount||0),montantFacture:Math.round(invoiced),montantPaye:Math.round(paid),
+        notes:o.notes||undefined,
+        lignes:(o.lines&&o.lines.length>0)?orderLineCoverage(o).map((l:any)=>({
+          article:l.pn,description:l.desc||undefined,
+          qteCommandee:l.qtyOrdered,qteFacturee:l.qtyInvoiced,qteRestante:l.qtyRemaining,
+          statutLigne:l.status,dateDisponibilite:l.availDate||null,
+        })):undefined,
+        factures:(o.invoices||[]).map((i:any)=>{
+          const inPaid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+          return{numero:i.invoiceNumber||i.id,dateFacture:i.date,echeance:i.dueDate||null,
+            montant:Math.round(+i.amount||0),paye:Math.round(inPaid),solde:Math.round(Math.max(0,(+i.amount||0)-inPaid)),
+            statutPaiement:payStatus(i).key};
+        }),
+      };
+    }),
+  };
+};
+
 // ── Realistic "ready to invoice" balance — respects per-line availability
 // dates. A remaining balance only counts here once the line's own
 // availability date has arrived (or has none at all, i.e. always available).
@@ -2099,8 +2140,11 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   all.forEach((o:any)=>{const m=getStatusMeta(o.status||"");const sty2=SS[o.status||""]||{c:C.t2,bg:"#F1F5F9"};const lbl=m.label||o.status||"—";if(!stCount[lbl])stCount[lbl]={n:0,c:sty2.c,bg:sty2.bg,icon:m.icon||"ti-circle"};stCount[lbl].n++;});
 
   // ── Contexte pour le Rapport Intelligent (vue d'ensemble) ────────────────
-  // Résumé volontairement compact des indicateurs déjà calculés ci-dessus —
-  // jamais les commandes brutes — pour rester rapide et peu coûteux en appel API.
+  // Résumé des indicateurs déjà calculés ci-dessus, complété par le détail
+  // des commandes/lignes/factures (buildOrdersDetailForReport) afin que le
+  // chat puisse répondre à des questions précises ("la commande X est-elle
+  // disponible ?", "statut de la facture Y ?") et pas seulement parler en
+  // agrégats.
   const lateDeliveryByClient=(()=>{const m:Record<string,number>={};lateDelivery.forEach((o:any)=>{m[o._client]=(m[o._client]||0)+1;});return m;})();
   const kpiReportContext={
     annee:selYear,
@@ -2113,6 +2157,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
     clientsARisquePaiement:clientRisks.slice(0,10).map((c:any)=>({client:c.name,score:c.risk.score,niveau:c.risk.level,retardMoyenJours:c.risk.avgLateDays,pctFacturesEnRetard:c.risk.pctLate,tendance:c.risk.trend})),
     relancesCommercialesEnRetard:reorderAlerts.slice(0,10).map((c:any)=>({client:c.name,joursDeRetard:c.intel.daysOverdue})),
     anomaliesMontant:anomalyAlerts.slice(0,8).map((a:any)=>({client:a._client,po:a.poNumber,montant:Math.round(a.amount),multipleDeLaMoyenne:+a.multiple.toFixed(1)})),
+    ...buildOrdersDetailForReport(all,400),
   };
 
   return(
@@ -2827,6 +2872,7 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
     kpiGlobaux:{poTotal:Math.round(totPO),facture:Math.round(totInv),encaisse:Math.round(totPaid),ouvert:Math.round(totOpen),tauxFacturation:+txFact.toFixed(1),tauxEncaissement:+txPay.toFixed(1)},
     objectifs:{poCible:globalTarget.po||null,invCible:globalTarget.inv||null,avancementPoPct:poTargetPct!==null?+poTargetPct.toFixed(1):null,avancementInvPct:invTargetPct!==null?+invTargetPct.toFixed(1):null},
     parClient:all.map((c:any)=>({client:c.client,poTotal:Math.round(c.totalPO),facture:Math.round(c.totalInv),encaisse:Math.round(c.totalPaid),ouvert:Math.round(c.openOrders)})).sort((a:any,b:any)=>b.poTotal-a.poTotal),
+    ...buildOrdersDetailForReport(getAllOrders(),400),
   };
 
   return(
@@ -3311,6 +3357,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
     livraisonsEnRetard:lateOrders.map((o:any)=>({po:o.poNumber,dateAttendue:o.expectedDate,montant:Math.round(+o.amount||0)})),
     facturesEchues:overdueList.map((i:any)=>({facture:i.invoiceNumber||i.id,po:i._po,montantDu:Math.round(payStatus(i).rem),echeance:i.dueDate})),
     conditionsPaiement:term.label,
+    ...buildOrdersDetailForReport(orders,300),
   };
   return(
     <>
@@ -9114,6 +9161,14 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
     analyseABC:{nbClasseA:abcCounts.A,nbClasseB:abcCounts.B,nbClasseC:abcCounts.C,valeurTotale:Math.round(abcTotal),top5ValeurA:abcAnalysis.slice(0,5).map((p:any)=>({pn:p.pn,valeur:Math.round(p.value),pctDuTotal:+p.pct.toFixed(1)}))},
     nbDevisGeneres:quotes.length,
     valeurTotaleDevis:Math.round(quotes.reduce((s:number,q:any)=>s+(q.lines||[]).reduce((ss:number,l:any)=>ss+(+l.qty||0)*(+l.unitPrice||0),0),0)),
+    // Détail par article — pour répondre précisément à "quel est le prix de X ?"
+    troncatureArticles:productsTyped.length>600?`${productsTyped.length-600} article(s) non inclus — précise une référence ou un type si besoin.`:null,
+    articles:productsTyped.slice(0,600).map((p:any)=>({
+      article:p.pn,description:p.description||undefined,type:p._type?.label,
+      statut:p.status==="obsolete"?"obsolète":"actif",remplacePar:p.replacedBy||undefined,
+      prixActuel:p.prices&&p.prices.length>0?+p.prices[p.prices.length-1].price||0:null,
+      historiquePrix:(p.prices||[]).slice(-5).map((pr:any)=>({date:pr.date,prix:+pr.price||0})),
+    })),
   };
 
   return(
