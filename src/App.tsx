@@ -644,6 +644,31 @@ const getArchiveEligibility=(order:any)=>{
 };
 const isOrderArchivable=(order:any):boolean=>getArchiveEligibility(order).archivable;
 
+// ── Regroupement des commandes en 3 lots ─────────────────────────────────
+// "active"           : en cours (pas encore livrée, ou livrée mais pas
+//                       encore intégralement facturée).
+// "awaiting_payment"  : livrée ET intégralement facturée, mais le paiement
+//                       (total ou partiel) n'est pas encore soldé — un lot à
+//                       part pour les isoler du reste du suivi actif.
+// "archived"          : livrée + facturée + intégralement payée. Bascule
+//                       automatiquement dans ce lot dès que le dernier
+//                       paiement solde la commande — aucune action manuelle
+//                       n'est nécessaire (voir applyAutoArchive ci-dessous).
+const getOrderBucket=(order:any):"active"|"awaiting_payment"|"archived"=>{
+  if(order?.archived)return"archived";
+  const elig=getArchiveEligibility(order);
+  if(elig.deliveryOk&&elig.invoicedOk&&!elig.paidOk)return"awaiting_payment";
+  return"active";
+};
+// Bascule une commande vers "archivée" dès qu'elle devient éligible
+// (livrée + intégralement facturée + intégralement payée), sans action
+// manuelle. Appelée après chaque modification susceptible de compléter le
+// paiement (facture, règlement, ou passage de la livraison à "Livrée").
+const applyAutoArchive=(order:any):any=>{
+  if(!order||order.archived)return order;
+  return getArchiveEligibility(order).archivable?{...order,archived:true}:order;
+};
+
 // ─── APP ────────────────────────────────────────────────────────────────────
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 const DEFAULT_ADMIN_PIN="1234";
@@ -1414,7 +1439,7 @@ export default function App(){
         const lines=(prev.lines||[]).length>0
           ?prev.lines.map((l:any)=>l.availDateManual?l:{...l,availDate:f.expectedDate||""})
           :f.lines!==undefined?f.lines:prev.lines;
-        orders[i]={...prev,...f,lines};
+        orders[i]=applyAutoArchive({...prev,...f,lines});
       }
     } else orders.push({...f,id:Date.now().toString(),invoices:[]});
     persist(null,{...data,[client]:orders},null);setModal(null);
@@ -1451,7 +1476,7 @@ export default function App(){
     const inv={...f,dueDate,payments:f.payments||[],attachments:f.attachments||[]};
     if(f.id){const ii=invs.findIndex((i:any)=>i.id===f.id);if(ii>=0)invs[ii]={...invs[ii],...inv};else invs.push({...inv,id:f.id});}
     else invs.push({...inv,id:Date.now().toString()});
-    orders[idx]=autoAdvanceOrderStatus({...orders[idx],invoices:invs});
+    orders[idx]=applyAutoArchive(autoAdvanceOrderStatus({...orders[idx],invoices:invs}));
     persist(null,{...data,[client]:orders},null);setModal(null);
   };
   const delInvoice=(client:string,oid:string,iid:string)=>{const orders=[...getOrders(client)];const idx=orders.findIndex((o:any)=>o.id===oid);if(idx<0)return;orders[idx]=autoAdvanceOrderStatus({...orders[idx],invoices:orders[idx].invoices.filter((i:any)=>i.id!==iid)});persist(null,{...data,[client]:orders},null);};
@@ -1474,7 +1499,7 @@ export default function App(){
       created++;
     });
     if(created>0){
-      orders[idx]=autoAdvanceOrderStatus({...orders[idx],invoices:invs});
+      orders[idx]=applyAutoArchive(autoAdvanceOrderStatus({...orders[idx],invoices:invs}));
       persist(null,{...data,[client]:orders},null);
     }
     return{created,skipped};
@@ -1487,7 +1512,7 @@ export default function App(){
     const pays=[...(invs[ii].payments||[])];
     if(p.id){const pi=pays.findIndex((pp:any)=>pp.id===p.id);if(pi>=0)pays[pi]={...pays[pi],...p};}
     else pays.push({...p,id:Date.now().toString()});
-    invs[ii]={...invs[ii],payments:pays};orders[oi]={...orders[oi],invoices:invs};
+    invs[ii]={...invs[ii],payments:pays};orders[oi]=applyAutoArchive({...orders[oi],invoices:invs});
     persist(null,{...data,[client]:orders},null);setModal(null);
   };
   const delPayment=(client:string,oid:string,iid:string,pid:string)=>{
@@ -3891,13 +3916,16 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
   const[tab,setTab]=useState<"orders"|"invoices"|"payments">("orders");
   const[search,setSearch]=useState("");
   const[showAll,setShowAll]=useState(false);
-  const[showArchived,setShowArchived]=useState(false);
+  const[viewBucket,setViewBucket]=useState<"active"|"awaiting_payment"|"archived">("active");
   const DEFAULT_SHOWN=4;
 
-  // ── archive scope (only affects the "Commandes" tab) ──
-  const nbArchived=orders.filter((o:any)=>o.archived).length;
+  // ── lot scope (only affects the "Commandes" tab, and cascades to the
+  // "Factures"/"Paiements" tabs so the three views stay consistent) ──
+  const bucketOf=(o:any)=>getOrderBucket(o);
+  const nbAwaitingPay=orders.filter((o:any)=>bucketOf(o)==="awaiting_payment").length;
+  const nbArchived=orders.filter((o:any)=>bucketOf(o)==="archived").length;
   const archivableOrders=orders.filter((o:any)=>isOrderArchivable(o));
-  const scopedOrders=orders.filter((o:any)=>showArchived?!!o.archived:!o.archived);
+  const scopedOrders=orders.filter((o:any)=>bucketOf(o)===viewBucket);
   const archiveAllReady=()=>{
     if(!onToggleArchive||archivableOrders.length===0)return;
     if(!window.confirm(`Archiver ${archivableOrders.length} commande${archivableOrders.length>1?"s":""} livrée${archivableOrders.length>1?"s":""} et soldée${archivableOrders.length>1?"s":""} ?`))return;
@@ -3938,8 +3966,8 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
-      {/* ── Suggestion d'archivage groupée ── */}
-      {!showArchived&&onToggleArchive&&archivableOrders.length>0&&(
+      {/* ── Suggestion d'archivage groupée (filet de sécurité pour les commandes déjà éligibles avant ce lot) ── */}
+      {viewBucket!=="archived"&&onToggleArchive&&archivableOrders.length>0&&(
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.r,padding:"9px 14px",marginBottom:12,flexWrap:"wrap"}}>
           <span style={{fontSize:11.5,color:C.t2,display:"flex",alignItems:"center",gap:7}}>
             <i className="ti ti-archive" style={{fontSize:14,color:C.t3}} aria-hidden="true"/>
@@ -3967,17 +3995,22 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
             </button>
           ))}
         </div>
-        {/* Toggle Actives / Archivées */}
+        {/* Toggle par lot : Actives / En attente de paiement / Archivées */}
         {onToggleArchive&&(
           <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh,flexShrink:0}}>
-            <button onClick={()=>{setShowArchived(false);setSearch("");setShowAll(false);}}
-              style={{padding:"9px 14px",border:"none",borderRight:`1px solid ${C.b}`,background:!showArchived?"#0D1B2A":"transparent",color:!showArchived?"#fff":C.t2,fontWeight:!showArchived?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+            <button onClick={()=>{setViewBucket("active");setSearch("");setShowAll(false);}}
+              style={{padding:"9px 14px",border:"none",borderRight:`1px solid ${C.b}`,background:viewBucket==="active"?"#0D1B2A":"transparent",color:viewBucket==="active"?"#fff":C.t2,fontWeight:viewBucket==="active"?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
               Actives
             </button>
-            <button onClick={()=>{setShowArchived(true);setSearch("");setShowAll(false);}}
-              style={{display:"flex",alignItems:"center",gap:6,padding:"9px 14px",border:"none",background:showArchived?"#0D1B2A":"transparent",color:showArchived?"#fff":C.t2,fontWeight:showArchived?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+            <button onClick={()=>{setViewBucket("awaiting_payment");setSearch("");setShowAll(false);}}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"9px 14px",border:"none",borderRight:`1px solid ${C.b}`,background:viewBucket==="awaiting_payment"?C.amberDk:"transparent",color:viewBucket==="awaiting_payment"?"#fff":C.t2,fontWeight:viewBucket==="awaiting_payment"?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+              <i className="ti ti-hourglass" style={{fontSize:13}} aria-hidden="true"/> En attente paiement
+              {nbAwaitingPay>0&&<span style={{marginLeft:2,background:viewBucket==="awaiting_payment"?"rgba(255,255,255,.25)":C.amberL,color:viewBucket==="awaiting_payment"?"#fff":C.amberDk,fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99}}>{nbAwaitingPay}</span>}
+            </button>
+            <button onClick={()=>{setViewBucket("archived");setSearch("");setShowAll(false);}}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"9px 14px",border:"none",background:viewBucket==="archived"?"#0D1B2A":"transparent",color:viewBucket==="archived"?"#fff":C.t2,fontWeight:viewBucket==="archived"?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
               <i className="ti ti-archive" style={{fontSize:13}} aria-hidden="true"/> Archivées
-              {nbArchived>0&&<span style={{marginLeft:2,background:showArchived?"rgba(255,255,255,.25)":C.b,color:showArchived?"#fff":C.t3,fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99}}>{nbArchived}</span>}
+              {nbArchived>0&&<span style={{marginLeft:2,background:viewBucket==="archived"?"rgba(255,255,255,.25)":C.b,color:viewBucket==="archived"?"#fff":C.t3,fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99}}>{nbArchived}</span>}
             </button>
           </div>
         )}
@@ -4001,7 +4034,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
         const hiddenCount=filterOrders.length-DEFAULT_SHOWN;
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{showArchived?"Aucune commande archivée":"Aucune commande trouvée"}</div>}
+            {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{viewBucket==="archived"?"Aucune commande archivée":viewBucket==="awaiting_payment"?"Aucune commande en attente de paiement":"Aucune commande trouvée"}</div>}
             {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
