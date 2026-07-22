@@ -2098,6 +2098,23 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   const stCount:Record<string,{n:number,c:string,bg:string,icon:string}>={};
   all.forEach((o:any)=>{const m=getStatusMeta(o.status||"");const sty2=SS[o.status||""]||{c:C.t2,bg:"#F1F5F9"};const lbl=m.label||o.status||"—";if(!stCount[lbl])stCount[lbl]={n:0,c:sty2.c,bg:sty2.bg,icon:m.icon||"ti-circle"};stCount[lbl].n++;});
 
+  // ── Contexte pour le Rapport Intelligent (vue d'ensemble) ────────────────
+  // Résumé volontairement compact des indicateurs déjà calculés ci-dessus —
+  // jamais les commandes brutes — pour rester rapide et peu coûteux en appel API.
+  const lateDeliveryByClient=(()=>{const m:Record<string,number>={};lateDelivery.forEach((o:any)=>{m[o._client]=(m[o._client]||0)+1;});return m;})();
+  const kpiReportContext={
+    annee:selYear,
+    kpiGlobaux:{poTotal:Math.round(totPO),facture:Math.round(totInv),encaisse:Math.round(totPaid),ouvert:Math.round(totOpen),impaye:Math.round(totUnpaid),tauxFacturation:+txFact.toFixed(1),tauxEncaissement:+txPay.toFixed(1),nbCommandes:nbCmds,otifPct:otifPct!==null?+otifPct.toFixed(1):null,fillRatePct:fillRatePct!==null?+fillRatePct.toFixed(1):null},
+    facturesEchues:{nombre:echues.length,montant:Math.round(echuesAmt)},
+    echeancesAVenir30j:{nombre:upcoming.length,montant:Math.round(upcomingAmt)},
+    livraisonsEnRetard:{total:lateDelivery.length,parClient:lateDeliveryByClient},
+    commandesSansFacture:noInv.length,
+    scoresSanteClient:healthScores.map((h:any)=>({client:h.name,score:h.composite,composantPaiement:Math.round(h.paymentComponent),composantCroissance:Math.round(h.growthComponent),composantCadence:Math.round(h.cadenceComponent)})),
+    clientsARisquePaiement:clientRisks.slice(0,10).map((c:any)=>({client:c.name,score:c.risk.score,niveau:c.risk.level,retardMoyenJours:c.risk.avgLateDays,pctFacturesEnRetard:c.risk.pctLate,tendance:c.risk.trend})),
+    relancesCommercialesEnRetard:reorderAlerts.slice(0,10).map((c:any)=>({client:c.name,joursDeRetard:c.intel.daysOverdue})),
+    anomaliesMontant:anomalyAlerts.slice(0,8).map((a:any)=>({client:a._client,po:a.poNumber,montant:Math.round(a.amount),multipleDeLaMoyenne:+a.multiple.toFixed(1)})),
+  };
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:24}}>
       {/* Header */}
@@ -2106,7 +2123,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
           <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>{tr("page_dashboard")}</h1>
           <p style={{margin:0,color:C.t3,fontSize:13}}>{new Date().toLocaleDateString(lang==="en"?"en-GB":"fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           {isAdmin&&<div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden"}}>
             {[2025,2026,2027,2028,2029,2030].map(y=>(
               <button key={y} onClick={()=>setSelYear(y)} style={{padding:"7px 14px",border:"none",background:y===selYear?C.blue:"transparent",color:y===selYear?"#fff":C.t2,fontWeight:y===selYear?700:400,fontSize:12,cursor:"pointer",transition:"all .15s"}}>{y}</button>
@@ -2116,6 +2133,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
             <i className="ti ti-alert-triangle" style={{color:C.red,fontSize:16}} aria-hidden="true"/>
             <span style={{color:C.redDk,fontSize:12,fontWeight:600}}>{fmt(echuesAmt)} € de factures échues · {echues.length} facture{echues.length>1?"s":""}</span>
           </div>}
+          {isAdmin&&<RapportIntelligent title={`Vue d'ensemble ${selYear}`} context={kpiReportContext}/>}
           {canExport&&<button onClick={()=>setModal({type:"report"})} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
             <i className="ti ti-file-download" style={{fontSize:15}} aria-hidden="true"/> Rapports PDF
           </button>}
@@ -2803,6 +2821,14 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
     }
   };
 
+  // ── Contexte pour le Rapport Intelligent (compilation tous clients) ──────
+  const compilReportContext={
+    annee:selYear,
+    kpiGlobaux:{poTotal:Math.round(totPO),facture:Math.round(totInv),encaisse:Math.round(totPaid),ouvert:Math.round(totOpen),tauxFacturation:+txFact.toFixed(1),tauxEncaissement:+txPay.toFixed(1)},
+    objectifs:{poCible:globalTarget.po||null,invCible:globalTarget.inv||null,avancementPoPct:poTargetPct!==null?+poTargetPct.toFixed(1):null,avancementInvPct:invTargetPct!==null?+invTargetPct.toFixed(1):null},
+    parClient:all.map((c:any)=>({client:c.client,poTotal:Math.round(c.totalPO),facture:Math.round(c.totalInv),encaisse:Math.round(c.totalPaid),ouvert:Math.round(c.openOrders)})).sort((a:any,b:any)=>b.poTotal-a.poTotal),
+  };
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:24}}>
 
@@ -2812,11 +2838,12 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
           <h1 style={{margin:"0 0 3px",fontSize:22,fontWeight:700,color:C.t1}}>Compilation {selYear}</h1>
           <p style={{margin:0,color:C.t3,fontSize:13}}>Vue consolidée · tous les clients · {clients.length} comptes actifs</p>
         </div>
-        {isAdmin&&<div style={{display:"flex",gap:10,alignItems:"center"}}>
+        {isAdmin&&<div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <button onClick={()=>setModal({type:"targets"})}
             style={{display:"flex",alignItems:"center",gap:7,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"10px 16px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-target-arrow" style={{fontSize:15}} aria-hidden="true"/> Objectifs
           </button>
+          <RapportIntelligent title={`Compilation tous clients ${selYear}`} context={compilReportContext}/>
           <button onClick={()=>printFinancialAudit(`Tous clients (${clients.length} comptes)`,getAllOrders(),configs,globalTarget,selYear)}
             style={{display:"flex",alignItems:"center",gap:7,background:"#0D1B2A",color:"#fff",border:"none",borderRadius:C.r,padding:"10px 16px",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-certificate" style={{fontSize:15}} aria-hidden="true"/> Audit Expert
@@ -3272,6 +3299,19 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
   const lateOrders=orders.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
   const overduePayments=orders.reduce((s:any[],o:any)=>s.concat((o.invoices||[]).filter((i:any)=>["overdue","ov_part","today","soon"].includes(payStatus(i).key)).map((i:any)=>({...i,_po:o.poNumber}))),[]);
   const riskScore=isAdmin?computeClientRiskScore(orders):null;
+  const clientIntelSingle=isAdmin?computeClientIntelligence(orders):null;
+  const invoicesAll=orders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_po:o.poNumber})));
+  const overdueList=invoicesAll.filter((i:any)=>["overdue","ov_part"].includes(payStatus(i).key));
+  // ── Contexte pour le Rapport Intelligent (fiche client) ───────────────────
+  const clientReportContext={
+    client,annee:selYear,
+    kpi:{poTotal:Math.round(stats.totalPO),facture:Math.round(stats.totalInv),encaisse:Math.round(stats.totalPaid),ouvert:Math.round(Math.max(0,stats.totalPO-stats.totalInv)),tauxFacturation:+txFact.toFixed(1),tauxEncaissement:+txPay.toFixed(1),nbCommandes:orders.length},
+    scoreRisquePaiement:riskScore?{score:riskScore.score,niveau:riskScore.level,retardMoyenJours:riskScore.avgLateDays,pctFacturesEnRetard:riskScore.pctLate,facturesEchuesActuellement:riskScore.currentOverdueCount,tendance90j:riskScore.trend}:null,
+    dynamiqueCommerciale:clientIntelSingle?{croissance12moPct:+clientIntelSingle.growthRate.toFixed(1),frequenceCommandes12mo:clientIntelSingle.frequency,statutRecommande:clientIntelSingle.reorderStatus,joursDeRetardCommande:clientIntelSingle.daysOverdue,derniereCommande:clientIntelSingle.lastOrderDate,ancienneteJours:clientIntelSingle.tenureDays}:null,
+    livraisonsEnRetard:lateOrders.map((o:any)=>({po:o.poNumber,dateAttendue:o.expectedDate,montant:Math.round(+o.amount||0)})),
+    facturesEchues:overdueList.map((i:any)=>({facture:i.invoiceNumber||i.id,po:i._po,montantDu:Math.round(payStatus(i).rem),echeance:i.dueDate})),
+    conditionsPaiement:term.label,
+  };
   return(
     <>
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
@@ -3301,6 +3341,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
         <div style={{display:"flex",gap:8}}>
           {perms?.canAddCustomer&&<Btn icon="ti-edit" label="Modifier" onClick={onEditCustomer} variant="ghost"/>}
           {isAdmin&&<Btn icon="ti-trash" label="Supprimer" onClick={onDelCustomer} variant="danger"/>}
+          {isAdmin&&<RapportIntelligent title={`Client ${client}`} context={clientReportContext}/>}
           {isAdmin&&<button onClick={()=>printFinancialAudit(client,orders.map((o:any)=>({...o,_client:client})),{[client]:cfg},getTarget(targets,selYear||new Date().getFullYear(),client),selYear||new Date().getFullYear(),scoreNotes?.[client])}
             style={{display:"flex",alignItems:"center",gap:7,background:"#0D1B2A",color:"#fff",border:"none",borderRadius:C.r,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             <i className="ti ti-certificate" style={{fontSize:15}} aria-hidden="true"/> Audit Expert
@@ -3526,6 +3567,137 @@ function Modal({title,sub,width,children,footer,onClose}:any){
       {footer&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"14px 22px",borderTop:`1px solid ${C.b}`,background:"#FAFBFD",borderRadius:`0 0 ${C.rLg} ${C.rLg}`,flexShrink:0}}>{footer}</div>}
     </div>
   );
+}
+
+// ── RAPPORT INTELLIGENT ──────────────────────────────────────────────────
+// Composant réutilisable : un bouton qui ouvre un panneau conversationnel
+// branché sur l'API Claude (via la fonction serverless /api/rapport-
+// intelligent — voir ce fichier pour la config de la clé API côté Vercel).
+// Chaque page qui l'utilise lui passe un `title` (le nom de la vue, pour le
+// contexte du prompt) et un `context` : un objet JS déjà calculé à partir
+// des données réelles de la page (scores, KPI, alertes…) — jamais les
+// commandes brutes en intégralité, pour rester concis et rapide.
+// Usage : <RapportIntelligent title="Vue d'ensemble" context={{...}}/>
+function RapportIntelligent({title,context,label}:any){
+  const[open,setOpen]=useState(false);
+  const[messages,setMessages]=useState<{role:string,content:string}[]>([]);
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState<string|null>(null);
+  const[input,setInput]=useState("");
+  const scrollRef=useRef<any>(null);
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
+
+  const send=async(userText?:string)=>{
+    setError(null);setLoading(true);
+    const base=userText?[...messages,{role:"user",content:userText}]:messages;
+    if(userText)setMessages(base);
+    try{
+      const res=await fetch("/api/rapport-intelligent",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({title,context,messages:base}),
+      });
+      let data:any={};
+      try{data=await res.json();}catch{data={error:`Réponse invalide du serveur (HTTP ${res.status}).`};}
+      if(!res.ok||data.error){setError(data.error||`Erreur inconnue (HTTP ${res.status}).`);setLoading(false);return;}
+      setMessages(m=>[...base,{role:"assistant",content:data.text}]);
+    }catch(e:any){
+      setError(e?.message==="Failed to fetch"
+        ?"Impossible de contacter le serveur. Vérifie que l'app est bien déployée sur Vercel (cette fonctionnalité ne marche pas en local sans la fonction serverless)."
+        :(e?.message||"Erreur réseau."));
+    }
+    setLoading(false);
+  };
+
+  const openPanel=()=>{setOpen(true);if(messages.length===0)send();};
+  const regenerate=()=>{setMessages([]);setError(null);send();};
+
+  useEffect(()=>{if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;},[messages,loading,open]);
+
+  return(<>
+    <style>{`@keyframes riSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+    <button onClick={openPanel} title="Générer une analyse conversationnelle de cette page, propulsée par Claude"
+      style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:C.r,border:`1px solid ${C.purple}40`,
+        background:`linear-gradient(135deg,${C.purple}12,${C.blue}10)`,color:C.purple,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+      <i className="ti ti-sparkles" style={{fontSize:14}} aria-hidden="true"/> {label||"Rapport Intelligent"}
+    </button>
+    {open&&(
+      <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.55)",display:"flex",alignItems:isMobileV?"flex-end":"center",justifyContent:isMobileV?"center":"flex-end",zIndex:1200,backdropFilter:"blur(2px)"}}
+        onClick={()=>setOpen(false)}>
+        <div onClick={(e:any)=>e.stopPropagation()}
+          style={{background:"#fff",width:isMobileV?"100vw":460,maxWidth:"96vw",height:isMobileV?"85vh":"100vh",
+            borderRadius:isMobileV?`${C.rLg} ${C.rLg} 0 0`:0,boxShadow:C.shMd,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          {/* Header */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px",borderBottom:`1px solid ${C.b}`,
+            background:`linear-gradient(135deg,${C.purple}10,${C.blue}08)`,flexShrink:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+              <div style={{width:32,height:32,borderRadius:8,background:C.purple,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <i className="ti ti-sparkles" style={{fontSize:16,color:"#fff"}} aria-hidden="true"/>
+              </div>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.t1}}>Rapport Intelligent</div>
+                <div style={{fontSize:10.5,color:C.t3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{title}</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              {messages.length>0&&<button onClick={regenerate} title="Régénérer" disabled={loading}
+                style={{background:"#F1F5F9",border:"none",color:C.t3,cursor:loading?"default":"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",opacity:loading?.5:1}}>
+                <i className="ti ti-refresh" style={{fontSize:14}} aria-hidden="true"/>
+              </button>}
+              <button onClick={()=>setOpen(false)} style={{background:"#F1F5F9",border:"none",color:C.t3,cursor:"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <i className="ti ti-x" style={{fontSize:15}} aria-hidden="true"/>
+              </button>
+            </div>
+          </div>
+          {/* Messages */}
+          <div ref={scrollRef} style={{flex:1,overflowY:"auto",padding:"16px 18px",display:"flex",flexDirection:"column",gap:12,background:"#FAFBFD"}}>
+            {messages.length===0&&!loading&&!error&&(
+              <div style={{fontSize:12,color:C.t3,textAlign:"center",marginTop:20}}>Préparation de l'analyse…</div>
+            )}
+            {messages.map((m,i)=>(
+              <div key={i} style={{alignSelf:m.role==="user"?"flex-end":"stretch",maxWidth:m.role==="user"?"85%":"100%"}}>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.t3,marginBottom:3,textTransform:"uppercase",letterSpacing:".04em",
+                  textAlign:m.role==="user"?"right":"left"}}>
+                  {m.role==="user"?"Toi":"Analyse"}
+                </div>
+                <div style={{background:m.role==="user"?C.blueL:"#fff",color:C.t1,padding:"10px 13px",borderRadius:C.r,
+                  fontSize:12.5,lineHeight:1.55,whiteSpace:"pre-wrap",border:`1px solid ${m.role==="user"?C.blue+"30":C.b}`,
+                  boxShadow:m.role==="user"?"none":C.sh}}>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {loading&&(
+              <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:C.t3,padding:"6px 2px"}}>
+                <i className="ti ti-loader-2" style={{fontSize:15,animation:"riSpin 1s linear infinite"}} aria-hidden="true"/>
+                {messages.length===0?"Génération du rapport…":"Réflexion en cours…"}
+              </div>
+            )}
+            {error&&(
+              <div style={{background:C.redL,color:C.redDk,padding:"10px 13px",borderRadius:C.r,fontSize:11.5,lineHeight:1.5,border:`1px solid ${C.red}30`}}>
+                <div style={{fontWeight:700,marginBottom:3,display:"flex",alignItems:"center",gap:5}}>
+                  <i className="ti ti-alert-triangle" style={{fontSize:13}} aria-hidden="true"/> Erreur
+                </div>
+                {error}
+              </div>
+            )}
+          </div>
+          {/* Input */}
+          <div style={{display:"flex",gap:8,padding:"12px 14px",borderTop:`1px solid ${C.b}`,flexShrink:0,background:"#fff"}}>
+            <input value={input} disabled={loading}
+              onChange={(e:any)=>setInput(e.target.value)}
+              onKeyDown={(e:any)=>{if(e.key==="Enter"&&input.trim()&&!loading){send(input.trim());setInput("");}}}
+              placeholder="Pose une question sur ce rapport…"
+              style={{flex:1,padding:"9px 12px",borderRadius:C.r,border:`1px solid ${C.b}`,fontSize:12.5,outline:"none",opacity:loading?.6:1}}/>
+            <button onClick={()=>{if(input.trim()&&!loading){send(input.trim());setInput("");}}} disabled={loading||!input.trim()}
+              style={{background:C.purple,border:"none",color:"#fff",borderRadius:C.r,width:38,display:"flex",alignItems:"center",justifyContent:"center",
+                cursor:loading||!input.trim()?"default":"pointer",opacity:loading||!input.trim()?.5:1,flexShrink:0}}>
+              <i className="ti ti-send" style={{fontSize:15}} aria-hidden="true"/>
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>);
 }
 
 function Fld({label,type="text",value,onChange,placeholder,span,rows,min,max}:any){
@@ -8933,6 +9105,17 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
     setCatEditProduct(null);
   };
 
+  // ── Contexte pour le Rapport Intelligent (catalogue & devis) ─────────────
+  const catalogueReportContext={
+    nbProduits:products.length,
+    nbProduitsObsoletes:productsTyped.filter((p:any)=>p.status==="obsolete").length,
+    alertesPrix:priceAlerts.slice(0,10).map((p:any)=>({pn:p.pn,variationPct:+p._priceChange.pct.toFixed(1),ancienPrix:p._priceChange.prevPrice,nouveauPrix:p._priceChange.latestPrice})),
+    repartitionParType:typeStats.map((t:any)=>({type:t.label,nombre:t.count})),
+    analyseABC:{nbClasseA:abcCounts.A,nbClasseB:abcCounts.B,nbClasseC:abcCounts.C,valeurTotale:Math.round(abcTotal),top5ValeurA:abcAnalysis.slice(0,5).map((p:any)=>({pn:p.pn,valeur:Math.round(p.value),pctDuTotal:+p.pct.toFixed(1)}))},
+    nbDevisGeneres:quotes.length,
+    valeurTotaleDevis:Math.round(quotes.reduce((s:number,q:any)=>s+(q.lines||[]).reduce((ss:number,l:any)=>ss+(+l.qty||0)*(+l.unitPrice||0),0),0)),
+  };
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       {catEditProduct&&<CatEditModal product={catEditProduct} allProducts={products} onSave={handleCatEdit} onClose={()=>setCatEditProduct(null)}/>}
@@ -8942,6 +9125,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
           <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Catalogue & Devis</h1>
           <p style={{margin:0,color:C.t3,fontSize:13}}>{products.length} produits · {quotes.length} devis générés</p>
         </div>
+        {isAdmin&&<RapportIntelligent title="Catalogue & Devis" context={catalogueReportContext}/>}
       </div>
       {/* Tabs */}
       <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",alignSelf:"flex-start",boxShadow:C.sh}}>
@@ -11063,6 +11247,15 @@ function ProjectsPage({isMobile}:any){
     </div>
   );
 
+  // ── Contexte pour le Rapport Intelligent (pipeline commercial) ───────────
+  const projectsReportContext={
+    nbProjets:projects.length,nbEnCours:ongoingP.length,nbClotures:closedP.length,
+    pipeline:{totalPondere:Math.round(pipelineTotal),totalPondereParChance:Math.round(pipelineWeighted),tauxDeReussitePct:+winRate.toFixed(1)},
+    alertes:(alerts||[]).slice(0,10).map((a:any)=>({niveau:a.sev,type:a.kind,message:a.msg,projet:a.project?.name||a.project?.oppId||"—"})),
+    mesurabilite:{pctMesurable:measurablePct!==undefined?+measurablePct.toFixed(1):null,montantMesurable:Math.round(measurableAmount||0),montantStagnant:Math.round(staleAmount||0)},
+    topPartiesEnCours:topParties.map(([nom,montant]:any)=>({partie:nom,montant:Math.round(montant)})),
+  };
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <style>{`@keyframes projHealthBlink{0%,100%{opacity:1}50%{opacity:.2}}`}</style>
@@ -11077,7 +11270,8 @@ function ProjectsPage({isMobile}:any){
           </h1>
           <p style={{margin:0,color:C.t3,fontSize:13}}>{projects.length} projet{projects.length>1?"s":""} · {ongoingP.length} en cours · {closedP.length} clôturé{closedP.length>1?"s":""}</p>
         </div>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <RapportIntelligent title="Pipeline commercial (Projects)" context={projectsReportContext}/>
           <button onClick={()=>printProjectsAudit(projects.filter((p:any)=>!p.archived))}
             style={{display:"flex",alignItems:"center",gap:6,background:"#0D1B2A",color:"#fff",border:"none",borderRadius:C.r,padding:"9px 16px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:C.sh}}>
             <i className="ti ti-certificate" style={{fontSize:14}} aria-hidden="true"/> Audit Expert
@@ -13458,12 +13652,27 @@ function TresoreriePage({getAllOrders,clients,lang,isMobile}:any){
     return dd<=future;
   }).sort((a:any,b:any)=>new Date(a.dueDate).getTime()-new Date(b.dueDate).getTime());
 
+  // ── Contexte pour le Rapport Intelligent (trésorerie) ─────────────────────
+  const overdueByClient=(()=>{const m:Record<string,number>={};allInvoices.filter((i:any)=>["overdue","ov_part"].includes(payStatus(i).key)).forEach((i:any)=>{m[i._client]=(m[i._client]||0)+payStatus(i).rem;});return Object.fromEntries(Object.entries(m).map(([k,v]:any)=>[k,Math.round(v)]));})();
+  const tresoReportContext={
+    totalAEncaisser:Math.round(totalExpected),
+    echuNonRegle:Math.round(overdueTotal),
+    prevu60j:Math.round(next30),
+    encaisseMoisCourant:Math.round(forecast[0]?.collected||0),
+    previsionMensuelle6mois:forecast.map((m:any)=>({mois:m.label,prevu:Math.round(m.expected),echu:Math.round(m.overdue),encaisse:Math.round(m.collected)})),
+    echuParClient:overdueByClient,
+    prochainesEcheances:upcoming.slice(0,15).map((i:any)=>({client:i._client,facture:i.invoiceNumber||i.id,montantDu:Math.round(payStatus(i).rem),echeance:i.dueDate})),
+  };
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       {/* Header */}
-      <div>
-        <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Trésorerie prévisionnelle</h1>
-        <p style={{margin:0,color:C.t3,fontSize:13}}>Encaissements prévus sur les 6 prochains mois</p>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div>
+          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Trésorerie prévisionnelle</h1>
+          <p style={{margin:0,color:C.t3,fontSize:13}}>Encaissements prévus sur les 6 prochains mois</p>
+        </div>
+        <RapportIntelligent title="Trésorerie prévisionnelle" context={tresoReportContext}/>
       </div>
 
       {/* KPI strip */}
