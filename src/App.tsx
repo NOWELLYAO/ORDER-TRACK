@@ -18,7 +18,7 @@ const logActivity=async(action:string,detail:string,user:string)=>{
       headers:{"Content-Type":"application/json","apikey":K,"Authorization":"Bearer "+K,"Prefer":"resolution=merge-duplicates,return=minimal"},
       body:JSON.stringify({user_key:LOG_KEY,payload:{logs:updated}})
     });
-  }catch(e){console.warn("[Log]",e
+  }catch(e){console.warn("[Log]",e);}
 };
 
 // ─── SUPABASE CLOUD SYNC (pure fetch — no package needed) ────────────────────
