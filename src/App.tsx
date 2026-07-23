@@ -3693,7 +3693,7 @@ function Modal({title,sub,width,children,footer,onClose}:any){
 // des données réelles de la page (scores, KPI, alertes…) — jamais les
 // commandes brutes en intégralité, pour rester concis et rapide.
 // Usage : <RapportIntelligent title="Vue d'ensemble" context={{...}}/>
-function RapportIntelligent({title,context,contextLoader,label,floating}:any){
+function RapportIntelligent({title,context,contextLoader,label,floating,autoGenerate}:any){
   const[open,setOpen]=useState(false);
   const[messages,setMessages]=useState<{role:string,content:string}[]>([]);
   const[loading,setLoading]=useState(false);
@@ -3734,7 +3734,8 @@ function RapportIntelligent({title,context,contextLoader,label,floating}:any){
     setLoading(false);
   };
 
-  const openPanel=()=>{setOpen(true);if(messages.length===0)send();};
+  const shouldAutoGenerate=autoGenerate!==undefined?autoGenerate:!floating;
+  const openPanel=()=>{setOpen(true);if(messages.length===0&&shouldAutoGenerate)send();};
   const regenerate=()=>{setMessages([]);setError(null);resolvedContextRef.current=contextLoader?null:context;send();};
 
   useEffect(()=>{if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;},[messages,loading,open]);
@@ -3784,7 +3785,14 @@ function RapportIntelligent({title,context,contextLoader,label,floating}:any){
           {/* Messages */}
           <div ref={scrollRef} style={{flex:1,overflowY:"auto",padding:"16px 18px",display:"flex",flexDirection:"column",gap:12,background:"#FAFBFD"}}>
             {messages.length===0&&!loading&&!error&&(
-              <div style={{fontSize:12,color:C.t3,textAlign:"center",marginTop:20}}>Préparation de l'analyse…</div>
+              <div style={{fontSize:12,color:C.t3,textAlign:"center",marginTop:20}}>
+                {shouldAutoGenerate?"Préparation de l'analyse…":(
+                  <>
+                    <i className="ti ti-message-chatbot" style={{fontSize:26,display:"block",margin:"0 auto 10px",color:C.purple+"80"}} aria-hidden="true"/>
+                    Pose ta question sur les commandes, factures, articles, clients, projets…
+                  </>
+                )}
+              </div>
             )}
             {messages.map((m,i)=>(
               <div key={i} style={{alignSelf:m.role==="user"?"flex-end":"stretch",maxWidth:m.role==="user"?"85%":"100%"}}>
@@ -14611,5 +14619,3 @@ function ActivityLogsPage({session}:any){
     </div>
   );
 }
-
-    
