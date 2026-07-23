@@ -141,3 +141,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: "Erreur serveur inattendue : " + String((e && e.message) || e) });
   }
 }
+
