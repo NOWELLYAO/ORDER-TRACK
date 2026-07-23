@@ -1667,10 +1667,49 @@ export default function App(){
     };
   };
 
+  // ── Application d'une proposition de modification (Rapport Intelligent) ──
+  // Cherche la commande par PO parmi les clients visibles, applique
+  // uniquement le champ concerné, et sauvegarde via la même fonction
+  // saveOrder que le reste de l'appli (donc les mêmes règles s'appliquent :
+  // recalcul automatique du statut, archivage auto si déjà soldé, etc.).
+  // `expectedDate` est toujours réinjecté même quand ce n'est pas le champ
+  // modifié, pour ne pas déclencher par erreur la propagation de date aux
+  // lignes avec une valeur vide (cf. saveOrder).
+  const applyOrderProposal=async(proposal:any):Promise<{ok:boolean,message:string}>=>{
+    const{po,champ,valeur}=proposal||{};
+    if(!po||!champ||valeur===undefined)return{ok:false,message:"Proposition incomplète, impossible à appliquer."};
+    let foundClient:string|null=null,foundOrder:any=null;
+    for(const c of visibleClients){
+      const ord=getOrders(c).find((o:any)=>o.poNumber===po);
+      if(ord){foundClient=c;foundOrder=ord;break;}
+    }
+    if(!foundOrder||!foundClient)return{ok:false,message:`Commande ${po} introuvable parmi les clients visibles.`};
+    const patch:any={id:foundOrder.id,expectedDate:foundOrder.expectedDate||""};
+    let message="";
+    if(champ==="notes"){
+      const existing=(foundOrder.notes||"").trim();
+      patch.notes=existing?`${existing}\n${valeur}`:valeur;
+      message=`Note ajoutée à la commande ${po}.`;
+    }else if(champ==="dateLivraisonPrevue"){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(valeur))return{ok:false,message:"Format de date invalide reçu — modification annulée par sécurité."};
+      patch.expectedDate=valeur;
+      message=`Date de livraison prévue de la commande ${po} mise à jour au ${valeur}.`;
+    }else if(champ==="statut"){
+      if(valeur!=="annule")return{ok:false,message:"Ce changement de statut n'est pas autorisé (seule l'annulation est manuelle, les autres statuts sont automatiques)."};
+      patch.status="annule";
+      message=`Commande ${po} marquée comme annulée.`;
+    }else{
+      return{ok:false,message:"Type de modification non reconnu."};
+    }
+    if(!perms?.canEdit)return{ok:false,message:"Ton profil d'accès ne permet pas de modifier les commandes."};
+    saveOrder(foundClient,patch);
+    return{ok:true,message};
+  };
+
   return(
     <div style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:C.page,overflow:"hidden",position:"relative"}}>
       {/* Assistant global — flottant, accessible depuis n'importe quelle page */}
-      {perms?.canViewReports&&<RapportIntelligent floating title="Assistant OrderTrack" contextLoader={buildGlobalAssistantContext}/>}
+      {perms?.canViewReports&&<RapportIntelligent floating title="Assistant OrderTrack" contextLoader={buildGlobalAssistantContext} onApplyChange={applyOrderProposal}/>}
 
       {/* ── SIDEBAR ─────────────────────────────────────────── */}
       {/* Mobile overlay backdrop */}
@@ -3427,6 +3466,33 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
     conditionsPaiement:term.label,
     ...buildOrdersDetailForReport(orders),
   };
+  // ── Application d'une proposition (scopée aux commandes de ce client) ────
+  const applyOrderProposalClient=async(proposal:any):Promise<{ok:boolean,message:string}>=>{
+    const{po,champ,valeur}=proposal||{};
+    if(!po||!champ||valeur===undefined)return{ok:false,message:"Proposition incomplète, impossible à appliquer."};
+    const foundOrder=orders.find((o:any)=>o.poNumber===po);
+    if(!foundOrder)return{ok:false,message:`Commande ${po} introuvable chez ${client}.`};
+    const patch:any={id:foundOrder.id,expectedDate:foundOrder.expectedDate||""};
+    let message="";
+    if(champ==="notes"){
+      const existing=(foundOrder.notes||"").trim();
+      patch.notes=existing?`${existing}\n${valeur}`:valeur;
+      message=`Note ajoutée à la commande ${po}.`;
+    }else if(champ==="dateLivraisonPrevue"){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(valeur))return{ok:false,message:"Format de date invalide reçu — modification annulée par sécurité."};
+      patch.expectedDate=valeur;
+      message=`Date de livraison prévue de la commande ${po} mise à jour au ${valeur}.`;
+    }else if(champ==="statut"){
+      if(valeur!=="annule")return{ok:false,message:"Ce changement de statut n'est pas autorisé (seule l'annulation est manuelle)."};
+      patch.status="annule";
+      message=`Commande ${po} marquée comme annulée.`;
+    }else{
+      return{ok:false,message:"Type de modification non reconnu."};
+    }
+    if(!perms?.canEdit||!onSaveOrder)return{ok:false,message:"Ton profil d'accès ne permet pas de modifier les commandes."};
+    onSaveOrder(patch);
+    return{ok:true,message};
+  };
   return(
     <>
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
@@ -3456,7 +3522,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
         <div style={{display:"flex",gap:8}}>
           {perms?.canAddCustomer&&<Btn icon="ti-edit" label="Modifier" onClick={onEditCustomer} variant="ghost"/>}
           {isAdmin&&<Btn icon="ti-trash" label="Supprimer" onClick={onDelCustomer} variant="danger"/>}
-          {isAdmin&&<RapportIntelligent title={`Client ${client}`} context={clientReportContext}/>}
+          {isAdmin&&<RapportIntelligent title={`Client ${client}`} context={clientReportContext} onApplyChange={applyOrderProposalClient}/>}
           {isAdmin&&<button onClick={()=>printFinancialAudit(client,orders.map((o:any)=>({...o,_client:client})),{[client]:cfg},getTarget(targets,selYear||new Date().getFullYear(),client),selYear||new Date().getFullYear(),scoreNotes?.[client])}
             style={{display:"flex",alignItems:"center",gap:7,background:"#0D1B2A",color:"#fff",border:"none",borderRadius:C.r,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             <i className="ti ti-certificate" style={{fontSize:15}} aria-hidden="true"/> Audit Expert
@@ -3693,16 +3759,67 @@ function Modal({title,sub,width,children,footer,onClose}:any){
 // des données réelles de la page (scores, KPI, alertes…) — jamais les
 // commandes brutes en intégralité, pour rester concis et rapide.
 // Usage : <RapportIntelligent title="Vue d'ensemble" context={{...}}/>
-function RapportIntelligent({title,context,contextLoader,label,floating,autoGenerate}:any){
+function RapportIntelligent({title,context,contextLoader,label,floating,autoGenerate,onApplyChange}:any){
   const[open,setOpen]=useState(false);
-  const[messages,setMessages]=useState<{role:string,content:string}[]>([]);
+  const[messages,setMessages]=useState<{role:string,content:string,proposal?:any,proposalState?:"pending"|"applied"|"rejected"|"error"}[]>([]);
   const[loading,setLoading]=useState(false);
   const[loadingData,setLoadingData]=useState(false);
   const[error,setError]=useState<string|null>(null);
   const[input,setInput]=useState("");
+  const[listening,setListening]=useState(false);
+  const[voiceReply,setVoiceReply]=useState(false);
+  const[speakingIdx,setSpeakingIdx]=useState<number|null>(null);
   const scrollRef=useRef<any>(null);
   const resolvedContextRef=useRef<any>(context||null);
+  const recognitionRef=useRef<any>(null);
+  const spokenCountRef=useRef(0);
   const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
+  const SpeechRecognitionAPI=typeof window!=="undefined"?((window as any).SpeechRecognition||(window as any).webkitSpeechRecognition):null;
+  const speechSupported=typeof window!=="undefined"&&!!SpeechRecognitionAPI;
+  const ttsSupported=typeof window!=="undefined"&&!!(window as any).speechSynthesis;
+
+  // Nettoie le texte avant de le faire lire à voix haute (markdown, listes,
+  // symboles) pour que la voix ne prononce pas les astérisques/tirets/etc.
+  const cleanForSpeech=(s:string)=>s
+    .replace(/###[\s\S]*?###/g,"")
+    .replace(/[*_`#]/g,"")
+    .replace(/^[-•]\s*/gm,"")
+    .replace(/\n{2,}/g,". ")
+    .replace(/\n/g," ")
+    .trim();
+
+  const speak=(text:string,idx:number)=>{
+    if(!ttsSupported)return;
+    window.speechSynthesis.cancel();
+    const u=new(window as any).SpeechSynthesisUtterance(cleanForSpeech(text));
+    u.lang="fr-FR";u.rate=1.03;
+    u.onend=()=>setSpeakingIdx(null);
+    u.onerror=()=>setSpeakingIdx(null);
+    setSpeakingIdx(idx);
+    window.speechSynthesis.speak(u);
+  };
+  const stopSpeaking=()=>{if(ttsSupported)window.speechSynthesis.cancel();setSpeakingIdx(null);};
+
+  const startListening=()=>{
+    if(!speechSupported||listening)return;
+    const rec=new SpeechRecognitionAPI();
+    rec.lang="fr-FR";rec.continuous=false;rec.interimResults=true;
+    rec.onresult=(e:any)=>{
+      let transcript="";
+      for(let i=0;i<e.results.length;i++)transcript+=e.results[i][0].transcript;
+      setInput(transcript);
+      if(e.results[e.results.length-1].isFinal){
+        setListening(false);
+        if(transcript.trim()){send(transcript.trim());setInput("");}
+      }
+    };
+    rec.onerror=()=>setListening(false);
+    rec.onend=()=>setListening(false);
+    recognitionRef.current=rec;
+    setListening(true);
+    rec.start();
+  };
+  const stopListening=()=>{recognitionRef.current?.stop();setListening(false);};
 
   const send=async(userText?:string)=>{
     setError(null);setLoading(true);
@@ -3719,12 +3836,12 @@ function RapportIntelligent({title,context,contextLoader,label,floating,autoGene
       }
       const res=await fetch("/api/rapport-intelligent",{
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({title,context:resolvedContextRef.current,messages:base}),
+        body:JSON.stringify({title,context:resolvedContextRef.current,messages:base.map(({role,content}:any)=>({role,content}))}),
       });
       let data:any={};
       try{data=await res.json();}catch{data={error:`Réponse invalide du serveur (HTTP ${res.status}).`};}
       if(!res.ok||data.error){setError(data.error||`Erreur inconnue (HTTP ${res.status}).`);setLoading(false);return;}
-      setMessages(m=>[...base,{role:"assistant",content:data.text}]);
+      setMessages(m=>[...base,{role:"assistant",content:data.text,proposal:data.proposal||undefined,proposalState:data.proposal?"pending":undefined}]);
     }catch(e:any){
       setLoadingData(false);
       setError(e?.message==="Failed to fetch"
@@ -3734,14 +3851,42 @@ function RapportIntelligent({title,context,contextLoader,label,floating,autoGene
     setLoading(false);
   };
 
+  const applyProposal=async(idx:number)=>{
+    const msg=messages[idx];
+    if(!msg?.proposal||!onApplyChange)return;
+    setMessages(m=>m.map((mm,i)=>i===idx?{...mm,proposalState:"applied"}:mm));
+    try{
+      const result=await onApplyChange(msg.proposal);
+      if(!result?.ok){
+        setMessages(m=>m.map((mm,i)=>i===idx?{...mm,proposalState:"error"}:mm));
+        setMessages(m=>[...m,{role:"assistant",content:`⚠️ ${result?.message||"La modification n'a pas pu être appliquée."}`}]);
+      }else{
+        setMessages(m=>[...m,{role:"assistant",content:`✓ ${result.message||"Modification appliquée."}`}]);
+      }
+    }catch(e:any){
+      setMessages(m=>m.map((mm,i)=>i===idx?{...mm,proposalState:"error"}:mm));
+      setMessages(m=>[...m,{role:"assistant",content:`⚠️ Erreur lors de l'application : ${e?.message||e}`}]);
+    }
+  };
+  const rejectProposal=(idx:number)=>setMessages(m=>m.map((mm,i)=>i===idx?{...mm,proposalState:"rejected"}:mm));
+
   const shouldAutoGenerate=autoGenerate!==undefined?autoGenerate:!floating;
   const openPanel=()=>{setOpen(true);if(messages.length===0&&shouldAutoGenerate)send();};
   const regenerate=()=>{setMessages([]);setError(null);resolvedContextRef.current=contextLoader?null:context;send();};
 
   useEffect(()=>{if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;},[messages,loading,open]);
+  useEffect(()=>{
+    if(!voiceReply)return;
+    if(messages.length>spokenCountRef.current){
+      const last=messages[messages.length-1];
+      if(last.role==="assistant")speak(last.content,messages.length-1);
+      spokenCountRef.current=messages.length;
+    }
+  },[messages,voiceReply]);
+  useEffect(()=>{if(!open){stopListening();stopSpeaking();}},[open]);
 
   return(<>
-    <style>{`@keyframes riSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+    <style>{`@keyframes riSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}} @keyframes riPulse{0%,100%{box-shadow:0 0 0 0 ${C.red}55}50%{box-shadow:0 0 0 6px ${C.red}00}}`}</style>
     {floating
       ?<button onClick={openPanel} title="Assistant OrderTrack — pose-lui n'importe quelle question sur l'application"
           style={{position:"fixed",bottom:24,right:24,width:56,height:56,borderRadius:"50%",border:"none",
@@ -3773,6 +3918,10 @@ function RapportIntelligent({title,context,contextLoader,label,floating,autoGene
               </div>
             </div>
             <div style={{display:"flex",gap:6,flexShrink:0}}>
+              {ttsSupported&&<button onClick={()=>{if(voiceReply)stopSpeaking();setVoiceReply(v=>!v);}} title={voiceReply?"Désactiver la lecture vocale des réponses":"Lire les réponses à voix haute"}
+                style={{background:voiceReply?C.purple:"#F1F5F9",border:"none",color:voiceReply?"#fff":C.t3,cursor:"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <i className={`ti ${voiceReply?"ti-volume":"ti-volume-off"}`} style={{fontSize:14}} aria-hidden="true"/>
+              </button>}
               {messages.length>0&&<button onClick={regenerate} title="Régénérer" disabled={loading}
                 style={{background:"#F1F5F9",border:"none",color:C.t3,cursor:loading?"default":"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",opacity:loading?.5:1}}>
                 <i className="ti ti-refresh" style={{fontSize:14}} aria-hidden="true"/>
@@ -3800,11 +3949,48 @@ function RapportIntelligent({title,context,contextLoader,label,floating,autoGene
                   textAlign:m.role==="user"?"right":"left"}}>
                   {m.role==="user"?"Toi":"Analyse"}
                 </div>
-                <div style={{background:m.role==="user"?C.blueL:"#fff",color:C.t1,padding:"10px 13px",borderRadius:C.r,
-                  fontSize:12.5,lineHeight:1.55,whiteSpace:"pre-wrap",border:`1px solid ${m.role==="user"?C.blue+"30":C.b}`,
-                  boxShadow:m.role==="user"?"none":C.sh}}>
-                  {m.content}
+                <div style={{display:"flex",alignItems:"flex-start",gap:6}}>
+                  <div style={{flex:1,background:m.role==="user"?C.blueL:"#fff",color:C.t1,padding:"10px 13px",borderRadius:C.r,
+                    fontSize:12.5,lineHeight:1.55,whiteSpace:"pre-wrap",border:`1px solid ${m.role==="user"?C.blue+"30":C.b}`,
+                    boxShadow:m.role==="user"?"none":C.sh}}>
+                    {m.content}
+                  </div>
+                  {m.role==="assistant"&&ttsSupported&&(
+                    <button onClick={()=>speakingIdx===i?stopSpeaking():speak(m.content,i)} title={speakingIdx===i?"Arrêter la lecture":"Lire à voix haute"}
+                      style={{flexShrink:0,background:speakingIdx===i?C.purple:"#F1F5F9",border:"none",color:speakingIdx===i?"#fff":C.t3,cursor:"pointer",borderRadius:6,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",marginTop:2}}>
+                      <i className={`ti ${speakingIdx===i?"ti-player-stop-filled":"ti-volume"}`} style={{fontSize:12}} aria-hidden="true"/>
+                    </button>
+                  )}
                 </div>
+                {m.proposal&&(
+                  <div style={{marginTop:7,background:"#FFFBEB",border:`1.5px solid ${C.amber}50`,borderRadius:C.r,padding:"11px 13px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10.5,fontWeight:700,color:C.amberDk,textTransform:"uppercase",letterSpacing:".03em",marginBottom:5}}>
+                      <i className="ti ti-edit" style={{fontSize:13}} aria-hidden="true"/> Proposition de modification
+                    </div>
+                    <div style={{fontSize:12,color:C.t1,marginBottom:9,lineHeight:1.5}}>
+                      {m.proposal.resume||`${m.proposal.champ} → ${m.proposal.valeur}`}
+                      <span style={{display:"block",fontSize:10.5,color:C.t3,marginTop:2}}>Commande {m.proposal.po}</span>
+                    </div>
+                    {m.proposalState==="pending"&&onApplyChange&&(
+                      <div style={{display:"flex",gap:7}}>
+                        <button onClick={()=>applyProposal(i)}
+                          style={{flex:1,background:C.green,border:"none",color:"#fff",borderRadius:6,padding:"7px 10px",fontSize:11.5,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+                          <i className="ti ti-check" style={{fontSize:13}} aria-hidden="true"/> Appliquer
+                        </button>
+                        <button onClick={()=>rejectProposal(i)}
+                          style={{flex:1,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:6,padding:"7px 10px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
+                          Ignorer
+                        </button>
+                      </div>
+                    )}
+                    {m.proposalState==="pending"&&!onApplyChange&&(
+                      <div style={{fontSize:10.5,color:C.t3,fontStyle:"italic"}}>L'application directe des modifications n'est pas disponible depuis cette page — ouvre l'assistant global (bouton flottant) ou la fiche client pour appliquer ce type de changement.</div>
+                    )}
+                    {m.proposalState==="applied"&&<div style={{fontSize:11,color:C.greenDk,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><i className="ti ti-circle-check-filled" style={{fontSize:14}} aria-hidden="true"/> Appliquée</div>}
+                    {m.proposalState==="rejected"&&<div style={{fontSize:11,color:C.t3,fontWeight:600}}>Ignorée</div>}
+                    {m.proposalState==="error"&&<div style={{fontSize:11,color:C.redDk,fontWeight:600}}>Échec de l'application (voir message ci-dessous)</div>}
+                  </div>
+                )}
               </div>
             ))}
             {loading&&(
@@ -3827,8 +4013,13 @@ function RapportIntelligent({title,context,contextLoader,label,floating,autoGene
             <input value={input} disabled={loading}
               onChange={(e:any)=>setInput(e.target.value)}
               onKeyDown={(e:any)=>{if(e.key==="Enter"&&input.trim()&&!loading){send(input.trim());setInput("");}}}
-              placeholder="Pose une question sur ce rapport…"
-              style={{flex:1,padding:"9px 12px",borderRadius:C.r,border:`1px solid ${C.b}`,fontSize:12.5,outline:"none",opacity:loading?.6:1}}/>
+              placeholder={listening?"Je t'écoute…":"Pose une question sur ce rapport…"}
+              style={{flex:1,padding:"9px 12px",borderRadius:C.r,border:`1px solid ${listening?C.purple:C.b}`,fontSize:12.5,outline:"none",opacity:loading?.6:1}}/>
+            {speechSupported&&<button onClick={()=>listening?stopListening():startListening()} disabled={loading} title={listening?"Arrêter l'écoute":"Poser la question à voix haute"}
+              style={{background:listening?C.red:"#F1F5F9",border:"none",color:listening?"#fff":C.t3,borderRadius:C.r,width:38,display:"flex",alignItems:"center",justifyContent:"center",
+                cursor:loading?"default":"pointer",opacity:loading?.5:1,flexShrink:0,animation:listening?"riPulse 1.2s ease-in-out infinite":"none"}}>
+              <i className={`ti ${listening?"ti-microphone":"ti-microphone-2"}`} style={{fontSize:16}} aria-hidden="true"/>
+            </button>}
             <button onClick={()=>{if(input.trim()&&!loading){send(input.trim());setInput("");}}} disabled={loading||!input.trim()}
               style={{background:C.purple,border:"none",color:"#fff",borderRadius:C.r,width:38,display:"flex",alignItems:"center",justifyContent:"center",
                 cursor:loading||!input.trim()?"default":"pointer",opacity:loading||!input.trim()?.5:1,flexShrink:0}}>
