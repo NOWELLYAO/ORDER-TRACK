@@ -1619,8 +1619,58 @@ export default function App(){
   const perms=isAdmin?DEFAULT_PERMS:{...DEFAULT_PERMS,...(session?.perms||{})};
   const deny=()=>alert("Action non autorisée par votre profil d'accès.");
 
+  // ── Contexte de l'assistant global (bouton flottant, toutes pages) ───────
+  // Contrairement aux Rapports Intelligents par page (contexte déjà en
+  // mémoire), l'assistant global doit couvrir TOUTE l'application —
+  // commandes/factures/paiements de tous les clients, scores de santé, ET
+  // le catalogue produits + les projets, qui ne sont chargés que sur leurs
+  // pages respectives. On les récupère donc à la demande (une seule fois
+  // par ouverture du panneau, réutilisé pour toute la conversation) via les
+  // mêmes fonctions sbGet que ces pages utilisent.
+  const buildGlobalAssistantContext=async()=>{
+    const allOrders=getAllOrdersScoped();
+    const clientIntelG=isAdmin?visibleClients
+      .map((c:string)=>({name:c,intel:computeClientIntelligence(data?.[c]||[]),risk:computeClientRiskScore(data?.[c]||[])}))
+      .filter((c:any)=>c.intel):[];
+    const healthScoresG=clientIntelG.map((c:any)=>{
+      const paymentComponent=c.risk?c.risk.score:70;
+      const growthComponent=Math.max(0,Math.min(100,50+c.intel.growthRate));
+      const cadenceComponent=c.intel.reorderStatus==="overdue"?20:c.intel.reorderStatus==="due_soon"?60:c.intel.reorderStatus==="on_track"?100:70;
+      const composite=Math.round(paymentComponent*0.5+growthComponent*0.25+cadenceComponent*0.25);
+      return{client:c.name,score:composite,statutRisquePaiement:c.risk?.level||null,statutRelance:c.intel.reorderStatus};
+    }).sort((a:any,b:any)=>a.score-b.score);
+
+    let articles:any[]=[],troncatureArticles:string|null=null;
+    let projets:any[]=[];
+    try{
+      const[catData,projData]=await Promise.all([sbGet(CAT_KEY).catch(()=>null),sbGet(PROJECTS_KEY).catch(()=>null)]);
+      const products=catData?.products||[];
+      const capped=capBySize(products,(p:any)=>({
+        article:p.pn,description:p.description||undefined,
+        statut:p.status==="obsolete"?"obsolète":"actif",
+        prixActuel:p.prices&&p.prices.length>0?+p.prices[p.prices.length-1].price||0:null,
+      }),250000);
+      articles=capped.data;troncatureArticles=capped.troncature;
+      projets=(projData?.projects||[]).map((p:any)=>({
+        nom:p.name||p.oppId,client:p.client||p.party||undefined,phase:p.phase,statut:p.status,
+        montant:Math.round(+p.amount||0),chancePct:p.chance,echeance:p.deadline||undefined,ongoing:!p.archived&&p.ongoing!==false,
+      }));
+    }catch{/* catalogue/projets indisponibles — le reste du contexte reste utilisable */}
+
+    return{
+      perimetre:restrictedClient?`Client unique : ${restrictedClient}`:`Tous les clients (${visibleClients.length})`,
+      clients:visibleClients,
+      scoresSanteClient:healthScoresG,
+      articles,troncatureArticles,
+      projets:projets.length>0?projets:undefined,
+      ...buildOrdersDetailForReport(allOrders),
+    };
+  };
+
   return(
     <div style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:C.page,overflow:"hidden",position:"relative"}}>
+      {/* Assistant global — flottant, accessible depuis n'importe quelle page */}
+      {perms?.canViewReports&&<RapportIntelligent floating title="Assistant OrderTrack" contextLoader={buildGlobalAssistantContext}/>}
 
       {/* ── SIDEBAR ─────────────────────────────────────────── */}
       {/* Mobile overlay backdrop */}
@@ -3643,13 +3693,15 @@ function Modal({title,sub,width,children,footer,onClose}:any){
 // des données réelles de la page (scores, KPI, alertes…) — jamais les
 // commandes brutes en intégralité, pour rester concis et rapide.
 // Usage : <RapportIntelligent title="Vue d'ensemble" context={{...}}/>
-function RapportIntelligent({title,context,label}:any){
+function RapportIntelligent({title,context,contextLoader,label,floating}:any){
   const[open,setOpen]=useState(false);
   const[messages,setMessages]=useState<{role:string,content:string}[]>([]);
   const[loading,setLoading]=useState(false);
+  const[loadingData,setLoadingData]=useState(false);
   const[error,setError]=useState<string|null>(null);
   const[input,setInput]=useState("");
   const scrollRef=useRef<any>(null);
+  const resolvedContextRef=useRef<any>(context||null);
   const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
 
   const send=async(userText?:string)=>{
@@ -3657,15 +3709,24 @@ function RapportIntelligent({title,context,label}:any){
     const base=userText?[...messages,{role:"user",content:userText}]:messages;
     if(userText)setMessages(base);
     try{
+      // Pour l'assistant global, le contexte (catalogue, projets…) est
+      // chargé à la demande à la première ouverture, puis réutilisé pour
+      // toute la conversation (pas re-fetché à chaque question).
+      if(!resolvedContextRef.current&&contextLoader){
+        setLoadingData(true);
+        resolvedContextRef.current=await contextLoader();
+        setLoadingData(false);
+      }
       const res=await fetch("/api/rapport-intelligent",{
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({title,context,messages:base}),
+        body:JSON.stringify({title,context:resolvedContextRef.current,messages:base}),
       });
       let data:any={};
       try{data=await res.json();}catch{data={error:`Réponse invalide du serveur (HTTP ${res.status}).`};}
       if(!res.ok||data.error){setError(data.error||`Erreur inconnue (HTTP ${res.status}).`);setLoading(false);return;}
       setMessages(m=>[...base,{role:"assistant",content:data.text}]);
     }catch(e:any){
+      setLoadingData(false);
       setError(e?.message==="Failed to fetch"
         ?"Impossible de contacter le serveur. Vérifie que l'app est bien déployée sur Vercel (cette fonctionnalité ne marche pas en local sans la fonction serverless)."
         :(e?.message||"Erreur réseau."));
@@ -3674,17 +3735,24 @@ function RapportIntelligent({title,context,label}:any){
   };
 
   const openPanel=()=>{setOpen(true);if(messages.length===0)send();};
-  const regenerate=()=>{setMessages([]);setError(null);send();};
+  const regenerate=()=>{setMessages([]);setError(null);resolvedContextRef.current=contextLoader?null:context;send();};
 
   useEffect(()=>{if(scrollRef.current)scrollRef.current.scrollTop=scrollRef.current.scrollHeight;},[messages,loading,open]);
 
   return(<>
     <style>{`@keyframes riSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
-    <button onClick={openPanel} title="Générer une analyse conversationnelle de cette page, propulsée par Claude"
-      style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:C.r,border:`1px solid ${C.purple}40`,
-        background:`linear-gradient(135deg,${C.purple}12,${C.blue}10)`,color:C.purple,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
-      <i className="ti ti-sparkles" style={{fontSize:14}} aria-hidden="true"/> {label||"Rapport Intelligent"}
-    </button>
+    {floating
+      ?<button onClick={openPanel} title="Assistant OrderTrack — pose-lui n'importe quelle question sur l'application"
+          style={{position:"fixed",bottom:24,right:24,width:56,height:56,borderRadius:"50%",border:"none",
+            background:`linear-gradient(135deg,${C.purple},${C.blue})`,color:"#fff",cursor:"pointer",zIndex:1100,
+            display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 6px 20px rgba(124,58,237,.4)"}}>
+          <i className="ti ti-message-chatbot" style={{fontSize:24}} aria-hidden="true"/>
+        </button>
+      :<button onClick={openPanel} title="Générer une analyse conversationnelle de cette page, propulsée par Claude"
+          style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderRadius:C.r,border:`1px solid ${C.purple}40`,
+            background:`linear-gradient(135deg,${C.purple}12,${C.blue}10)`,color:C.purple,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+          <i className="ti ti-sparkles" style={{fontSize:14}} aria-hidden="true"/> {label||"Rapport Intelligent"}
+        </button>}
     {open&&(
       <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.55)",display:"flex",alignItems:isMobileV?"flex-end":"center",justifyContent:isMobileV?"center":"flex-end",zIndex:1200,backdropFilter:"blur(2px)"}}
         onClick={()=>setOpen(false)}>
@@ -3734,7 +3802,7 @@ function RapportIntelligent({title,context,label}:any){
             {loading&&(
               <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:C.t3,padding:"6px 2px"}}>
                 <i className="ti ti-loader-2" style={{fontSize:15,animation:"riSpin 1s linear infinite"}} aria-hidden="true"/>
-                {messages.length===0?"Génération du rapport…":"Réflexion en cours…"}
+                {loadingData?"Récupération des données de l'application…":messages.length===0?"Génération du rapport…":"Réflexion en cours…"}
               </div>
             )}
             {error&&(
