@@ -122,6 +122,17 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: MAX_TOKENS,
+        // Claude Sonnet 5 active un raisonnement adaptatif PAR DÉFAUT dès
+        // qu'on omet ce paramètre — et max_tokens est un plafond GLOBAL qui
+        // couvre à la fois ce raisonnement interne et le texte de réponse.
+        // Sur des questions demandant d'agréger beaucoup de données
+        // (ex: "meilleur produit", "CA prévisionnel"), le modèle pouvait
+        // épuiser tout le budget en réflexion interne sans qu'il ne reste
+        // de place pour écrire la réponse visible (texte vide malgré une
+        // requête réussie). On désactive donc ce raisonnement : on veut des
+        // réponses directes, pas un raisonnement exposé, et ça garantit que
+        // tout le budget de tokens va au texte réellement affiché.
+        thinking: { type: "disabled" },
         system: SYSTEM_PROMPT(title || "cette page", context),
         messages: conversation,
       }),
@@ -169,13 +180,10 @@ export default async function handler(req, res) {
       } catch { /* proposition mal formée — ignorée, le texte reste affiché */ }
     }
 
-    // Une réponse vide peut avoir plusieurs causes réelles différentes —
-    // plutôt que de deviner, on affiche le diagnostic technique exact
-    // (stop_reason, types de blocs reçus) pour identifier la vraie cause
-    // au lieu de re-deviner à l'aveugle.
+    // Filet de sécurité : si malgré tout la réponse arrive vide, message
+    // clair plutôt qu'un texte technique.
     if (!text) {
-      const blockTypes = (data.content || []).map((b) => b.type).join(", ") || "aucun";
-      text = `(Réponse vide — diagnostic : stop_reason="${data.stop_reason || "inconnu"}", blocs reçus=[${blockTypes}], usage=${JSON.stringify(data.usage || {})})`;
+      text = "Je n'ai pas réussi à produire de réponse cette fois — peux-tu reformuler ta question ou réessayer ?";
     }
 
     res.status(200).json({ text, proposal });
