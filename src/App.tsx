@@ -1451,14 +1451,21 @@ export default function App(){
       const i=orders.findIndex((o:any)=>o.id===f.id);
       if(i>=0){
         const prev=orders[i];
-        // Propagate the expected delivery date to every line that hasn't
-        // been manually overridden, on EVERY save (not only when the date
-        // actually changed) — a manually-set line date is a deliberate
-        // exception (e.g. a specific item confirmed on a different date)
-        // and must never be silently clobbered.
-        const lines=(prev.lines||[]).length>0
-          ?prev.lines.map((l:any)=>l.availDateManual?l:{...l,availDate:f.expectedDate||""})
-          :f.lines!==undefined?f.lines:prev.lines;
+        // Quand l'appelant fournit explicitement un tableau `lines` à jour
+        // (ex: PoLinesPanel — ajout/suppression/édition d'une ligne, ou
+        // édition manuelle de sa date de disponibilité), on le respecte
+        // TEL QUEL : c'est la source de vérité de cette sauvegarde-là, la
+        // propagation ne doit pas venir l'écraser en le reconstruisant
+        // depuis l'ancien état.
+        // Sinon (ex: OrderModal, qui ne touche jamais aux lignes), on
+        // propage la date de livraison prévue de la commande vers chaque
+        // ligne qui n'a pas été fixée manuellement — un `availDateManual`
+        // est une exception délibérée qui ne doit jamais être écrasée.
+        const lines=f.lines!==undefined
+          ?f.lines
+          :(prev.lines||[]).length>0
+            ?prev.lines.map((l:any)=>l.availDateManual?l:{...l,availDate:f.expectedDate||""})
+            :prev.lines;
         let merged={...prev,...f,lines};
         // Status is auto-derived from the invoiced amount (En cours / Partial
         // / Full) on every save — "annule" is the only manual state, set
