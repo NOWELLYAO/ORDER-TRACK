@@ -3448,7 +3448,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
     try{
       const products=await loadCatalogueProducts();
       const notes=await loadScoreNotesCloud().catch(()=>null);
-      const events=buildJournalEvents(orders.map((o:any)=>({...o,_client:client})),products,notes||{},journalFrom,journalTo);
+      const events=buildJournalEvents(orders.map((o:any)=>({...o,_client:client})),products,notes||{},journalFrom,journalTo,client);
       printJournal(client,events,journalFrom,journalTo);
     }finally{
       setJournalLoading(false);
@@ -12397,7 +12397,7 @@ function computeTypeBreakdown(items:{pn:string,desc:string,qty:number,unitPrice:
 // ═══════════════════════════════════════════════════════════════════════════
 type JournalEvent={date:string,severity:"critique"|"important"|"info",icon:string,category:string,title:string,detail:string,client:string,amount?:number};
 
-function buildJournalEvents(allOrders:any[],products:any[],scoreNotesObj:any,from:string,to:string):JournalEvent[]{
+function buildJournalEvents(allOrders:any[],products:any[],scoreNotesObj:any,from:string,to:string,scopeClient?:string):JournalEvent[]{
   const inRange=(d:string)=>!!d&&d>=from&&d<=to;
   const events:JournalEvent[]=[];
   const BIG_ORDER=20000,BIG_INVOICE=15000,BIG_PAYMENT=15000,BIG_PRICE_MOVE=20;
@@ -12445,8 +12445,11 @@ function buildJournalEvents(allOrders:any[],products:any[],scoreNotesObj:any,fro
     });
   });
 
-  // Changements de prix catalogue
-  (products||[]).forEach((p:any)=>{
+  // Changements de prix catalogue — événement global (pas lié à un client
+  // en particulier), donc exclu du journal d'un client précis pour ne pas
+  // polluer son historique avec des mouvements de prix sur des articles
+  // qu'il n'a peut-être jamais commandés.
+  if(!scopeClient)(products||[]).forEach((p:any)=>{
     const prices=[...(p.prices||[])].sort((a:any,b:any)=>(a.date||"").localeCompare(b.date||""));
     for(let i=1;i<prices.length;i++){
       const prev=prices[i-1],cur=prices[i];
@@ -12464,6 +12467,7 @@ function buildJournalEvents(allOrders:any[],products:any[],scoreNotesObj:any,fro
 
   // Motifs (nuances) mis à jour sur un client
   Object.keys(scoreNotesObj||{}).forEach((client:string)=>{
+    if(scopeClient&&client!==scopeClient)return;
     const n=scoreNotesObj[client];
     const d=n?.updatedAt?n.updatedAt.slice(0,10):null;
     if(d&&inRange(d)){
