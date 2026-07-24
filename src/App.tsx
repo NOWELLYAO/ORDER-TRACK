@@ -506,6 +506,8 @@ const capBySize=<T,>(items:T[],mapFn:(item:T)=>any,maxChars:number=350000):{data
 // nombre fixe de commandes — les plus récentes sont priorisées.
 const buildOrdersDetailForReport=(orders:any[],maxChars:number=350000)=>{
   const sorted=[...(orders||[])].sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
+  const daysBetween=(d1:string,d2:string)=>Math.round((new Date(d2+"T00:00:00").getTime()-new Date(d1+"T00:00:00").getTime())/86400000);
+  const allDelays:number[]=[];
   const mapOrder=(o:any)=>{
     const invoiced=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
     const paid=(o.invoices||[]).reduce((s:number,i:any)=>s+(i.payments||[]).reduce((ss:number,p:any)=>ss+(+p.amount||0),0),0);
@@ -516,11 +518,16 @@ const buildOrdersDetailForReport=(orders:any[],maxChars:number=350000)=>{
       dateCommande:o.date,dateLivraisonPrevue:o.expectedDate||null,modeLivraison:o.deliveryMode,
       montantCommande:Math.round(+o.amount||0),montantFacture:Math.round(invoiced),montantPaye:Math.round(paid),
       notes:o.notes||undefined,
-      lignes:(o.lines&&o.lines.length>0)?orderLineCoverage(o).map((l:any)=>({
-        article:l.pn,description:l.desc||undefined,
-        qteCommandee:l.qtyOrdered,qteFacturee:l.qtyInvoiced,qteRestante:l.qtyRemaining,
-        statutLigne:l.status,dateDisponibilite:l.availDate||null,
-      })):undefined,
+      lignes:(o.lines&&o.lines.length>0)?orderLineCoverage(o).map((l:any)=>{
+        const delaiJours=(o.date&&l.availDate)?daysBetween(o.date,l.availDate):null;
+        if(delaiJours!==null&&delaiJours>=0)allDelays.push(delaiJours);
+        return{
+          article:l.pn,description:l.desc||undefined,
+          qteCommandee:l.qtyOrdered,qteFacturee:l.qtyInvoiced,qteRestante:l.qtyRemaining,
+          statutLigne:l.status,dateDisponibilite:l.availDate||null,
+          delaiDisponibiliteJours:delaiJours,
+        };
+      }):undefined,
       factures:(o.invoices||[]).map((i:any)=>{
         const inPaid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
         return{numero:i.invoiceNumber||i.id,dateFacture:i.date,echeance:i.dueDate||null,
@@ -530,7 +537,14 @@ const buildOrdersDetailForReport=(orders:any[],maxChars:number=350000)=>{
     };
   };
   const{data,troncature}=capBySize(sorted,mapOrder,maxChars);
-  return{troncature,commandes:data};
+  // Délai de référence (moyenne + médiane, en jours) sur l'ensemble des
+  // lignes avec délai connu — sert de point de comparaison à l'assistant
+  // pour juger si UN délai précis est long ou normal PAR RAPPORT AUX
+  // habitudes réelles de cette activité, plutôt qu'un seuil arbitraire.
+  const sortedDelays=[...allDelays].sort((a,b)=>a-b);
+  const delaiMoyenJours=sortedDelays.length>0?Math.round(sortedDelays.reduce((s,v)=>s+v,0)/sortedDelays.length):null;
+  const delaiMedianJours=sortedDelays.length>0?sortedDelays[Math.floor(sortedDelays.length/2)]:null;
+  return{troncature,commandes:data,delaiDisponibiliteReference:{delaiMoyenJours,delaiMedianJours,nbLignesAvecDelaiConnu:sortedDelays.length}};
 };
 
 // ── Realistic "ready to invoice" balance — respects per-line availability
@@ -660,20 +674,42 @@ const getArchiveEligibility=(order:any)=>{
 };
 const isOrderArchivable=(order:any):boolean=>getArchiveEligibility(order).archivable;
 
-// ── Regroupement des commandes en 3 lots ─────────────────────────────────
-// "active"           : en cours (pas encore livrée, ou livrée mais pas
-//                       encore intégralement facturée).
-// "awaiting_payment"  : livrée ET intégralement facturée, mais le paiement
+// ── Commande "prête" ──────────────────────────────────────────────────────
+// Une commande est prête à expédier quand tout ce qu'il reste à livrer est
+// physiquement disponible : chaque ligne encore en attente (qteRestante>0)
+// a une date de disponibilité connue et déjà atteinte. Ne s'applique
+// qu'aux commandes pas encore "Full" (sinon il n'y a plus rien en attente)
+// ni annulées/archivées. Si la commande n'a pas de détail de lignes, on se
+// rabat sur sa date de livraison prévue globale.
+const isOrderReadyToShip=(order:any):boolean=>{
+  if(!order||order.archived||order.status==="annule"||order.status==="full")return false;
+  const today=todayStr();
+  if(order.lines&&order.lines.length>0){
+    const pending=orderLineCoverage(order).filter((l:any)=>l.qtyRemaining>0);
+    if(pending.length===0)return false;
+    return pending.every((l:any)=>!!l.availDate&&l.availDate<=today);
+  }
+  return!!order.expectedDate&&order.expectedDate<=today;
+};
+
+// ── Regroupement des commandes en 4 lots ─────────────────────────────────
+// "ready"             : rien ne manque physiquement — tout ce qui reste à
+//                       livrer est disponible dès aujourd'hui, mais pas
+//                       encore expédié/facturé (statut "Full").
+// "active"            : en cours — pas encore prête, ou pas encore
+//                       intégralement facturée.
+// "awaiting_payment"  : intégralement facturée ("Full"), mais le paiement
 //                       (total ou partiel) n'est pas encore soldé — un lot à
 //                       part pour les isoler du reste du suivi actif.
-// "archived"          : livrée + facturée + intégralement payée. Bascule
-//                       automatiquement dans ce lot dès que le dernier
-//                       paiement solde la commande — aucune action manuelle
-//                       n'est nécessaire (voir applyAutoArchive ci-dessous).
-const getOrderBucket=(order:any):"active"|"awaiting_payment"|"archived"=>{
+// "archived"          : intégralement facturée + intégralement payée.
+//                       Bascule automatiquement dans ce lot dès que le
+//                       dernier paiement solde la commande — aucune action
+//                       manuelle n'est nécessaire (voir applyAutoArchive).
+const getOrderBucket=(order:any):"ready"|"active"|"awaiting_payment"|"archived"=>{
   if(order?.archived)return"archived";
   const elig=getArchiveEligibility(order);
   if(elig.deliveryOk&&elig.invoicedOk&&!elig.paidOk)return"awaiting_payment";
+  if(isOrderReadyToShip(order))return"ready";
   return"active";
 };
 // Bascule une commande vers "archivée" dès qu'elle devient éligible
@@ -4396,12 +4432,13 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
   const[tab,setTab]=useState<"orders"|"invoices"|"payments">("orders");
   const[search,setSearch]=useState("");
   const[showAll,setShowAll]=useState(false);
-  const[viewBucket,setViewBucket]=useState<"active"|"awaiting_payment"|"archived">("active");
+  const[viewBucket,setViewBucket]=useState<"ready"|"active"|"awaiting_payment"|"archived">("active");
   const DEFAULT_SHOWN=4;
 
   // ── lot scope (only affects the "Commandes" tab, and cascades to the
   // "Factures"/"Paiements" tabs so the three views stay consistent) ──
   const bucketOf=(o:any)=>getOrderBucket(o);
+  const nbReady=orders.filter((o:any)=>bucketOf(o)==="ready").length;
   const nbAwaitingPay=orders.filter((o:any)=>bucketOf(o)==="awaiting_payment").length;
   const nbArchived=orders.filter((o:any)=>bucketOf(o)==="archived").length;
   const archivableOrders=orders.filter((o:any)=>isOrderArchivable(o));
@@ -4475,12 +4512,17 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
             </button>
           ))}
         </div>
-        {/* Toggle par lot : Actives / En attente de paiement / Archivées */}
+        {/* Toggle par lot : Prêtes / Actives / En attente de paiement / Archivées */}
         {onToggleArchive&&(
           <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh,flexShrink:0}}>
             <button onClick={()=>{setViewBucket("active");setSearch("");setShowAll(false);}}
               style={{padding:"9px 14px",border:"none",borderRight:`1px solid ${C.b}`,background:viewBucket==="active"?"#0D1B2A":"transparent",color:viewBucket==="active"?"#fff":C.t2,fontWeight:viewBucket==="active"?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
               Actives
+            </button>
+            <button onClick={()=>{setViewBucket("ready");setSearch("");setShowAll(false);}}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"9px 14px",border:"none",borderRight:`1px solid ${C.b}`,background:viewBucket==="ready"?C.greenDk:"transparent",color:viewBucket==="ready"?"#fff":C.t2,fontWeight:viewBucket==="ready"?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+              <i className="ti ti-package-export" style={{fontSize:13}} aria-hidden="true"/> Prêtes
+              {nbReady>0&&<span style={{marginLeft:2,background:viewBucket==="ready"?"rgba(255,255,255,.25)":C.greenL,color:viewBucket==="ready"?"#fff":C.greenDk,fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99}}>{nbReady}</span>}
             </button>
             <button onClick={()=>{setViewBucket("awaiting_payment");setSearch("");setShowAll(false);}}
               style={{display:"flex",alignItems:"center",gap:6,padding:"9px 14px",border:"none",borderRight:`1px solid ${C.b}`,background:viewBucket==="awaiting_payment"?C.amberDk:"transparent",color:viewBucket==="awaiting_payment"?"#fff":C.t2,fontWeight:viewBucket==="awaiting_payment"?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
@@ -4514,7 +4556,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
         const hiddenCount=filterOrders.length-DEFAULT_SHOWN;
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{viewBucket==="archived"?"Aucune commande archivée":viewBucket==="awaiting_payment"?"Aucune commande en attente de paiement":"Aucune commande trouvée"}</div>}
+            {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{viewBucket==="archived"?"Aucune commande archivée":viewBucket==="awaiting_payment"?"Aucune commande en attente de paiement":viewBucket==="ready"?"Aucune commande prête pour l'instant":"Aucune commande trouvée"}</div>}
             {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
