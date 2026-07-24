@@ -547,6 +547,33 @@ const buildOrdersDetailForReport=(orders:any[],maxChars:number=350000)=>{
   return{troncature,commandes:data,delaiDisponibiliteReference:{delaiMoyenJours,delaiMedianJours,nbLignesAvecDelaiConnu:sortedDelays.length}};
 };
 
+// ── Création d'un devis proposé par l'assistant ──────────────────────────
+// Réutilisable partout (assistant global, Catalogue & Devis) puisque
+// sbGet/sbSet/QUOT_KEY sont des constantes de module — pas besoin d'accès
+// à l'état React local de CataloguePage pour créer un devis.
+const applyDevisProposal=async(proposal:any):Promise<{ok:boolean,message:string}>=>{
+  const{client,lignes,notes}=proposal||{};
+  if(!client||!Array.isArray(lignes)||lignes.length===0)return{ok:false,message:"Proposition de devis incomplète."};
+  const cleanLines=lignes.map((l:any)=>({pn:String(l.article||"").trim(),desc:l.description||"",qty:+l.qte||1,unitPrice:+l.prixUnitaire||0,avail:""}));
+  if(cleanLines.some((l:any)=>!l.pn))return{ok:false,message:"Une ligne du devis n'a pas de référence article valide."};
+  const totalHT=cleanLines.reduce((s:number,l:any)=>s+l.qty*l.unitPrice,0);
+  const quoteToSave={
+    id:Date.now().toString(),
+    number:`QT-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`,
+    client,date:todayStr(),validity:30,notes:notes||"",
+    lines:cleanLines,totalHT,createdAt:new Date().toISOString(),
+  };
+  try{
+    const current=await sbGet(QUOT_KEY).catch(()=>null);
+    const existingQuotes=current?.quotes||[];
+    const ok=await sbSet(QUOT_KEY,{quotes:[quoteToSave,...existingQuotes].slice(0,200),ts:new Date().toISOString()});
+    if(!ok)return{ok:false,message:"Échec de l'enregistrement du devis (connexion au cloud)."};
+    return{ok:true,message:`Devis ${quoteToSave.number} créé pour ${client} (${fmt(totalHT)} € HT) — consultable dans Catalogue & Devis.`};
+  }catch(e:any){
+    return{ok:false,message:`Erreur lors de la création du devis : ${e?.message||e}`};
+  }
+};
+
 // ── Realistic "ready to invoice" balance — respects per-line availability
 // dates. A remaining balance only counts here once the line's own
 // availability date has arrived (or has none at all, i.e. always available).
@@ -1718,7 +1745,50 @@ export default function App(){
   // `expectedDate` est toujours réinjecté même quand ce n'est pas le champ
   // modifié, pour ne pas déclencher par erreur la propagation de date aux
   // lignes avec une valeur vide (cf. saveOrder).
+  // ── Génération d'un rapport officiel existant, déclenchée par l'assistant ─
+  // Contrairement aux devis/modifications, un rapport n'écrit rien dans les
+  // données : on se contente d'appeler la même fonction que les boutons
+  // "Audit Financier" / "Le Journal" utilisent déjà ailleurs dans l'appli,
+  // avec les vraies données — le document s'ouvre dans un nouvel onglet.
+  const applyReportProposal=async(proposal:any):Promise<{ok:boolean,message:string}>=>{
+    const{rapportType,client,dateDebut,dateFin}=proposal||{};
+    const isAll=!client||client.toLowerCase()==="tous";
+    if(!isAll&&!visibleClients.includes(client))return{ok:false,message:`Client "${client}" introuvable parmi les clients visibles.`};
+    const year=new Date().getFullYear();
+    try{
+      if(rapportType==="audit_financier"){
+        if(isAll){
+          printFinancialAudit(`Tous clients (${visibleClients.length})`,getAllOrdersScoped(),configs,getTarget(targets,year,null),year);
+        }else{
+          const orders=getOrders(client).map((o:any)=>({...o,_client:client}));
+          printFinancialAudit(client,orders,{[client]:configs[client]},getTarget(targets,year,client),year,scoreNotes?.[client]);
+        }
+        return{ok:true,message:`Audit Financier généré pour ${isAll?"tous les clients":client} — ouvert dans un nouvel onglet.`};
+      }
+      if(rapportType==="journal"){
+        const from=dateDebut||`${year}-01-01`;
+        const to=dateFin||todayStr();
+        const products=await loadCatalogueProducts().catch(()=>[]);
+        const notesData=await loadScoreNotesCloud().catch(()=>({}));
+        if(isAll){
+          const events=buildJournalEvents(getAllOrdersScoped(),products,notesData||{},from,to);
+          printJournal(`Tous clients (${visibleClients.length})`,events,from,to);
+        }else{
+          const orders=getOrders(client).map((o:any)=>({...o,_client:client}));
+          const events=buildJournalEvents(orders,products,notesData||{},from,to,client);
+          printJournal(client,events,from,to);
+        }
+        return{ok:true,message:`Journal généré pour ${isAll?"tous les clients":client} (${fmtD(from)} → ${fmtD(to)}) — ouvert dans un nouvel onglet.`};
+      }
+      return{ok:false,message:"Type de rapport non reconnu."};
+    }catch(e:any){
+      return{ok:false,message:`Erreur lors de la génération du rapport : ${e?.message||e}`};
+    }
+  };
+
   const applyOrderProposal=async(proposal:any):Promise<{ok:boolean,message:string}>=>{
+    if(proposal?.type==="devis")return applyDevisProposal(proposal);
+    if(proposal?.type==="rapport")return applyReportProposal(proposal);
     const{po,champ,valeur}=proposal||{};
     if(!po||!champ||valeur===undefined)return{ok:false,message:"Proposition incomplète, impossible à appliquer."};
     let foundClient:string|null=null,foundOrder:any=null;
@@ -3511,6 +3581,8 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
   };
   // ── Application d'une proposition (scopée aux commandes de ce client) ────
   const applyOrderProposalClient=async(proposal:any):Promise<{ok:boolean,message:string}>=>{
+    if(proposal?.type==="devis")return applyDevisProposal(proposal);
+    if(proposal?.type==="rapport")return{ok:false,message:"La génération de rapport n'est disponible que depuis l'assistant global (bouton flottant)."};
     const{po,champ,valeur}=proposal||{};
     if(!po||!champ||valeur===undefined)return{ok:false,message:"Proposition incomplète, impossible à appliquer."};
     const foundOrder=orders.find((o:any)=>o.poNumber===po);
@@ -3802,6 +3874,33 @@ function Modal({title,sub,width,children,footer,onClose}:any){
 // des données réelles de la page (scores, KPI, alertes…) — jamais les
 // commandes brutes en intégralité, pour rester concis et rapide.
 // Usage : <RapportIntelligent title="Vue d'ensemble" context={{...}}/>
+// ── Export d'une réponse du Rapport Intelligent en document imprimable ────
+// Réutilise le même style que les autres documents générés par l'appli
+// (Audit Financier, Journal…) pour rester cohérent visuellement.
+function printAssistantMessage(content:string,scopeLabel:string){
+  const w=window.open("","_blank");
+  if(!w)return;
+  const escaped=content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const html=escaped.split(/\n{2,}/).map(p=>`<p>${p.replace(/\n/g,"<br/>")}</p>`).join("");
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rapport Intelligent — ${scopeLabel}</title><style>
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#0F172A;max-width:760px;margin:40px auto;padding:0 24px;line-height:1.6;}
+    .header{display:flex;align-items:center;gap:12px;border-bottom:2px solid #7C3AED;padding-bottom:16px;margin-bottom:24px;}
+    .logo{font-weight:800;font-size:13px;color:#7C3AED;text-transform:uppercase;letter-spacing:.05em;}
+    h1{font-size:20px;margin:2px 0 4px;}
+    .subtitle{color:#64748B;font-size:12.5px;}
+    p{font-size:13px;margin:0 0 12px;}
+    .footer{margin-top:40px;padding-top:14px;border-top:1px solid #E2E8F0;font-size:10.5px;color:#94A3B8;}
+    @media print{body{margin:0;padding:16px;}}
+  </style></head><body>
+    <div class="header"><div><div class="logo">✨ OrderTrack · Rapport Intelligent</div><h1>${scopeLabel}</h1>
+    <div class="subtitle">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</div></div></div>
+    ${html}
+    <div class="footer">Généré par l'assistant OrderTrack à partir des données réelles de l'application — à relire avant diffusion externe.</div>
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>w.print(),300);
+}
+
 function RapportIntelligent({title,context,contextLoader,label,floating,autoGenerate,onApplyChange}:any){
   const[open,setOpen]=useState(false);
   const[messages,setMessages]=useState<{role:string,content:string,proposal?:any,proposalState?:"pending"|"applied"|"rejected"|"error"}[]>([]);
@@ -4004,21 +4103,66 @@ function RapportIntelligent({title,context,contextLoader,label,floating,autoGene
                       <i className={`ti ${speakingIdx===i?"ti-player-stop-filled":"ti-volume"}`} style={{fontSize:12}} aria-hidden="true"/>
                     </button>
                   )}
+                  {m.role==="assistant"&&(
+                    <button onClick={()=>printAssistantMessage(m.content,title)} title="Exporter cette réponse en document imprimable"
+                      style={{flexShrink:0,background:"#F1F5F9",border:"none",color:C.t3,cursor:"pointer",borderRadius:6,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",marginTop:2}}>
+                      <i className="ti ti-printer" style={{fontSize:12}} aria-hidden="true"/>
+                    </button>
+                  )}
                 </div>
                 {m.proposal&&(
                   <div style={{marginTop:7,background:"#FFFBEB",border:`1.5px solid ${C.amber}50`,borderRadius:C.r,padding:"11px 13px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10.5,fontWeight:700,color:C.amberDk,textTransform:"uppercase",letterSpacing:".03em",marginBottom:5}}>
-                      <i className="ti ti-edit" style={{fontSize:13}} aria-hidden="true"/> Proposition de modification
+                      <i className={`ti ${m.proposal.type==="devis"?"ti-file-text":m.proposal.type==="rapport"?"ti-report":"ti-edit"}`} style={{fontSize:13}} aria-hidden="true"/>
+                      {m.proposal.type==="devis"?"Proposition de devis":m.proposal.type==="rapport"?"Génération de rapport":"Proposition de modification"}
                     </div>
-                    <div style={{fontSize:12,color:C.t1,marginBottom:9,lineHeight:1.5}}>
-                      {m.proposal.resume||`${m.proposal.champ} → ${m.proposal.valeur}`}
-                      <span style={{display:"block",fontSize:10.5,color:C.t3,marginTop:2}}>Commande {m.proposal.po}</span>
-                    </div>
+                    {m.proposal.type==="devis"?(
+                      <div style={{marginBottom:9}}>
+                        <div style={{fontSize:12,color:C.t1,marginBottom:6,lineHeight:1.5}}>
+                          {m.proposal.resume||`Devis pour ${m.proposal.client}`}
+                        </div>
+                        <table style={{width:"100%",fontSize:11,borderCollapse:"collapse",background:"#fff",borderRadius:6,overflow:"hidden",border:`1px solid ${C.b}`}}>
+                          <thead><tr style={{background:"#F8FAFC"}}>
+                            <th style={{textAlign:"left",padding:"5px 7px",fontWeight:700,color:C.t3,fontSize:9.5,textTransform:"uppercase"}}>Article</th>
+                            <th style={{textAlign:"center",padding:"5px 7px",fontWeight:700,color:C.t3,fontSize:9.5,textTransform:"uppercase"}}>Qté</th>
+                            <th style={{textAlign:"right",padding:"5px 7px",fontWeight:700,color:C.t3,fontSize:9.5,textTransform:"uppercase"}}>PU</th>
+                            <th style={{textAlign:"right",padding:"5px 7px",fontWeight:700,color:C.t3,fontSize:9.5,textTransform:"uppercase"}}>Total</th>
+                          </tr></thead>
+                          <tbody>
+                            {(m.proposal.lignes||[]).map((l:any,li:number)=>(
+                              <tr key={li} style={{borderTop:`1px solid ${C.b}`}}>
+                                <td style={{padding:"5px 7px"}}><div style={{fontWeight:700,color:C.blue,fontFamily:"monospace"}}>{l.article}</div>{l.description&&<div style={{fontSize:9.5,color:C.t3}}>{l.description}</div>}</td>
+                                <td style={{padding:"5px 7px",textAlign:"center"}}>{l.qte}</td>
+                                <td style={{padding:"5px 7px",textAlign:"right"}}>{fmt(+l.prixUnitaire||0)} €</td>
+                                <td style={{padding:"5px 7px",textAlign:"right",fontWeight:700}}>{fmt((+l.qte||0)*(+l.prixUnitaire||0))} €</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <div style={{textAlign:"right",fontSize:11.5,fontWeight:700,color:C.t1,marginTop:5}}>
+                          Total HT : {fmt((m.proposal.lignes||[]).reduce((s:number,l:any)=>s+(+l.qte||0)*(+l.prixUnitaire||0),0))} €
+                        </div>
+                        <div style={{fontSize:10.5,color:C.t3,marginTop:3}}>Client : {m.proposal.client}</div>
+                      </div>
+                    ):m.proposal.type==="rapport"?(
+                      <div style={{fontSize:12,color:C.t1,marginBottom:9,lineHeight:1.5}}>
+                        {m.proposal.resume||`Générer le ${m.proposal.rapportType==="audit_financier"?"Audit Financier":"Journal"} — ${m.proposal.client}`}
+                        <span style={{display:"block",fontSize:10.5,color:C.t3,marginTop:2}}>
+                          {m.proposal.rapportType==="audit_financier"?"Audit Financier":"Le Journal"} · {m.proposal.client}
+                          {m.proposal.dateDebut&&m.proposal.dateFin&&` · ${fmtD(m.proposal.dateDebut)} → ${fmtD(m.proposal.dateFin)}`}
+                        </span>
+                      </div>
+                    ):(
+                      <div style={{fontSize:12,color:C.t1,marginBottom:9,lineHeight:1.5}}>
+                        {m.proposal.resume||`${m.proposal.champ} → ${m.proposal.valeur}`}
+                        <span style={{display:"block",fontSize:10.5,color:C.t3,marginTop:2}}>Commande {m.proposal.po}</span>
+                      </div>
+                    )}
                     {m.proposalState==="pending"&&onApplyChange&&(
                       <div style={{display:"flex",gap:7}}>
                         <button onClick={()=>applyProposal(i)}
                           style={{flex:1,background:C.green,border:"none",color:"#fff",borderRadius:6,padding:"7px 10px",fontSize:11.5,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
-                          <i className="ti ti-check" style={{fontSize:13}} aria-hidden="true"/> Appliquer
+                          <i className="ti ti-check" style={{fontSize:13}} aria-hidden="true"/> {m.proposal.type==="devis"?"Créer le devis":m.proposal.type==="rapport"?"Générer":"Appliquer"}
                         </button>
                         <button onClick={()=>rejectProposal(i)}
                           style={{flex:1,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:6,padding:"7px 10px",fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
@@ -4027,11 +4171,11 @@ function RapportIntelligent({title,context,contextLoader,label,floating,autoGene
                       </div>
                     )}
                     {m.proposalState==="pending"&&!onApplyChange&&(
-                      <div style={{fontSize:10.5,color:C.t3,fontStyle:"italic"}}>L'application directe des modifications n'est pas disponible depuis cette page — ouvre l'assistant global (bouton flottant) ou la fiche client pour appliquer ce type de changement.</div>
+                      <div style={{fontSize:10.5,color:C.t3,fontStyle:"italic"}}>L'application directe des modifications n'est pas disponible depuis cette page — ouvre l'assistant global (bouton flottant) pour {m.proposal.type==="devis"?"créer ce devis":m.proposal.type==="rapport"?"générer ce rapport":"appliquer ce type de changement"}.</div>
                     )}
-                    {m.proposalState==="applied"&&<div style={{fontSize:11,color:C.greenDk,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><i className="ti ti-circle-check-filled" style={{fontSize:14}} aria-hidden="true"/> Appliquée</div>}
+                    {m.proposalState==="applied"&&<div style={{fontSize:11,color:C.greenDk,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><i className="ti ti-circle-check-filled" style={{fontSize:14}} aria-hidden="true"/> {m.proposal.type==="devis"?"Devis créé":m.proposal.type==="rapport"?"Rapport généré (nouvel onglet)":"Appliquée"}</div>}
                     {m.proposalState==="rejected"&&<div style={{fontSize:11,color:C.t3,fontWeight:600}}>Ignorée</div>}
-                    {m.proposalState==="error"&&<div style={{fontSize:11,color:C.redDk,fontWeight:600}}>Échec de l'application (voir message ci-dessous)</div>}
+                    {m.proposalState==="error"&&<div style={{fontSize:11,color:C.redDk,fontWeight:600}}>Échec (voir message ci-dessous)</div>}
                   </div>
                 )}
               </div>
@@ -9488,6 +9632,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
 
   // ── Contexte pour le Rapport Intelligent (catalogue & devis) ─────────────
   const catalogueReportContext={
+    clientsValides:clients,
     nbProduits:products.length,
     nbProduitsObsoletes:productsTyped.filter((p:any)=>p.status==="obsolete").length,
     alertesPrix:priceAlerts.slice(0,10).map((p:any)=>({pn:p.pn,variationPct:+p._priceChange.pct.toFixed(1),ancienPrix:p._priceChange.prevPrice,nouveauPrix:p._priceChange.latestPrice})),
@@ -9518,7 +9663,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
           <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>Catalogue & Devis</h1>
           <p style={{margin:0,color:C.t3,fontSize:13}}>{products.length} produits · {quotes.length} devis générés</p>
         </div>
-        {isAdmin&&<RapportIntelligent title="Catalogue & Devis" context={catalogueReportContext}/>}
+        {isAdmin&&<RapportIntelligent title="Catalogue & Devis" context={catalogueReportContext} onApplyChange={applyDevisProposal}/>}
       </div>
       {/* Tabs */}
       <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",alignSelf:"flex-start",boxShadow:C.sh}}>
