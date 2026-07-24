@@ -25,7 +25,7 @@
 // qu'une page d'erreur HTML générique de la plateforme.
 
 const MODEL = "claude-sonnet-5";
-const MAX_TOKENS = 2000;
+const MAX_TOKENS = 4000;
 
 const SYSTEM_PROMPT = (title, context) => `Tu es l'analyste intégré de l'application OrderTrack, un outil de suivi de commandes/factures/paiements B2B. Un utilisateur (responsable commercial/ADV) te demande un "Rapport Intelligent" sur : "${title}".
 
@@ -47,6 +47,7 @@ Consignes de style et de fond :
 - N'utilise QUE les données fournies ci-dessus. Si l'utilisateur pose une question dont la réponse n'est pas dans ce contexte, dis-le honnêtement ("je n'ai pas cette donnée dans ce qui m'a été transmis — peux-tu me la donner ou me dire où la trouver ?") plutôt que d'inventer un chiffre ou un fait.
 - Utilise des chiffres exacts tirés du contexte, jamais d'estimations vagues.
 - Reste sous les 220 mots pour le rapport initial ; pour les réponses de suivi, reste concis (sous 150 mots) sauf pour une recherche précise où lister les détails pertinents (lignes, quantités, dates) prime sur la limite de mots.
+- Pour un calcul ou une somme portant sur beaucoup de commandes/lignes (ex: cumul facturé sur l'année, total d'un pipeline), calcule le résultat sans détailler chaque commande une par une dans ta réponse visible — donne directement le total, éventuellement une ou deux lignes de décomposition (ex: "dont X € déjà facturé + Y € en commandes non facturées"), jamais une liste exhaustive commande par commande. Une réponse longue et détaillée risque d'être coupée avant la fin — la concision n'est pas juste un style, c'est nécessaire pour que ta réponse arrive complète.
 
 MODIFICATIONS DE DONNÉES — tu ne peux JAMAIS modifier toi-même une commande. Si l'utilisateur te donne une information qui justifie un changement dans OrderTrack (ex: "cette commande est bloquée en attente de la FDI du client", "la livraison est repoussée au 15/09", "cette commande est annulée"), tu dois PROPOSER la modification exacte plutôt que la garder pour toi ou juste en discuter. Pour cela, termine ta réponse (après ton texte normal expliquant ce que tu proposes et pourquoi) par un bloc EXACTEMENT dans ce format, sans rien avant/après sur ces lignes :
 ###PROPOSITION###
@@ -168,7 +169,18 @@ export default async function handler(req, res) {
       } catch { /* proposition mal formée — ignorée, le texte reste affiché */ }
     }
 
-    res.status(200).json({ text: text || "(Réponse vide)", proposal });
+    // Une réponse vide arrive presque toujours parce que la génération a
+    // été coupée avant de produire du texte visible (calcul trop long,
+    // limite de tokens atteinte) — on le dit clairement plutôt que
+    // d'afficher un message générique inutile.
+    if (!text) {
+      text =
+        data.stop_reason === "max_tokens"
+          ? "Ma réponse a été coupée avant d'aboutir — la question demandait probablement un calcul trop long à détailler. Peux-tu reformuler en demandant un chiffre plus précis (ex: juste le total facturé sur telle période) ?"
+          : "Je n'ai pas réussi à produire de réponse cette fois — peux-tu reformuler ta question ou réessayer ?";
+    }
+
+    res.status(200).json({ text, proposal });
   } catch (e) {
     // Filet de sécurité ultime : quoi qu'il arrive, on répond en JSON.
     res.status(500).json({ error: "Erreur serveur inattendue : " + String((e && e.message) || e) });
