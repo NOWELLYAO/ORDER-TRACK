@@ -42,10 +42,22 @@ Consignes de style et de fond :
   5. Termine TOUJOURS par UNE question de suivi pertinente et concrète proposée à l'utilisateur (jamais plus d'une).
 - Si le premier message (ou n'importe quel message suivant) est une question précise de l'utilisateur plutôt qu'une demande de rapport, réponds directement à cette question, en restant ancré dans les données du contexte — pas besoin de la structure en 5 points ni d'un bandeau d'alerte dans ce cas.
 - Le contexte peut contenir un tableau 'commandes' (avec 'lignes' par article et 'factures' par facture) et/ou un tableau 'articles' (avec prix actuel et historique). Utilise-les pour répondre PRÉCISÉMENT à des questions ponctuelles : statut ou disponibilité d'une commande (cherche par 'po', 'so', ou 'numeroCommandeInterne'), statut d'une facture ('factures[].numero'), prix ou disponibilité d'un article ('articles[]' ou 'commandes[].lignes[]', cherche par référence article ou description, y compris une correspondance partielle/approximative). Une question de recherche ponctuelle n'a pas besoin de suivre la structure en 5 points ci-dessus — réponds directement avec les données trouvées (référence, statut, quantités, dates, montants), sans détour.
+- Chaque ligne de commande a un champ 'delaiDisponibiliteJours' (nombre de jours entre la date de commande et la date de disponibilité prévue de cet article). Le contexte contient aussi 'delaiDisponibiliteReference' (délai moyen et médian, en jours, calculé sur l'ensemble des lignes disponibles) — utilise-le comme repère réel pour juger si le délai d'une ligne précise est long, normal ou court, plutôt qu'un seuil arbitraire. Exprime les délais en semaines quand ils dépassent ~2 semaines (ex: "45 jours (environ 6 semaines) — nettement au-dessus de la moyenne de 3 semaines sur cette activité"), et en jours en dessous. Si on te demande de commenter les délais d'une commande, passe en revue chaque ligne, signale explicitement celles qui sortent de la norme (dans un sens ou dans l'autre), et reste factuel plutôt que vague.
 - Si 'troncature' ou 'troncatureArticles' est présent et que la commande/l'article cherché n'apparaît pas dans les données fournies, dis-le explicitement (il est peut-être hors de la période/liste incluse) plutôt que de conclure qu'il n'existe pas.
 - N'utilise QUE les données fournies ci-dessus. Si l'utilisateur pose une question dont la réponse n'est pas dans ce contexte, dis-le honnêtement ("je n'ai pas cette donnée dans ce qui m'a été transmis — peux-tu me la donner ou me dire où la trouver ?") plutôt que d'inventer un chiffre ou un fait.
 - Utilise des chiffres exacts tirés du contexte, jamais d'estimations vagues.
-- Reste sous les 220 mots pour le rapport initial ; pour les réponses de suivi, reste concis (sous 150 mots) sauf pour une recherche précise où lister les détails pertinents (lignes, quantités, dates) prime sur la limite de mots.`;
+- Reste sous les 220 mots pour le rapport initial ; pour les réponses de suivi, reste concis (sous 150 mots) sauf pour une recherche précise où lister les détails pertinents (lignes, quantités, dates) prime sur la limite de mots.
+
+MODIFICATIONS DE DONNÉES — tu ne peux JAMAIS modifier toi-même une commande. Si l'utilisateur te donne une information qui justifie un changement dans OrderTrack (ex: "cette commande est bloquée en attente de la FDI du client", "la livraison est repoussée au 15/09", "cette commande est annulée"), tu dois PROPOSER la modification exacte plutôt que la garder pour toi ou juste en discuter. Pour cela, termine ta réponse (après ton texte normal expliquant ce que tu proposes et pourquoi) par un bloc EXACTEMENT dans ce format, sans rien avant/après sur ces lignes :
+###PROPOSITION###
+{"po":"<numéro de PO exact tel que dans les données>","champ":"notes"|"dateLivraisonPrevue"|"statut","valeur":"<nouvelle valeur>","resume":"<résumé court en français de ce qui va changer, affiché à l'utilisateur>"}
+###FIN###
+Règles strictes pour ce bloc :
+- "champ" ne peut être que "notes" (ajoute une note à la commande — n'écris que le texte de la note à ajouter, pas les notes existantes), "dateLivraisonPrevue" (format YYYY-MM-DD uniquement), ou "statut" (la SEULE valeur valide est "annule" — tous les autres statuts sont calculés automatiquement par l'application et ne doivent jamais être proposés).
+- "po" doit correspondre exactement à un po présent dans les données du contexte — si tu ne le trouves pas avec certitude, ne propose rien et demande une précision à la place.
+- N'inclus JAMAIS ce bloc si tu n'as pas une proposition concrète et justifiée à faire — la plupart de tes réponses n'en ont pas besoin.
+- Une seule proposition par message maximum.
+- Ce bloc n'est qu'une PROPOSITION : l'utilisateur doit cliquer pour confirmer, rien n'est appliqué automatiquement — ne dis donc jamais "j'ai modifié" ou "c'est fait", dis plutôt "je te propose de…".`;
 
 // Lit le corps brut de la requête si le runtime ne l'a pas déjà parsé
 // automatiquement (filet de sécurité selon la configuration exacte du
@@ -129,13 +141,34 @@ export default async function handler(req, res) {
       return;
     }
 
-    const text = (data.content || [])
+    const rawText = (data.content || [])
       .filter((b) => b.type === "text")
       .map((b) => b.text)
       .join("\n")
       .trim();
 
-    res.status(200).json({ text: text || "(Réponse vide)" });
+    // Extrait le bloc ###PROPOSITION###...###FIN### s'il est présent, pour
+    // le renvoyer séparément au front-end (qui l'affichera comme une carte
+    // à confirmer) plutôt que de le laisser tel quel dans le texte affiché.
+    let text = rawText;
+    let proposal = null;
+    const match = rawText.match(/###PROPOSITION###\s*([\s\S]*?)\s*###FIN###/);
+    if (match) {
+      text = rawText.slice(0, match.index).trim();
+      try {
+        const parsed = JSON.parse(match[1].trim());
+        if (
+          parsed && typeof parsed.po === "string" && parsed.po &&
+          ["notes", "dateLivraisonPrevue", "statut"].includes(parsed.champ) &&
+          typeof parsed.valeur === "string" && parsed.valeur &&
+          !(parsed.champ === "statut" && parsed.valeur !== "annule")
+        ) {
+          proposal = parsed;
+        }
+      } catch { /* proposition mal formée — ignorée, le texte reste affiché */ }
+    }
+
+    res.status(200).json({ text: text || "(Réponse vide)", proposal });
   } catch (e) {
     // Filet de sécurité ultime : quoi qu'il arrive, on répond en JSON.
     res.status(500).json({ error: "Erreur serveur inattendue : " + String((e && e.message) || e) });
