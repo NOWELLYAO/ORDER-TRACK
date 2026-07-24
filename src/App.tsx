@@ -666,17 +666,25 @@ const getStatusMeta=(id:string,lang:Lang="fr")=>{
 // automatiquement, à chaque modification des factures — pas de saisie
 // manuelle possible (sauf "annule", qui est le seul statut manuel) :
 // - Aucune facture (0 €)                → "en_cours"
-// - Facturé < 99% du montant PO         → "partial"
-// - Facturé ≥ 99% du montant PO         → "full" (intégralement expédiée + facturée)
-// - "annule" n'est jamais touché automatiquement — une commande annulée le
-//   reste quoi qu'il arrive à ses factures.
+// - Reliquat non facturé significatif   → "partial"
+// - Reliquat négligeable (arrondi)      → "full" (intégralement expédiée + facturée)
+// Le reliquat est jugé négligeable seulement s'il est À LA FOIS sous 1% du
+// montant PO ET sous 50 € en valeur absolue — un écart de 1% peut
+// représenter plusieurs milliers d'euros sur une grosse commande, ce n'est
+// pas un simple arrondi et ne doit pas faire basculer la commande en "Full"
+// (ni donc, plus tard, dans le lot "en attente de paiement").
+// "annule" n'est jamais touché automatiquement — une commande annulée le
+// reste quoi qu'il arrive à ses factures.
+const FULL_TOLERANCE_ABS=50; // €
 const autoAdvanceOrderStatus=(order:any):any=>{
   if(!order||order.status==="annule")return order;
+  const amount=+order.amount||0;
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
-  const pct=+order.amount>0?invoiced/+order.amount:0;
   if(invoiced<=0)return{...order,status:"en_cours"};
-  if(pct>=0.99)return{...order,status:"full"};
-  return{...order,status:"partial"};
+  if(amount<=0)return{...order,status:"partial"};
+  const remaining=amount-invoiced;
+  const isFull=remaining<=amount*0.01&&remaining<=FULL_TOLERANCE_ABS;
+  return{...order,status:isFull?"full":"partial"};
 };
 
 // ── Archivage des commandes ──────────────────────────────────────────────
@@ -1398,7 +1406,13 @@ export default function App(){
     const mv=(v:string)=>v==="RDT"?"Transitaire FCA":v;
     const ms=(v:string)=>migrateStatus(v);
     const res:any={};
-    Object.keys(orders).forEach(c=>{res[c]=(orders[c]||[]).map((o:any)=>({...o,status:ms(mv(o.status||"")),deliveryMode:mv(o.deliveryMode||""),invoices:(o.invoices||[]).map((i:any)=>({...i,shippingMode:mv(i.shippingMode||"")})) }));});
+    // Recalcule le statut (en_cours/partial/full) à partir des factures
+    // réelles à chaque chargement — auto-guérison pour les commandes dont
+    // le statut avait été figé avec un ancien seuil de tolérance (avant
+    // correction : un reliquat non facturé pouvait être classé "Full" à
+    // tort si sa part en % était sous 1%, même en représentant plusieurs
+    // milliers d'euros sur une grosse commande).
+    Object.keys(orders).forEach(c=>{res[c]=(orders[c]||[]).map((o:any)=>autoAdvanceOrderStatus({...o,status:ms(mv(o.status||"")),deliveryMode:mv(o.deliveryMode||""),invoices:(o.invoices||[]).map((i:any)=>({...i,shippingMode:mv(i.shippingMode||"")})) }));});
     return res;
   };
   const migrateAccounts=(acc:any)=>{
