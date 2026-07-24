@@ -720,8 +720,7 @@ const isOrderReadyToShip=(order:any):boolean=>{
   if(!order||order.archived||order.status==="annule"||order.status==="full")return false;
   const today=todayStr();
   if(order.lines&&order.lines.length>0){
-    const pending=orderLineCoverage(order).filter((l:any)=>l.qtyRemaining>0);
-    if(pending.length===0)return false;
+    const pending=orderLineCoverage(order).filter((l:any)=>l.qtyRemaining>0&&!FEE_LINE_PNS.has(String(l.pn||"").trim().toUpperCase()));
     return pending.every((l:any)=>!!l.availDate&&l.availDate<=today);
   }
   return!!order.expectedDate&&order.expectedDate<=today;
@@ -5199,6 +5198,13 @@ function PoLinesPanel({order,onSave,canEdit}:any){
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button onClick={addDraftLine} style={{background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:5,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Ligne</button>
+            {FEE_LINE_PRESETS.map(f=>(
+              <button key={f.pn} onClick={()=>setDraftLines((prev:any)=>[...(prev||[]),{pn:f.pn,desc:f.desc,qty:1,unitPrice:0}])}
+                title={`Ajouter une ligne "${f.desc}" (catégorie ${f.categorie}) — PN pré-rempli, pas de date de disponibilité à saisir`}
+                style={{background:f.categorie==="Transport"?C.blueL:C.tealL,color:f.categorie==="Transport"?C.blueDk:C.teal,border:"none",borderRadius:5,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                <i className="ti ti-plus" style={{fontSize:11}} aria-hidden="true"/> {f.desc}
+              </button>
+            ))}
             <button onClick={confirmImport} style={{background:C.blue,color:"#fff",border:"none",borderRadius:5,padding:"6px 14px",fontSize:11,fontWeight:700,cursor:"pointer"}}>✓ {existingLines.length>0?"Enregistrer les modifications":"Valider l'import"}</button>
             <button onClick={()=>{setDraftLines(null);setImportMsg("");}} style={{background:"none",border:"none",color:C.t3,fontSize:11,cursor:"pointer"}}>Annuler</button>
           </div>
@@ -5217,6 +5223,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
             <tbody>
               {cov.map((l:any,i:number)=>{
                 const si=statusInfo(l.status);
+                const isFeeLine=FEE_LINE_PNS.has(String(l.pn||"").trim().toUpperCase());
                 const availLate=l.availDate&&l.qtyRemaining>0&&new Date(l.availDate+"T00:00:00")<new Date(new Date().setHours(0,0,0,0));
                 const setAvailDate=(val:string)=>onSave(existingLines.map((x:any,idx:number)=>idx===i?{...x,availDate:val,availDateManual:true}:x));
                 return(
@@ -5229,14 +5236,16 @@ function PoLinesPanel({order,onSave,canEdit}:any){
                   <td style={{padding:"5px 8px",color:C.t2}}>{l.qtyInvoiced}</td>
                   <td style={{padding:"5px 8px",color:l.qtyRemaining>0?C.amberDk:C.t3,fontWeight:l.qtyRemaining>0?700:400}}>{l.qtyRemaining}</td>
                   <td style={{padding:"5px 8px"}}>
-                    {canEdit?(
+                    {isFeeLine?(
+                      <span style={{color:C.t3,fontSize:10}}>— N/A (frais)</span>
+                    ):canEdit?(
                       <input type="date" value={l.availDate||""} onChange={(e:any)=>setAvailDate(e.target.value)}
                         style={{padding:"3px 5px",border:`1px solid ${availLate?C.red:C.b}`,borderRadius:4,fontSize:10,color:availLate?C.redDk:C.t2,width:118}}/>
                     ):(
                       l.availDate?<span style={{color:availLate?C.redDk:C.t2,fontWeight:availLate?700:400}}>{fmtD(l.availDate)}{availLate?" ⚠":""}</span>
                         :<span style={{background:C.amberL,color:C.amberDk,padding:"2px 7px",borderRadius:99,fontSize:9,fontWeight:700}}>TC — à confirmer</span>
                     )}
-                    {canEdit&&!l.availDate&&<div style={{fontSize:9,color:C.amberDk,marginTop:2}}>TC — à confirmer</div>}
+                    {!isFeeLine&&canEdit&&!l.availDate&&<div style={{fontSize:9,color:C.amberDk,marginTop:2}}>TC — à confirmer</div>}
                   </td>
                   <td style={{padding:"5px 8px"}}><span style={{background:si.bg,color:si.c,padding:"2px 8px",borderRadius:99,fontSize:10,fontWeight:700}}>{si.label}</span></td>
                   {canEdit&&<td style={{padding:"5px 8px"}}>
@@ -8286,11 +8295,32 @@ const UNCLASSIFIED_TYPE={code:"AUTRE",label:"Autres / non classé",segment:""};
 const ACCESSORY_TYPE={code:"ACCESS",label:"ACCESS — Accessoires & pièces détachées",segment:"SERV"};
 const DOSING_ACCESSORY_TYPE={code:"DOS_ACC",label:"DOSING ACCESSORIES — Accessoires de dosage",segment:"IND"};
 const SOLAR_ACCESSORY_TYPE={code:"SOLAR_ACC",label:"SOLAR ACCESSORIES — Accessoires solaires (SQFlex)",segment:"WU",note:"WU — Water Utility (Solaire)"};
+const TRANSPORT_TYPE={code:"TRANSPORT",label:"TRANSPORT — Frais de transport",segment:"SERV"};
+const DIVERS_TYPE={code:"DIVERS",label:"DIVERS — Assurance, commissioning, frais divers",segment:"SERV"};
+// PN fixes pour les lignes de frais (transport/assurance/commissioning/
+// divers) — pas de vrai article catalogue, donc pas de prix/dispo à
+// chercher : un clic remplit PN + description, la date de disponibilité ne
+// s'applique pas à ce type de ligne (voir FEE_LINE_PNS plus bas).
+const FEE_LINE_PRESETS=[
+  {pn:"TRANSPORT",desc:"Frais de transport",categorie:"Transport"},
+  {pn:"ASSURANCE",desc:"Assurance transport",categorie:"Divers"},
+  {pn:"COMMISSIONING",desc:"Commissioning / mise en service",categorie:"Divers"},
+  {pn:"DIVERS",desc:"Frais divers",categorie:"Divers"},
+];
+const FEE_LINE_PNS=new Set(FEE_LINE_PRESETS.map(f=>f.pn));
 // Fallback keyword buckets, split to match the user's own catalogue
 // documents (ACCESS.pdf/ACESS_2.pdf, Dosing_Accessories.pdf,
 // SOLAR_ACCESSORIES.pdf) instead of one generic "Accessoires" bucket —
 // checked in order, first match wins.
 const KEYWORD_BUCKETS:{type:any,keywords:string[]}[]=[
+  {type:TRANSPORT_TYPE,keywords:[
+    "transport","fret","freight","shipping","expédition","expedition",
+    "acheminement","livraison port","frais de port","port dû","transitaire",
+  ]},
+  {type:DIVERS_TYPE,keywords:[
+    "assurance","insurance","commissioning","mise en service","divers","misc",
+    "frais divers","supervision","installation",
+  ]},
   {type:DOSING_ACCESSORY_TYPE,keywords:[
     "e-stirrer","stirrer","inject. unit","inject.unit","mfv","tank,",
   ]},
