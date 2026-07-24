@@ -169,15 +169,13 @@ export default async function handler(req, res) {
       } catch { /* proposition mal formée — ignorée, le texte reste affiché */ }
     }
 
-    // Une réponse vide arrive presque toujours parce que la génération a
-    // été coupée avant de produire du texte visible (calcul trop long,
-    // limite de tokens atteinte) — on le dit clairement plutôt que
-    // d'afficher un message générique inutile.
+    // Une réponse vide peut avoir plusieurs causes réelles différentes —
+    // plutôt que de deviner, on affiche le diagnostic technique exact
+    // (stop_reason, types de blocs reçus) pour identifier la vraie cause
+    // au lieu de re-deviner à l'aveugle.
     if (!text) {
-      text =
-        data.stop_reason === "max_tokens"
-          ? "Ma réponse a été coupée avant d'aboutir — la question demandait probablement un calcul trop long à détailler. Peux-tu reformuler en demandant un chiffre plus précis (ex: juste le total facturé sur telle période) ?"
-          : "Je n'ai pas réussi à produire de réponse cette fois — peux-tu reformuler ta question ou réessayer ?";
+      const blockTypes = (data.content || []).map((b) => b.type).join(", ") || "aucun";
+      text = `(Réponse vide — diagnostic : stop_reason="${data.stop_reason || "inconnu"}", blocs reçus=[${blockTypes}], usage=${JSON.stringify(data.usage || {})})`;
     }
 
     res.status(200).json({ text, proposal });
