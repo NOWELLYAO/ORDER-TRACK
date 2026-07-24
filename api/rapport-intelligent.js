@@ -49,16 +49,31 @@ Consignes de style et de fond :
 - Reste sous les 220 mots pour le rapport initial ; pour les réponses de suivi, reste concis (sous 150 mots) sauf pour une recherche précise où lister les détails pertinents (lignes, quantités, dates) prime sur la limite de mots.
 - Pour un calcul ou une somme portant sur beaucoup de commandes/lignes (ex: cumul facturé sur l'année, total d'un pipeline), calcule le résultat sans détailler chaque commande une par une dans ta réponse visible — donne directement le total, éventuellement une ou deux lignes de décomposition (ex: "dont X € déjà facturé + Y € en commandes non facturées"), jamais une liste exhaustive commande par commande. Une réponse longue et détaillée risque d'être coupée avant la fin — la concision n'est pas juste un style, c'est nécessaire pour que ta réponse arrive complète.
 
-MODIFICATIONS DE DONNÉES — tu ne peux JAMAIS modifier toi-même une commande. Si l'utilisateur te donne une information qui justifie un changement dans OrderTrack (ex: "cette commande est bloquée en attente de la FDI du client", "la livraison est repoussée au 15/09", "cette commande est annulée"), tu dois PROPOSER la modification exacte plutôt que la garder pour toi ou juste en discuter. Pour cela, termine ta réponse (après ton texte normal expliquant ce que tu proposes et pourquoi) par un bloc EXACTEMENT dans ce format, sans rien avant/après sur ces lignes :
+MODIFICATIONS DE DONNÉES — tu ne peux JAMAIS modifier ou créer quoi que ce soit toi-même dans OrderTrack. Dans deux cas, tu dois PROPOSER une action précise plutôt que la garder pour toi ou juste en discuter :
+
+CAS 1 — Modifier une commande existante : l'utilisateur te donne une information qui justifie un changement (ex: "cette commande est bloquée en attente de la FDI du client", "la livraison est repoussée au 15/09", "cette commande est annulée"). Termine alors ta réponse par :
 ###PROPOSITION###
-{"po":"<numéro de PO exact tel que dans les données>","champ":"notes"|"dateLivraisonPrevue"|"statut","valeur":"<nouvelle valeur>","resume":"<résumé court en français de ce qui va changer, affiché à l'utilisateur>"}
+{"type":"commande","po":"<numéro de PO exact tel que dans les données>","champ":"notes"|"dateLivraisonPrevue"|"statut","valeur":"<nouvelle valeur>","resume":"<résumé court en français de ce qui va changer>"}
 ###FIN###
-Règles strictes pour ce bloc :
-- "champ" ne peut être que "notes" (ajoute une note à la commande — n'écris que le texte de la note à ajouter, pas les notes existantes), "dateLivraisonPrevue" (format YYYY-MM-DD uniquement), ou "statut" (la SEULE valeur valide est "annule" — tous les autres statuts sont calculés automatiquement par l'application et ne doivent jamais être proposés).
-- "po" doit correspondre exactement à un po présent dans les données du contexte — si tu ne le trouves pas avec certitude, ne propose rien et demande une précision à la place.
-- N'inclus JAMAIS ce bloc si tu n'as pas une proposition concrète et justifiée à faire — la plupart de tes réponses n'en ont pas besoin.
+Règles : "champ" ne peut être que "notes" (ajoute une note — n'écris que le texte à ajouter, pas les notes existantes), "dateLivraisonPrevue" (format YYYY-MM-DD), ou "statut" (SEULE valeur valide : "annule" — les autres statuts sont automatiques). "po" doit correspondre exactement à un po présent dans les données — si tu ne le trouves pas avec certitude, ne propose rien et demande une précision.
+
+CAS 2 — Créer un devis : l'utilisateur te demande un devis/une offre de prix pour un client, avec une liste d'articles (et éventuellement des quantités). Avant de proposer, assure-toi d'avoir : le CLIENT destinataire (si le contexte contient une liste de clients valides — champ 'clients' ou 'clientsValides' — vérifie que le nom correspond exactement à l'un d'eux, sinon demande confirmation du nom exact), et au moins un ARTICLE identifiable dans les données (cherche par référence ou description dans 'articles[]' ou dans les lignes de commandes passées ce même client — utilise 'prixActuel' comme prix, ou le dernier prix connu pour ce client si l'article n'est pas au catalogue général). Si la quantité n'est pas précisée, utilise 1 par défaut. Si le client ou aucun article n'est identifiable avec certitude, NE PROPOSE RIEN et demande la précision manquante à la place. Termine alors ta réponse par :
+###PROPOSITION###
+{"type":"devis","client":"<nom exact du client>","lignes":[{"article":"<référence>","description":"<description si connue>","qte":<nombre>,"prixUnitaire":<nombre>}],"notes":"<notes optionnelles>","resume":"<résumé court en français, ex: \"Devis pour CIMELEC : 2x réf. 12345 + 1x réf. 67890\">"}
+###FIN###
+
+CAS 3 — Générer un rapport officiel existant : l'utilisateur te demande un des documents déjà proposés ailleurs dans l'application (Audit Financier d'un client, ou Journal détaillé des événements). Ce ne sont PAS des textes que tu rédiges — ce sont des documents pré-formatés générés par l'application à partir des vraies données, que tu déclenches pour l'utilisateur. Termine alors ta réponse par :
+###PROPOSITION###
+{"type":"rapport","rapportType":"audit_financier"|"journal","client":"<nom exact du client, ou \"tous\" pour tous les clients>","dateDebut":"<YYYY-MM-DD, uniquement pour journal>","dateFin":"<YYYY-MM-DD, uniquement pour journal>","resume":"<résumé court en français de ce qui va être généré>"}
+###FIN###
+Règles : "client" doit correspondre exactement à un nom de la liste des clients valides du contexte ('clients' ou 'clientsValides'), ou "tous" si l'utilisateur veut une vue consolidée et que le contexte le permet. Pour "journal", si l'utilisateur ne précise pas de période, utilise l'année en cours du 1er janvier à aujourd'hui. Si le client demandé n'est pas identifiable avec certitude, NE PROPOSE RIEN et demande une précision.
+
+Règles communes aux trois cas :
+- N'inclus JAMAIS ce bloc si tu n'as pas une proposition concrète et complète à faire — la plupart de tes réponses n'en ont pas besoin, et il vaut mieux demander une précision manquante que proposer quelque chose d'incomplet ou incertain.
 - Une seule proposition par message maximum.
-- Ce bloc n'est qu'une PROPOSITION : l'utilisateur doit cliquer pour confirmer, rien n'est appliqué automatiquement — ne dis donc jamais "j'ai modifié" ou "c'est fait", dis plutôt "je te propose de…".`;
+- Ce bloc n'est qu'une PROPOSITION : l'utilisateur doit cliquer pour confirmer, rien n'est appliqué/créé/généré automatiquement — ne dis donc jamais "j'ai créé"/"c'est fait"/"le voici", dis plutôt "je te propose ce devis/rapport, à confirmer".
+
+RAPPORT PERSONNALISÉ EN TEXTE LIBRE — si l'utilisateur te demande explicitement "un rapport" sur un sujet (ex: "fais-moi un rapport sur les retards de paiement de CIMELEC"), rédige une réponse plus complète et structurée que pour une simple question ponctuelle : des sections claires (avec des titres courts), les chiffres qui comptent, une analyse, et une conclusion — sans pour autant dépasser ~400 mots ni tomber dans le remplissage. Ce texte reste dans le chat ; l'utilisateur peut l'exporter lui-même en document depuis l'interface (bouton dédié sur chaque réponse), tu n'as rien de spécial à faire pour ça.`;
 
 // Lit le corps brut de la requête si le runtime ne l'a pas déjà parsé
 // automatiquement (filet de sécurité selon la configuration exacte du
@@ -169,12 +184,24 @@ export default async function handler(req, res) {
       text = rawText.slice(0, match.index).trim();
       try {
         const parsed = JSON.parse(match[1].trim());
-        if (
-          parsed && typeof parsed.po === "string" && parsed.po &&
+        const isValidCommandeProposal =
+          parsed && parsed.type === "commande" &&
+          typeof parsed.po === "string" && parsed.po &&
           ["notes", "dateLivraisonPrevue", "statut"].includes(parsed.champ) &&
           typeof parsed.valeur === "string" && parsed.valeur &&
-          !(parsed.champ === "statut" && parsed.valeur !== "annule")
-        ) {
+          !(parsed.champ === "statut" && parsed.valeur !== "annule");
+        const isValidDevisProposal =
+          parsed && parsed.type === "devis" &&
+          typeof parsed.client === "string" && parsed.client &&
+          Array.isArray(parsed.lignes) && parsed.lignes.length > 0 &&
+          parsed.lignes.every(
+            (l) => l && typeof l.article === "string" && l.article && (+l.qte || 0) > 0 && (+l.prixUnitaire || 0) >= 0
+          );
+        const isValidRapportProposal =
+          parsed && parsed.type === "rapport" &&
+          ["audit_financier", "journal"].includes(parsed.rapportType) &&
+          typeof parsed.client === "string" && parsed.client;
+        if (isValidCommandeProposal || isValidDevisProposal || isValidRapportProposal) {
           proposal = parsed;
         }
       } catch { /* proposition mal formée — ignorée, le texte reste affiché */ }
