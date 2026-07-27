@@ -13042,12 +13042,37 @@ function printOrderReport(order:any,client:string){
     return{inv,gap,hasLines:(inv.lines||[]).length>0};
   }).filter((x:any)=>Math.abs(x.gap)>=0.5);
 
+  // ── Factures signalées "non livrée" par le client ────────────────────────
+  // Section très visible (encadré rouge en haut du rapport) — montre le
+  // montant concerné et le détail des articles de chaque facture signalée,
+  // pour que la personne qui lit le rapport comprenne immédiatement de quoi
+  // il s'agit sans avoir à rouvrir l'appli.
+  const flaggedInvoices=(order.invoices||[]).filter((i:any)=>i.flagBilledNotDelivered);
+  const billedNotDeliveredHtml=flaggedInvoices.length>0?`
+  <div style="background:#FEF2F2;border:2px solid #DC2626;border-radius:8px;padding:14px 16px;margin-bottom:18px">
+    <div style="font-weight:800;color:#991B1B;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:6px">⚠️ ${flaggedInvoices.length} facture${flaggedInvoices.length>1?"s signalée":" signalée"} "non livrée" par le client — ${fmt(flaggedInvoices.reduce((s:number,i:any)=>{const paid=(i.payments||[]).reduce((ss:number,p:any)=>ss+(+p.amount||0),0);return s+Math.max(0,(+i.amount||0)-paid);},0))} € de solde concerné</div>
+    ${flaggedInvoices.map((inv:any)=>{
+      const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+      const rem=Math.max(0,(+inv.amount||0)-paid);
+      const artHtml=(inv.lines&&inv.lines.length>0)?`
+        <table style="width:100%;margin:6px 0 4px;font-size:10.5px;background:#fff;border:1px solid #FCA5A5;border-radius:6px;overflow:hidden">
+          <thead><tr style="background:#FEE2E2"><th style="padding:4px 8px;text-align:left;color:#991B1B;font-size:9px;text-transform:uppercase">Article</th><th style="padding:4px 8px;text-align:left;color:#991B1B;font-size:9px;text-transform:uppercase">Description</th><th style="padding:4px 8px;text-align:right;color:#991B1B;font-size:9px;text-transform:uppercase">Qté facturée</th><th style="padding:4px 8px;text-align:right;color:#991B1B;font-size:9px;text-transform:uppercase">Montant</th></tr></thead>
+          <tbody>${inv.lines.map((l:any)=>`<tr style="border-top:1px solid #FEE2E2"><td style="padding:4px 8px;font-family:monospace;color:#991B1B;font-weight:700">${l.pn||"—"}</td><td style="padding:4px 8px;color:#374151">${l.desc||"—"}</td><td style="padding:4px 8px;text-align:right">${l.qtyInvoiced||l.qty||0}</td><td style="padding:4px 8px;text-align:right;font-weight:700">${fmt((+l.qtyInvoiced||+l.qty||0)*(+l.unitPrice||0))} €</td></tr>`).join("")}</tbody>
+        </table>`:`<div style="font-size:10.5px;color:#991B1B;font-style:italic;margin:4px 0">Aucun détail d'articles importé pour cette facture.</div>`;
+      return`<div style="margin-top:6px">
+        <div style="font-size:11.5px;color:#7F1D1D"><strong>Facture ${inv.invoiceNumber||inv.id}</strong> du ${fmtD(inv.date)} — montant ${fmt(+inv.amount||0)} €, dont <strong>${fmt(rem)} € encore dû</strong>${paid>0?` (${fmt(paid)} € déjà encaissé malgré la contestation)`:""}</div>
+        ${artHtml}
+      </div>`;
+    }).join("")}
+  </div>`:"";
+
   const reconciliationHtml=hasLines&&Math.abs(unallocatedGap)>=0.5?`
   <div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:12px 16px;margin-bottom:18px">
     <div style="font-weight:700;color:#92400E;font-size:12px;margin-bottom:6px">⚠️ Écart de rattachement détecté : ${fmt(Math.abs(unallocatedGap))} € ${unallocatedGap>0?"facturés mais non liés à un article":"liés en excès par rapport au facturé"}</div>
     <div style="font-size:11px;color:#78350F;margin-bottom:${invoiceGaps.length>0?"6px":"0"}">Le total "Facturé" du haut (${fmt(invoiced)} €) vient directement des factures et est exact. Le total du tableau ci-dessous (${fmt(linesTotalInvoiced)} €) ne compte que ce qui a été explicitement rattaché à un article — l'écart signale une ou plusieurs factures enregistrées sans détail ligne par ligne, ou avec une ligne non reconnue.</div>
     ${invoiceGaps.length>0?`<div style="font-size:11px;color:#78350F">Facture(s) concernée(s) : ${invoiceGaps.map((x:any)=>`<strong>${x.inv.invoiceNumber||"—"}</strong> (${x.hasLines?`écart de ${fmt(Math.abs(x.gap))} €`:"aucune ligne d'article importée"})`).join(", ")}</div>`:""}
   </div>`:"";
+
 
   const invRows=(order.invoices||[]).map((inv:any)=>{
     const ps=payStatus(inv);
@@ -13096,6 +13121,7 @@ function printOrderReport(order:any,client:string){
     <div class="card"><div class="lbl">Nb factures</div><div class="val" style="font-size:13px">${(order.invoices||[]).length}</div></div>
   </div>
   ${order.notes?`<div class="sub" style="margin-top:6px">Notes : ${order.notes}</div>`:""}
+  ${billedNotDeliveredHtml}
   ${reconciliationHtml}
   ${hasLines?`<h2>📋 Articles commandés (${cov.length})</h2>
   <table><thead><tr><th>Part Number</th><th>Description</th><th style="text-align:right">Qté</th><th style="text-align:right">Prix unit.</th><th style="text-align:right">Total</th><th style="text-align:right">Facturé</th><th style="text-align:right">Restant</th><th>Disponibilité</th><th>Statut</th></tr></thead>
@@ -13162,6 +13188,9 @@ async function exportOrderExcel(order:any,client:string){
     ]:[]),
     ["Nb factures",(order.invoices||[]).length],
     ["Nb articles",cov.length],
+    ...((order.invoices||[]).some((i:any)=>i.flagBilledNotDelivered)?[
+      ["⚠ Factures signalées non livrées",(order.invoices||[]).filter((i:any)=>i.flagBilledNotDelivered).map((i:any)=>i.invoiceNumber||i.id).join(", ")] as [string,any],
+    ]:[]),
     ["Notes",order.notes||"—"],
     ["Généré le",new Date().toLocaleDateString("fr-FR")],
   ];
@@ -13173,6 +13202,7 @@ async function exportOrderExcel(order:any,client:string){
     if(k==="Écart de rattachement (€)"&&Math.abs(unallocatedGap)>=0.5)r.getCell(2).font={bold:true,color:{argb:"FFD97706"}};
     if(k==="Restant à facturer (€)")r.getCell(2).font={bold:true,color:{argb:remaining>0?"FFD97706":"FF059669"}};
     if(k==="Encaissé (€)")r.getCell(2).font={bold:true,color:{argb:"FF059669"}};
+    if(k==="⚠ Factures signalées non livrées")r.getCell(2).font={bold:true,color:{argb:"FFB91C1C"}};
   });
 
   // ── Sheet 2: Articles ──
@@ -13200,16 +13230,37 @@ async function exportOrderExcel(order:any,client:string){
   // ── Sheet 3: Factures ──
   const wsF=wb.addWorksheet("Factures");
   wsF.columns=[{header:"Invoice #",width:18},{header:"Date",width:12},{header:"Montant (€)",width:13},
-    {header:"Échéance",width:12},{header:"Payé (€)",width:13},{header:"Reste dû (€)",width:13},{header:"Statut",width:22}];
+    {header:"Échéance",width:12},{header:"Payé (€)",width:13},{header:"Reste dû (€)",width:13},{header:"Statut",width:22},{header:"Livraison contestée",width:18}];
   wsF.getRow(1).font={bold:true};
   wsF.getRow(1).eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0D1B2A"}};c.font={bold:true,color:{argb:"FFFFFFFF"}};});
   (order.invoices||[]).forEach((inv:any)=>{
     const ps=payStatus(inv);
     const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
-    const r=wsF.addRow([inv.invoiceNumber||"—",inv.date?fmtD(inv.date):"—",+inv.amount||0,inv.dueDate?fmtD(inv.dueDate):"—",paid,ps.rem,ps.label||ps.key||"—"]);
-    const argb=ps.key==="paid"?"FFD1FAE5":["overdue","ov_part"].includes(ps.key)?"FFFEE2E2":["today","soon","soon_part"].includes(ps.key)?"FFFEF3C7":"FFF8FAFC";
+    const r=wsF.addRow([inv.invoiceNumber||"—",inv.date?fmtD(inv.date):"—",+inv.amount||0,inv.dueDate?fmtD(inv.dueDate):"—",paid,ps.rem,ps.label||ps.key||"—",inv.flagBilledNotDelivered?"⚠ OUI":""]);
+    const argb=inv.flagBilledNotDelivered?"FFFEE2E2":ps.key==="paid"?"FFD1FAE5":["overdue","ov_part"].includes(ps.key)?"FFFEE2E2":["today","soon","soon_part"].includes(ps.key)?"FFFEF3C7":"FFF8FAFC";
     r.eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb}};});
+    if(inv.flagBilledNotDelivered)r.getCell(8).font={bold:true,color:{argb:"FFB91C1C"}};
   });
+
+  // ── Feuille dédiée : détail des factures signalées "non livrée" ──
+  const flaggedInvoicesXl=(order.invoices||[]).filter((i:any)=>i.flagBilledNotDelivered);
+  if(flaggedInvoicesXl.length>0){
+    const wsND=wb.addWorksheet("⚠ Non livrées");
+    wsND.columns=[{header:"Facture",width:16},{header:"Article",width:16},{header:"Description",width:36},{header:"Qté facturée",width:13},{header:"Montant (€)",width:14}];
+    wsND.getRow(1).font={bold:true};
+    wsND.getRow(1).eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFB91C1C"}};c.font={bold:true,color:{argb:"FFFFFFFF"}};});
+    flaggedInvoicesXl.forEach((inv:any)=>{
+      if(inv.lines&&inv.lines.length>0){
+        inv.lines.forEach((l:any)=>{
+          const r=wsND.addRow([inv.invoiceNumber||inv.id,l.pn||"—",l.desc||"—",l.qtyInvoiced||l.qty||0,(+l.qtyInvoiced||+l.qty||0)*(+l.unitPrice||0)]);
+          r.eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFFEE2E2"}};});
+        });
+      }else{
+        const r=wsND.addRow([inv.invoiceNumber||inv.id,"—","Aucun détail d'articles importé pour cette facture",0,+inv.amount||0]);
+        r.eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFFEE2E2"}};});
+      }
+    });
+  }
 
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
