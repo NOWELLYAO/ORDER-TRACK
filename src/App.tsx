@@ -519,7 +519,7 @@ const buildOrdersDetailForReport=(orders:any[],maxChars:number=350000)=>{
       dateCommande:o.date,dateLivraisonPrevue:o.expectedDate||null,modeLivraison:o.deliveryMode,
       montantCommande:Math.round(+o.amount||0),montantFacture:Math.round(invoiced),montantPaye:Math.round(paid),
       notes:o.notes||undefined,
-      factureNonLivree:anomaly?{montantConcerne:Math.round(anomaly.montant),signaleManuel:anomaly.manual,articlesConcernes:anomaly.lignes.map((l:any)=>l.pn)}:undefined,
+      factureNonLivree:anomaly?{montantConcerne:Math.round(anomaly.montant),facturesConcernees:anomaly.factures.map((i:any)=>i.invoiceNumber||i.id)}:undefined,
       lignes:(o.lines&&o.lines.length>0)?orderLineCoverage(o).map((l:any)=>{
         const delaiJours=(o.date&&l.availDate)?daysBetween(o.date,l.availDate):null;
         if(delaiJours!==null&&delaiJours>=0)allDelays.push(delaiJours);
@@ -728,29 +728,30 @@ const isOrderReadyToShip=(order:any):boolean=>{
   return!!order.expectedDate&&order.expectedDate<=today;
 };
 
-// ── Détection "Facturé non livré" ────────────────────────────────────────
-// Repère automatiquement les commandes où une facture a été émise sur une
-// ligne dont la marchandise n'est pas encore disponible (pas de date de
-// disponibilité, ou une date encore dans le futur) — le signe typique
-// d'une facture générée par erreur avant la livraison réelle. S'ajoute un
-// signalement MANUEL (order.flagBilledNotDelivered) pour les cas que la
-// détection automatique ne peut pas voir (commande sans détail de lignes).
+// ── Signalement "Facturé non livré" ──────────────────────────────────────
+// PUREMENT MANUEL, au niveau de CHAQUE FACTURE (pas de la commande) —
+// une détection automatique basée sur la date de disponibilité des lignes
+// s'est révélée peu fiable dans ce métier : la marchandise est expédiée ET
+// facturée en même temps, donc l'absence de date de disponibilité sur une
+// ligne ne veut rien dire de particulier (elle est juste souvent laissée
+// vide une fois la facture faite) — ça déclenchait des faux positifs sur
+// des commandes normales, et à l'inverse ça ne détectait pas le vrai cas
+// qui compte : un client qui CONTESTE avoir reçu la marchandise malgré la
+// facture, ce qui ne peut être su que par une personne, pas par une date.
+// C'est donc au client de cocher la facture concernée avec le bouton dédié
+// sur la ligne de facture elle-même.
+const getInvoiceBillingAnomaly=(invoice:any)=>!!invoice?.flagBilledNotDelivered;
+// Résumé au niveau commande — vrai si AU MOINS UNE de ses factures est
+// signalée, pour l'affichage du badge sur la carte de commande.
 const getBillingDeliveryAnomaly=(order:any)=>{
-  if(!order||order.status==="annule")return null;
-  const today=todayStr();
-  let lignes:any[]=[];
-  if(order.lines&&order.lines.length>0){
-    lignes=orderLineCoverage(order).filter((l:any)=>
-      (+l.qtyInvoiced||0)>0 &&
-      !FEE_LINE_PNS.has(String(l.pn||"").trim().toUpperCase()) &&
-      (!l.availDate||l.availDate>today)
-    );
-  }
-  const auto=lignes.length>0;
-  const manual=!!order.flagBilledNotDelivered;
-  if(!auto&&!manual)return null;
-  const montant=lignes.reduce((s:number,l:any)=>s+Math.min(+l.qtyInvoiced||0,+l.qtyOrdered||0)*(+l.unitPrice||0),0);
-  return{auto,manual,lignes,montant};
+  if(!order)return null;
+  const flagged=(order.invoices||[]).filter((i:any)=>getInvoiceBillingAnomaly(i));
+  if(flagged.length===0)return null;
+  const montant=flagged.reduce((s:number,i:any)=>{
+    const paid=(i.payments||[]).reduce((ss:number,p:any)=>ss+(+p.amount||0),0);
+    return s+Math.max(0,(+i.amount||0)-paid);
+  },0);
+  return{factures:flagged,montant};
 };
 
 // ── Regroupement des commandes en 4 lots ─────────────────────────────────
@@ -1598,8 +1599,11 @@ export default function App(){
     const orders=getOrders(client).map((o:any)=>o.id===id?{...o,archived:!o.archived}:o);
     persist(null,{...data,[client]:orders},null);
   };
-  const toggleBilledNotDelivered=(client:string,id:string)=>{
-    const orders=getOrders(client).map((o:any)=>o.id===id?{...o,flagBilledNotDelivered:!o.flagBilledNotDelivered}:o);
+  const toggleInvoiceBilledNotDelivered=(client:string,orderId:string,invoiceId:string)=>{
+    const orders=getOrders(client).map((o:any)=>o.id!==orderId?o:{
+      ...o,
+      invoices:(o.invoices||[]).map((i:any)=>i.id!==invoiceId?i:{...i,flagBilledNotDelivered:!i.flagBilledNotDelivered}),
+    });
     persist(null,{...data,[client]:orders},null);
   };
 
@@ -1703,7 +1707,7 @@ export default function App(){
     // P4 — (obsolète depuis la simplification des statuts — "En attente FDI"
     // n'existe plus)
     // P5 — Retards livraison
-    const _late=_allOrders.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
+    const _late=_allOrders.filter((o:any)=>{if(!o.expectedDate||o.status==="annule"||o.status==="full")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
     if(_late.length>0) alerts.push({level:"info",icon:"ti-truck-off",text:`${_late.length} livraison${_late.length>1?"s":""} en retard`,detail:_late.map((o:any)=>`${o._client} ${o.poNumber}`).join(", ")});
     // P6 — Écarts commandé/facturé au niveau article (sur-facturation détectée)
     const _overInv:{po:string,client:string,items:string[]}[]=[];
@@ -1792,7 +1796,7 @@ export default function App(){
       }));
     }catch{/* catalogue/projets indisponibles — le reste du contexte reste utilisable */}
 
-    const billedNotDeliveredG=allOrders.map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{client:o._client,po:o.poNumber,montant:Math.round(a.montant),signaleManuel:a.manual}:null;}).filter(Boolean);
+    const billedNotDeliveredG=allOrders.map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{client:o._client,po:o.poNumber,montant:Math.round(a.montant),facturesConcernees:a.factures.map((i:any)=>i.invoiceNumber||i.id)}:null;}).filter(Boolean);
 
     return{
       perimetre:restrictedClient?`Client unique : ${restrictedClient}`:`Tous les clients (${visibleClients.length})`,
@@ -1880,8 +1884,12 @@ export default function App(){
       patch.status="annule";
       message=`Commande ${po} marquée comme annulée.`;
     }else if(champ==="flagFactureNonLivree"){
-      patch.flagBilledNotDelivered=valeur==="true";
-      message=valeur==="true"?`Commande ${po} signalée "Facturé non livré".`:`Signalement "Facturé non livré" retiré de la commande ${po}.`;
+      const factureNum=proposal?.facture;
+      if(!factureNum)return{ok:false,message:"Numéro de facture manquant dans la proposition."};
+      const targetInv=(foundOrder.invoices||[]).find((i:any)=>(i.invoiceNumber||i.id)===factureNum);
+      if(!targetInv)return{ok:false,message:`Facture ${factureNum} introuvable sur la commande ${po}.`};
+      patch.invoices=(foundOrder.invoices||[]).map((i:any)=>i.id!==targetInv.id?i:{...i,flagBilledNotDelivered:valeur==="true"});
+      message=valeur==="true"?`Facture ${factureNum} (commande ${po}) signalée "non livrée".`:`Signalement retiré de la facture ${factureNum}.`;
     }else{
       return{ok:false,message:"Type de modification non reconnu."};
     }
@@ -2048,7 +2056,7 @@ export default function App(){
             onEditOrder={perms.canEdit?(o:any)=>setModal({type:"order",client:page,order:o}):deny}
             onDelOrder={perms.canDelete?(id:string)=>delOrder(page,id):deny}
             onToggleArchive={perms.canEdit?(id:string)=>toggleArchiveOrder(page,id):deny}
-            onToggleBilledNotDelivered={perms.canEdit?(id:string)=>toggleBilledNotDelivered(page,id):deny}
+            onToggleInvoiceBilledNotDelivered={perms.canEdit?(oid:string,iid:string)=>toggleInvoiceBilledNotDelivered(page,oid,iid):deny}
             onAddInv={perms.canEdit?(o:any)=>setModal({type:"invoice",client:page,order:o,cfg:getConfig(page)}):deny}
             onAddBulkInv={perms.canEdit?(o:any)=>setModal({type:"bulk_invoice",client:page,order:o,cfg:getConfig(page)}):deny}
             onEditInv={perms.canEdit?(o:any,i:any)=>setModal({type:"invoice",client:page,order:o,invoice:i,cfg:getConfig(page)}):deny}
@@ -2216,7 +2224,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   // Commandes sans facture (hors annulé)
   const noInv=all.filter((o:any)=>o.status!=="annule"&&(o.invoices||[]).length===0);
   // Commandes en retard livraison
-  const lateDelivery=all.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
+  const lateDelivery=all.filter((o:any)=>{if(!o.expectedDate||o.status==="annule"||o.status==="full")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
 
   // ── OTIF (On Time In Full) — standard supply-chain KPI ────────────────────
   // Eligible = has a promised date, not cancelled, AND already resolvable
@@ -2438,7 +2446,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   // disponible ?", "statut de la facture Y ?") et pas seulement parler en
   // agrégats.
   const lateDeliveryByClient=(()=>{const m:Record<string,number>={};lateDelivery.forEach((o:any)=>{m[o._client]=(m[o._client]||0)+1;});return m;})();
-  const billedNotDelivered=all.map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{client:o._client,po:o.poNumber,montant:Math.round(a.montant),signaleManuel:a.manual}:null;}).filter(Boolean);
+  const billedNotDelivered=all.map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{client:o._client,po:o.poNumber,montant:Math.round(a.montant),facturesConcernees:a.factures.map((i:any)=>i.invoiceNumber||i.id)}:null;}).filter(Boolean);
   const kpiReportContext={
     annee:selYear,
     kpiGlobaux:{poTotal:Math.round(totPO),facture:Math.round(totInv),encaisse:Math.round(totPaid),ouvert:Math.round(totOpen),impaye:Math.round(totUnpaid),tauxFacturation:+txFact.toFixed(1),tauxEncaissement:+txPay.toFixed(1),nbCommandes:nbCmds,otifPct:otifPct!==null?+otifPct.toFixed(1):null,fillRatePct:fillRatePct!==null?+fillRatePct.toFixed(1):null},
@@ -3166,7 +3174,7 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
     kpiGlobaux:{poTotal:Math.round(totPO),facture:Math.round(totInv),encaisse:Math.round(totPaid),ouvert:Math.round(totOpen),tauxFacturation:+txFact.toFixed(1),tauxEncaissement:+txPay.toFixed(1)},
     objectifs:{poCible:globalTarget.po||null,invCible:globalTarget.inv||null,avancementPoPct:poTargetPct!==null?+poTargetPct.toFixed(1):null,avancementInvPct:invTargetPct!==null?+invTargetPct.toFixed(1):null},
     parClient:all.map((c:any)=>({client:c.client,poTotal:Math.round(c.totalPO),facture:Math.round(c.totalInv),encaisse:Math.round(c.totalPaid),ouvert:Math.round(c.openOrders)})).sort((a:any,b:any)=>b.poTotal-a.poTotal),
-    facturesNonLivrees:(()=>{const list=getAllOrders().map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{client:o._client,po:o.poNumber,montant:Math.round(a.montant),signaleManuel:a.manual}:null;}).filter(Boolean);return{total:list.length,montantTotal:Math.round(list.reduce((s:number,b:any)=>s+b.montant,0)),detail:list.slice(0,15)};})(),
+    facturesNonLivrees:(()=>{const list=getAllOrders().map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{client:o._client,po:o.poNumber,montant:Math.round(a.montant),facturesConcernees:a.factures.map((i:any)=>i.invoiceNumber||i.id)}:null;}).filter(Boolean);return{total:list.length,montantTotal:Math.round(list.reduce((s:number,b:any)=>s+b.montant,0)),detail:list.slice(0,15)};})(),
     ...buildOrdersDetailForReport(getAllOrders()),
   };
 
@@ -3595,7 +3603,7 @@ function computeClientIntelligence(orders:any[]){
     totalOrders:sorted.length,lastOrderDate,tenureDays,guanxiScore,regularityScore,monthsCoverage};
 }
 
-function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onToggleArchive,onToggleBilledNotDelivered,onAddInv,onAddBulkInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true,targets,selYear,scoreNotes}:any){
+function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onToggleArchive,onToggleInvoiceBilledNotDelivered,onAddInv,onAddBulkInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true,targets,selYear,scoreNotes}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
   // Accordion behavior: opening an order closes any other that was open —
@@ -3637,7 +3645,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
   };
   const txFact=stats.totalPO>0?(stats.totalInv/stats.totalPO*100):0;
   const txPay=stats.totalInv>0?(stats.totalPaid/stats.totalInv*100):0;
-  const lateOrders=orders.filter((o:any)=>{if(!o.expectedDate||o.status==="annule")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
+  const lateOrders=orders.filter((o:any)=>{if(!o.expectedDate||o.status==="annule"||o.status==="full")return false;const exp=new Date(o.expectedDate+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return exp<t&&inv<(+o.amount||0)*0.99;});
   const overduePayments=orders.reduce((s:any[],o:any)=>s.concat((o.invoices||[]).filter((i:any)=>["overdue","ov_part","today","soon"].includes(payStatus(i).key)).map((i:any)=>({...i,_po:o.poNumber}))),[]);
   const riskScore=isAdmin?computeClientRiskScore(orders):null;
   const clientIntelSingle=isAdmin?computeClientIntelligence(orders):null;
@@ -3651,7 +3659,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
     dynamiqueCommerciale:clientIntelSingle?{croissance12moPct:+clientIntelSingle.growthRate.toFixed(1),frequenceCommandes12mo:clientIntelSingle.frequency,statutRecommande:clientIntelSingle.reorderStatus,joursDeRetardCommande:clientIntelSingle.daysOverdue,derniereCommande:clientIntelSingle.lastOrderDate,ancienneteJours:clientIntelSingle.tenureDays}:null,
     livraisonsEnRetard:lateOrders.map((o:any)=>({po:o.poNumber,dateAttendue:o.expectedDate,montant:Math.round(+o.amount||0)})),
     facturesEchues:overdueList.map((i:any)=>({facture:i.invoiceNumber||i.id,po:i._po,montantDu:Math.round(payStatus(i).rem),echeance:i.dueDate})),
-    facturesNonLivrees:orders.map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{po:o.poNumber,montant:Math.round(a.montant),signaleManuel:a.manual}:null;}).filter(Boolean),
+    facturesNonLivrees:orders.map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{po:o.poNumber,montant:Math.round(a.montant),facturesConcernees:a.factures.map((i:any)=>i.invoiceNumber||i.id)}:null;}).filter(Boolean),
     conditionsPaiement:term.label,
     ...buildOrdersDetailForReport(orders),
   };
@@ -3678,8 +3686,12 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
       patch.status="annule";
       message=`Commande ${po} marquée comme annulée.`;
     }else if(champ==="flagFactureNonLivree"){
-      patch.flagBilledNotDelivered=valeur==="true";
-      message=valeur==="true"?`Commande ${po} signalée "Facturé non livré".`:`Signalement "Facturé non livré" retiré de la commande ${po}.`;
+      const factureNum=proposal?.facture;
+      if(!factureNum)return{ok:false,message:"Numéro de facture manquant dans la proposition."};
+      const targetInv=(foundOrder.invoices||[]).find((i:any)=>(i.invoiceNumber||i.id)===factureNum);
+      if(!targetInv)return{ok:false,message:`Facture ${factureNum} introuvable sur la commande ${po}.`};
+      patch.invoices=(foundOrder.invoices||[]).map((i:any)=>i.id!==targetInv.id?i:{...i,flagBilledNotDelivered:valeur==="true"});
+      message=valeur==="true"?`Facture ${factureNum} (commande ${po}) signalée "non livrée".`:`Signalement retiré de la facture ${factureNum}.`;
     }else{
       return{ok:false,message:"Type de modification non reconnu."};
     }
@@ -3815,7 +3827,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
       <OrderTabsPanel client={client} orders={orders} exp={exp} tgl={tgl}
         onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder}
         onToggleArchive={onToggleArchive}
-        onToggleBilledNotDelivered={onToggleBilledNotDelivered}
+        onToggleInvoiceBilledNotDelivered={onToggleInvoiceBilledNotDelivered}
         onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay}
         onEditInv={onEditInv} onDelInv={onDelInv}
         focusOrderId={focusOrderId} onClearFocus={onClearFocus} onAdd={onAdd} lang={lang}
@@ -4651,7 +4663,7 @@ function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
 }
 
 // ─── ORDER TABS PANEL ────────────────────────────────────────────────────────
-function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms}:any){
+function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleInvoiceBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[tab,setTab]=useState<"orders"|"invoices"|"payments">("orders");
   const[search,setSearch]=useState("");
@@ -4800,7 +4812,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{viewBucket==="archived"?"Aucune commande archivée":viewBucket==="awaiting_payment"?"Aucune commande en attente de paiement":viewBucket==="ready"?"Aucune commande prête pour l'instant":"Aucune commande trouvée"}</div>}
-            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onToggleBilledNotDelivered={onToggleBilledNotDelivered} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
+            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onToggleInvoiceBilledNotDelivered={onToggleInvoiceBilledNotDelivered} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
                 onMouseEnter={(e:any)=>{e.currentTarget.style.background=C.blueL;e.currentTarget.style.borderColor=C.blue;}}
@@ -4949,7 +4961,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
 }
 
 // ─── ORDER CARD (extracted from CustomerPage) ───────────────────────────────────
-function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
+function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleInvoiceBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
   const open=Math.max(0,(+order.amount||0)-invoiced);
@@ -4957,7 +4969,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
   const isExp=exp[order.id];
   const sty=SS[order.status]||{c:C.t2,bg:"#F1F5F9"};
   const meta=getStatusMeta(order.status);
-  const isLate=order.expectedDate&&new Date(order.expectedDate+"T00:00:00")<new Date()&&open>0;
+  const isLate=order.status!=="full"&&order.expectedDate&&new Date(order.expectedDate+"T00:00:00")<new Date()&&open>0.01;
   const totalPaid=(order.invoices||[]).reduce((s:number,i:any)=>s+(i.payments||[]).reduce((ss:number,p:any)=>ss+(+p.amount||0),0),0);
   const nbEchues=(order.invoices||[]).filter((i:any)=>["overdue","ov_part"].includes(payStatus(i).key)).length;
   const amtEchues=(order.invoices||[]).filter((i:any)=>["overdue","ov_part"].includes(payStatus(i).key)).reduce((s:number,i:any)=>s+payStatus(i).rem,0);
@@ -5004,9 +5016,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           {allPaid&&invoiced>0&&<Tag label="✓ SOLDÉ" c={C.greenDk} bg={C.greenL}/>}
           {order.archived&&<span style={{fontSize:9.5,fontWeight:700,color:"#fff",background:C.t3,padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}><i className="ti ti-archive" style={{fontSize:9}} aria-hidden="true"/>ARCHIVÉE</span>}
           {bndAnomaly&&<span
-            title={bndAnomaly.lignes.length>0
-              ?`Lignes facturées mais pas encore disponibles :\n${bndAnomaly.lignes.map((l:any)=>`• ${l.pn} — ${l.qtyInvoiced} facturé(s), dispo ${l.availDate?fmtD(l.availDate):"non renseignée"}`).join("\n")}\n(${fmt(bndAnomaly.montant)} € concernés)`
-              :"Signalé manuellement — vérifier que la livraison a bien eu lieu."}
+            title={`Facture(s) signalée(s) "non livrée" par le client :\n${bndAnomaly.factures.map((i:any)=>`• ${i.invoiceNumber||i.id} — ${fmt(+i.amount||0)} €`).join("\n")}\n(${fmt(bndAnomaly.montant)} € de solde concerné)`}
             style={{fontSize:9.5,fontWeight:700,color:"#fff",background:C.red,padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",cursor:"help"}}>
             <i className="ti ti-alert-triangle" style={{fontSize:9}} aria-hidden="true"/>FACTURÉ NON LIVRÉ
           </span>}
@@ -5018,7 +5028,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           {/* Date prévue affichée en face du statut */}
           {order.expectedDate&&(()=>{
             const d=diffD(order.expectedDate);
-            const isLateDate=d<0&&open>0;
+            const isLateDate=order.status!=="full"&&d<0&&open>0.01;
             const isSoon=d>=0&&d<=7;
             return(
               <span style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:isLateDate?C.redDk:isSoon?C.amberDk:C.t3,fontWeight:isLateDate||isSoon?600:400,whiteSpace:"nowrap",background:isLateDate?C.redL:isSoon?C.amberL:"transparent",padding:isLateDate||isSoon?"3px 8px":"0",borderRadius:4}}>
@@ -5051,11 +5061,6 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
                     onClick={()=>{if(!archivable&&!window.confirm(`Pas encore archivable : ${missing.join(" · ")}. L'archiver quand même ?`))return;onToggleArchive(order.id);}}/>
                 );
               })())}
-            {perms?.canEdit&&onToggleBilledNotDelivered&&(
-              <IBtn icon="ti-alert-triangle" title={order.flagBilledNotDelivered?"Retirer le signalement \"Facturé non livré\"":"Signaler manuellement : facturé mais livraison non confirmée"}
-                c={order.flagBilledNotDelivered?"#fff":C.t3} bg={order.flagBilledNotDelivered?C.red:"#F8FAFC"}
-                onClick={()=>onToggleBilledNotDelivered(order.id)}/>
-            )}
             {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_order")))onDelOrder(order.id);}}/>}
           </div>
         </div>
@@ -5117,13 +5122,14 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
                 return(
                   <div key={inv.id} style={{background:rowBg,borderRadius:C.r,border:`1px solid ${isOverdue?C.red+"50":C.b}`,borderLeft:`4px solid ${accentC}`,overflow:"hidden"}}>
                     <div style={{display:"flex",flexWrap:"wrap",gap:16,alignItems:"center",padding:"12px 14px"}}>
-                      <div style={{minWidth:130}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Invoice #</div><div style={{fontWeight:700,fontSize:13,color:C.purple,display:"flex",alignItems:"center",gap:6}}>{inv.invoiceNumber||"—"}
+                      <div style={{minWidth:130}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Invoice #</div><div style={{fontWeight:700,fontSize:13,color:C.purple,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{inv.invoiceNumber||"—"}
                         {inv.imported&&<span title="Créée depuis un fichier importé (PDF/Excel), pas de saisie manuelle" style={{display:"flex",alignItems:"center",gap:3,fontSize:9,fontWeight:700,color:C.blueDk,background:C.blueL,padding:"2px 6px",borderRadius:99}}><i className="ti ti-file-upload" style={{fontSize:10}} aria-hidden="true"/>Importé</span>}
+                        {inv.flagBilledNotDelivered&&<span title="Signalée par le client comme non livrée malgré la facture" style={{display:"flex",alignItems:"center",gap:3,fontSize:9,fontWeight:700,color:"#fff",background:C.red,padding:"2px 6px",borderRadius:99}}><i className="ti ti-alert-triangle" style={{fontSize:9}} aria-hidden="true"/>Non livrée</span>}
                       </div></div>
                       <div style={{minWidth:80}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Date</div><div style={{fontSize:12,color:C.t2}}>{fmtD(inv.date)}</div></div>
                       <div style={{minWidth:90}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Montant</div><div style={{fontWeight:700,fontSize:13,color:C.teal}}>{fmt(inv.amount)} €</div></div>
                       <div style={{minWidth:80}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Échéance</div><div style={{fontSize:12,color:inv.dueDate?C.t2:C.t3}}>{fmtD(inv.dueDate)}</div>
-                        {bndAnomaly&&<div title="La livraison de cette commande n'est pas confirmée — vérifie si l'échéance doit être décalée une fois la livraison réelle connue." style={{fontSize:8.5,fontWeight:700,color:C.redDk,background:C.redL,padding:"1px 5px",borderRadius:99,marginTop:3,display:"inline-flex",alignItems:"center",gap:2,cursor:"help",whiteSpace:"nowrap"}}><i className="ti ti-refresh-alert" style={{fontSize:9}} aria-hidden="true"/>À actualiser</div>}
+                        {inv.flagBilledNotDelivered&&<div title="Cette facture précise n'est pas confirmée livrée — vérifie si l'échéance doit être décalée une fois la livraison réelle connue." style={{fontSize:8.5,fontWeight:700,color:C.redDk,background:C.redL,padding:"1px 5px",borderRadius:99,marginTop:3,display:"inline-flex",alignItems:"center",gap:2,cursor:"help",whiteSpace:"nowrap"}}><i className="ti ti-refresh-alert" style={{fontSize:9}} aria-hidden="true"/>À actualiser</div>}
                       </div>
                       <div style={{minWidth:130}}>
                         <div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Paiement</div>
@@ -5131,6 +5137,9 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
                         <div style={{height:3,background:"#F1F5F9",borderRadius:99,marginTop:4,width:120}}><div style={{height:"100%",width:`${pctPay}%`,background:ps.color,borderRadius:99}}/></div>
                       </div>
                       <div style={{display:"flex",gap:4,marginLeft:"auto",flexWrap:"wrap"}}>
+                        {perms?.canEdit&&onToggleInvoiceBilledNotDelivered&&<IBtn icon="ti-alert-triangle" title={inv.flagBilledNotDelivered?"Retirer le signalement \"non livrée\" sur cette facture":"Signaler cette facture : le client dit ne pas avoir reçu la marchandise"}
+                          c={inv.flagBilledNotDelivered?"#fff":C.t3} bg={inv.flagBilledNotDelivered?C.red:"#F8FAFC"}
+                          onClick={()=>onToggleInvoiceBilledNotDelivered(order.id,inv.id)}/>}
                         <IBtn icon="ti-file-type-pdf" title="Facture PDF" c={C.red} bg={C.redL} onClick={()=>printInvoiceDoc(inv,order,client)}/>
                         <IBtn icon="ti-file-spreadsheet" title="Facture Excel" c={C.green} bg={C.greenL} onClick={()=>exportInvoiceExcel(inv,order,client)}/>
                         <IBtn icon="ti-chart-pie" title="Analyse par type de produit" c={C.purple} bg={C.purpleL} onClick={()=>printProductTypeAnalysis(`${client} — Facture ${inv.invoiceNumber||"—"}`,inv.date?fmtD(inv.date):"—",
