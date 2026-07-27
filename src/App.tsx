@@ -777,9 +777,20 @@ const getOrderBucket=(order:any):"ready"|"active"|"awaiting_payment"|"archived"=
 // (livrée + intégralement facturée + intégralement payée), sans action
 // manuelle. Appelée après chaque modification susceptible de compléter le
 // paiement (facture, règlement, ou passage de la livraison à "Livrée").
+//
+// Fait aussi le chemin INVERSE : si une commande déjà archivée reçoit
+// ensuite une NOUVELLE facture (ou un ajustement) qui casse l'éligibilité
+// (ex: reste à payer réapparu), elle est automatiquement désarchivée —
+// sinon elle restait cachée dans "Archivées" avec un solde impayé bien
+// réel, invisible dans les vues "Actives"/"En attente paiement" où elle
+// aurait dû apparaître. Bug corrigé le 27/07/2026 (v2) : avant ce correctif,
+// `if(order.archived)return order` empêchait toute réévaluation une fois
+// archivée, quoi qu'il arrive ensuite aux factures.
 const applyAutoArchive=(order:any):any=>{
-  if(!order||order.archived)return order;
-  return getArchiveEligibility(order).archivable?{...order,archived:true}:order;
+  if(!order)return order;
+  const eligibleNow=getArchiveEligibility({...order,archived:false}).archivable;
+  if(order.archived)return eligibleNow?order:{...order,archived:false};
+  return eligibleNow?{...order,archived:true}:order;
 };
 
 // ─── APP ────────────────────────────────────────────────────────────────────
@@ -1432,13 +1443,14 @@ export default function App(){
     const mv=(v:string)=>v==="RDT"?"Transitaire FCA":v;
     const ms=(v:string)=>migrateStatus(v);
     const res:any={};
-    // Recalcule le statut (en_cours/partial/full) à partir des factures
-    // réelles à chaque chargement — auto-guérison pour les commandes dont
-    // le statut avait été figé avec un ancien seuil de tolérance (avant
-    // correction : un reliquat non facturé pouvait être classé "Full" à
-    // tort si sa part en % était sous 1%, même en représentant plusieurs
-    // milliers d'euros sur une grosse commande).
-    Object.keys(orders).forEach(c=>{res[c]=(orders[c]||[]).map((o:any)=>autoAdvanceOrderStatus({...o,status:ms(mv(o.status||"")),deliveryMode:mv(o.deliveryMode||""),invoices:(o.invoices||[]).map((i:any)=>({...i,shippingMode:mv(i.shippingMode||"")})) }));});
+    // Recalcule le statut (en_cours/partial/full) ET l'éligibilité à
+    // l'archivage à partir des factures réelles à chaque chargement —
+    // auto-guérison pour : (1) les commandes dont le statut avait été figé
+    // avec un ancien seuil de tolérance, et (2) les commandes archivées qui
+    // ont reçu une NOUVELLE facture non soldée depuis leur archivage (bug
+    // corrigé le 27/07/2026 : une commande archivée n'était plus jamais
+    // réévaluée, même si un solde impayé bien réel apparaissait ensuite).
+    Object.keys(orders).forEach(c=>{res[c]=(orders[c]||[]).map((o:any)=>applyAutoArchive(autoAdvanceOrderStatus({...o,status:ms(mv(o.status||"")),deliveryMode:mv(o.deliveryMode||""),invoices:(o.invoices||[]).map((i:any)=>({...i,shippingMode:mv(i.shippingMode||"")})) })));});
     return res;
   };
   const migrateAccounts=(acc:any)=>{
