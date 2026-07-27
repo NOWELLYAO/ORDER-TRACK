@@ -4674,8 +4674,27 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
   };
 
   // ── flat lists ──
+  // Le lot "Commandes" reste décidé au niveau de la commande (bucketOf ci-
+  // dessus). MAIS pour "Factures" et "Paiements", on vérifie en plus l'état
+  // de paiement de CHAQUE facture individuellement — une facture impayée ne
+  // doit jamais apparaître sous "Archivées" au prétexte que sa commande
+  // parente l'est (ex: commande archivée puis nouvelle facture ajoutée
+  // après coup) : elle est alors reclassée dans "En attente paiement",
+  // quel que soit le statut de la commande. C'est la facture, pas la
+  // commande, qui fait foi ici.
+  const isInvoicePaidFull=(inv:any)=>{
+    const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+    return paid>=(+inv.amount||0)*0.99;
+  };
+  const invoiceEffectiveBucket=(order:any,inv:any)=>{
+    const ob=bucketOf(order);
+    if(ob==="archived"&&!isInvoicePaidFull(inv))return"awaiting_payment";
+    return ob;
+  };
   const sorted=[...scopedOrders].sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
-  const allInvoices=sorted.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_order:o,_po:o.poNumber,_oid:o.id})))
+  const allInvoices=orders
+    .flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_order:o,_po:o.poNumber,_oid:o.id,_effectiveBucket:invoiceEffectiveBucket(o,i)})))
+    .filter((i:any)=>i._effectiveBucket===viewBucket)
     .sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
   const allPayments=allInvoices.flatMap((i:any)=>(i.payments||[]).map((p:any)=>({...p,_inv:i,_po:i._po,_invNum:i.invoiceNumber,_oid:i._oid})))
     .sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
@@ -14726,8 +14745,25 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
       // disponibilité tombe dans la fenêtre réglable (30/45j...), quelle
       // que soit la période du rapport — ces deux vues sont des états
       // actuels, jamais masqués par le filtre de dates général.
+      //
+      // IMPORTANT : le montant affiché pour une commande "prête" est celui
+      // des SEULES lignes encore en attente (qui viennent de devenir
+      // disponibles) — jamais le montant total de la commande. Une grosse
+      // commande déjà largement facturée, avec juste un reliquat de
+      // quelques lignes tout juste disponible, ne doit pas apparaître comme
+      // si sa valeur totale était "prête à expédier".
       const windowEnd=addDays(todayStr(),upcomingWindow);
-      const readyOrders=allOrders.filter((o:any)=>isOrderReadyToShip(o));
+      const readyOrders=allOrders
+        .filter((o:any)=>isOrderReadyToShip(o))
+        .map((o:any)=>{
+          const lignes=(o.lines&&o.lines.length>0)
+            ?orderLineCoverage(o).filter((l:any)=>l.qtyRemaining>0&&!FEE_LINE_PNS.has(String(l.pn||"").trim().toUpperCase()))
+            :[];
+          const montant=lignes.length>0
+            ?lignes.reduce((s:number,l:any)=>s+(+l.qtyRemaining||0)*(+l.unitPrice||0),0)
+            :(+o.amount||0); // pas de détail de lignes : impossible de faire mieux que le montant total
+          return{order:o,lignes,montant};
+        });
       const upcomingOrders=allOrders
         .map((o:any)=>({
           order:o,
@@ -14896,7 +14932,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
   // Commandes Partial (partiellement expédiées/facturées) + commandes En cours (pas encore commencées)
   // (en_cours/attente_fdi avec date attendue) — groupées par mois (période)
   // et récapitulées par client, dans un même document.
-  const printReadyUpcoming=(readyOrders:any[],upcomingOrders:{order:any,lignes:any[]}[],windowDays:number)=>{
+  const printReadyUpcoming=(readyOrders:{order:any,lignes:any[],montant:number}[],upcomingOrders:{order:any,lignes:any[]}[],windowDays:number)=>{
     const w=window.open("","_blank","width=1100,height=800");
     if(!w)return;
 
@@ -14907,15 +14943,19 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
       return Object.keys(m).sort().map(c=>({client:c,items:m[c]}));
     };
 
-    const readyByClient=byClient(readyOrders,(o:any)=>o._client);
+    const readyByClient=byClient(readyOrders,(x:any)=>x.order._client);
     const upcomingByClient=byClient(upcomingOrders,(x:any)=>x.order._client);
 
-    const totReady=readyOrders.reduce((s:number,o:any)=>s+(+o.amount||0),0);
+    // IMPORTANT : le total "Prêtes" somme le montant des lignes encore en
+    // attente qui viennent de devenir disponibles (x.montant) — jamais le
+    // montant total des commandes concernées, qui peuvent déjà être
+    // largement facturées par ailleurs.
+    const totReady=readyOrders.reduce((s:number,x:any)=>s+(+x.montant||0),0);
     const totUpcomingLines=upcomingOrders.reduce((s:number,x:any)=>s+x.lignes.reduce((ss:number,l:any)=>ss+(+l.qtyRemaining||0)*(+l.unitPrice||0),0),0);
     const nbUpcomingLines=upcomingOrders.reduce((s:number,x:any)=>s+x.lignes.length,0);
 
     // ── Bloc HTML "commande" avec ses lignes en sous-tableau ───────────────
-    const orderBlock=(o:any,lignes:any[]|null,accent:string)=>{
+    const orderBlock=(o:any,lignes:any[]|null,accent:string,montant:number)=>{
       const linesHtml=lignes&&lignes.length>0?`
         <table style="width:100%;margin:4px 0 10px;font-size:10.5px;">
           <thead><tr style="background:#F8FAFC"><th style="padding:4px 8px;text-align:left;color:#64748B;font-size:9px;text-transform:uppercase">Article</th><th style="padding:4px 8px;text-align:left;color:#64748B;font-size:9px;text-transform:uppercase">Description</th><th style="padding:4px 8px;text-align:center;color:#64748B;font-size:9px;text-transform:uppercase">Qté restante</th><th style="padding:4px 8px;text-align:center;color:#64748B;font-size:9px;text-transform:uppercase">Disponibilité</th><th style="padding:4px 8px;text-align:center;color:#64748B;font-size:9px;text-transform:uppercase">Délai</th></tr></thead>
@@ -14925,21 +14965,21 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
             const dColor=d===null?"#6B7280":d<0?"#B91C1C":d<=7?"#D97706":"#0D9488";
             return `<tr style="border-bottom:1px solid #F1F5F9"><td style="padding:4px 8px;font-family:monospace;color:#2563EB;font-weight:700">${l.pn||"—"}</td><td style="padding:4px 8px;color:#374151">${l.desc||l.description||"—"}</td><td style="padding:4px 8px;text-align:center">${l.qtyRemaining}</td><td style="padding:4px 8px;text-align:center">${fmtD(l.availDate)}</td><td style="padding:4px 8px;text-align:center;font-weight:700;color:${dColor}">${dLabel}</td></tr>`;
           }).join("")}</tbody>
-        </table>`:"";
+        </table>`:`<div style="font-size:10px;color:#B45309;margin:4px 0 6px;font-style:italic">⚠ Pas de détail de lignes pour cette commande — montant total affiché par défaut, pourrait inclure des articles déjà facturés.</div>`;
       return `<div style="border:1px solid #E5EAF0;border-left:3px solid ${accent};border-radius:6px;padding:8px 12px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
           <div><span style="font-weight:700">${o.poNumber||"—"}</span> <span style="color:#8FA0B3">· S/O ${o.soNumber||"—"}</span></div>
-          <div style="font-weight:700;color:${accent}">${fmt(+o.amount||0)} €</div>
+          <div style="font-weight:700;color:${accent}">${fmt(montant)} €</div>
         </div>
-        <div style="font-size:10px;color:#8FA0B3;margin-top:2px">Commande du ${fmtD(o.date)}${o.expectedDate?` · Livraison prévue ${fmtD(o.expectedDate)}`:""}</div>
+        <div style="font-size:10px;color:#8FA0B3;margin-top:2px">Commande du ${fmtD(o.date)}${o.expectedDate?` · Livraison prévue ${fmtD(o.expectedDate)}`:""} · Montant total commande : ${fmt(+o.amount||0)} €</div>
         ${linesHtml}
       </div>`;
     };
 
     const readySection=readyByClient.map(({client,items})=>`
       <div style="margin-bottom:14px">
-        <div style="font-weight:700;font-size:12.5px;color:#0D9488;margin-bottom:6px;display:flex;align-items:center;gap:6px">🏢 ${client} <span style="font-weight:400;color:#8FA0B3;font-size:10.5px">(${items.length} commande${items.length>1?"s":""} · ${fmt(items.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €)</span></div>
-        ${items.map((o:any)=>orderBlock(o,null,"#0D9488")).join("")}
+        <div style="font-weight:700;font-size:12.5px;color:#0D9488;margin-bottom:6px;display:flex;align-items:center;gap:6px">🏢 ${client} <span style="font-weight:400;color:#8FA0B3;font-size:10.5px">(${items.length} commande${items.length>1?"s":""} · ${fmt(items.reduce((s:number,x:any)=>s+(+x.montant||0),0))} €)</span></div>
+        ${items.map((x:any)=>orderBlock(x.order,x.lignes,"#0D9488",x.montant)).join("")}
       </div>`).join("");
 
     const upcomingSection=upcomingByClient.map(({client,items})=>{
@@ -14947,13 +14987,13 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
       return `
       <div style="margin-bottom:14px">
         <div style="font-weight:700;font-size:12.5px;color:#1D4ED8;margin-bottom:6px;display:flex;align-items:center;gap:6px">🏢 ${client} <span style="font-weight:400;color:#8FA0B3;font-size:10.5px">(${items.length} commande${items.length>1?"s":""} · ${fmt(clientTotal)} €)</span></div>
-        ${items.map((x:any)=>orderBlock(x.order,x.lignes,"#1D4ED8")).join("")}
+        ${items.map((x:any)=>orderBlock(x.order,x.lignes,"#1D4ED8",x.lignes.reduce((ss:number,l:any)=>ss+(+l.qtyRemaining||0)*(+l.unitPrice||0),0))).join("")}
       </div>`;
     }).join("");
 
     const allClients=Array.from(new Set([...readyByClient.map(x=>x.client),...upcomingByClient.map(x=>x.client)])).sort();
     const recapRows=allClients.map(c=>{
-      const r=readyByClient.find(x=>x.client===c)?.items.reduce((s:number,o:any)=>s+(+o.amount||0),0)||0;
+      const r=readyByClient.find(x=>x.client===c)?.items.reduce((s:number,x:any)=>s+(+x.montant||0),0)||0;
       const u=upcomingByClient.find(x=>x.client===c)?.items.reduce((s:number,x:any)=>s+x.lignes.reduce((ss:number,l:any)=>ss+(+l.qtyRemaining||0)*(+l.unitPrice||0),0),0)||0;
       return `<tr><td style="font-weight:700">${c}</td><td style="text-align:right;color:#0D9488;font-weight:700">${fmt(r)} €</td><td style="text-align:right;color:#1D4ED8;font-weight:700">${fmt(u)} €</td><td style="text-align:right;font-weight:800">${fmt(r+u)} €</td></tr>`;
     }).join("");
