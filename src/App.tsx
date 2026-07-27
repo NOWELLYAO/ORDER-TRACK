@@ -511,6 +511,7 @@ const buildOrdersDetailForReport=(orders:any[],maxChars:number=350000)=>{
   const mapOrder=(o:any)=>{
     const invoiced=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
     const paid=(o.invoices||[]).reduce((s:number,i:any)=>s+(i.payments||[]).reduce((ss:number,p:any)=>ss+(+p.amount||0),0),0);
+    const anomaly=getBillingDeliveryAnomaly(o);
     return{
       po:o.poNumber,so:o.soNumber,numeroCommandeInterne:o.orderNumber,
       client:o._client||undefined,
@@ -518,6 +519,7 @@ const buildOrdersDetailForReport=(orders:any[],maxChars:number=350000)=>{
       dateCommande:o.date,dateLivraisonPrevue:o.expectedDate||null,modeLivraison:o.deliveryMode,
       montantCommande:Math.round(+o.amount||0),montantFacture:Math.round(invoiced),montantPaye:Math.round(paid),
       notes:o.notes||undefined,
+      factureNonLivree:anomaly?{montantConcerne:Math.round(anomaly.montant),signaleManuel:anomaly.manual,articlesConcernes:anomaly.lignes.map((l:any)=>l.pn)}:undefined,
       lignes:(o.lines&&o.lines.length>0)?orderLineCoverage(o).map((l:any)=>{
         const delaiJours=(o.date&&l.availDate)?daysBetween(o.date,l.availDate):null;
         if(delaiJours!==null&&delaiJours>=0)allDelays.push(delaiJours);
@@ -724,6 +726,31 @@ const isOrderReadyToShip=(order:any):boolean=>{
     return pending.every((l:any)=>!!l.availDate&&l.availDate<=today);
   }
   return!!order.expectedDate&&order.expectedDate<=today;
+};
+
+// ── Détection "Facturé non livré" ────────────────────────────────────────
+// Repère automatiquement les commandes où une facture a été émise sur une
+// ligne dont la marchandise n'est pas encore disponible (pas de date de
+// disponibilité, ou une date encore dans le futur) — le signe typique
+// d'une facture générée par erreur avant la livraison réelle. S'ajoute un
+// signalement MANUEL (order.flagBilledNotDelivered) pour les cas que la
+// détection automatique ne peut pas voir (commande sans détail de lignes).
+const getBillingDeliveryAnomaly=(order:any)=>{
+  if(!order||order.status==="annule")return null;
+  const today=todayStr();
+  let lignes:any[]=[];
+  if(order.lines&&order.lines.length>0){
+    lignes=orderLineCoverage(order).filter((l:any)=>
+      (+l.qtyInvoiced||0)>0 &&
+      !FEE_LINE_PNS.has(String(l.pn||"").trim().toUpperCase()) &&
+      (!l.availDate||l.availDate>today)
+    );
+  }
+  const auto=lignes.length>0;
+  const manual=!!order.flagBilledNotDelivered;
+  if(!auto&&!manual)return null;
+  const montant=lignes.reduce((s:number,l:any)=>s+Math.min(+l.qtyInvoiced||0,+l.qtyOrdered||0)*(+l.unitPrice||0),0);
+  return{auto,manual,lignes,montant};
 };
 
 // ── Regroupement des commandes en 4 lots ─────────────────────────────────
@@ -1559,6 +1586,10 @@ export default function App(){
     const orders=getOrders(client).map((o:any)=>o.id===id?{...o,archived:!o.archived}:o);
     persist(null,{...data,[client]:orders},null);
   };
+  const toggleBilledNotDelivered=(client:string,id:string)=>{
+    const orders=getOrders(client).map((o:any)=>o.id===id?{...o,flagBilledNotDelivered:!o.flagBilledNotDelivered}:o);
+    persist(null,{...data,[client]:orders},null);
+  };
 
   // INVOICE CRUD
   // Blocks saving an invoice whose number is already used elsewhere in the
@@ -1680,7 +1711,16 @@ export default function App(){
       if(late.length>0)_lateItems.push({po:o.poNumber,client:o._client,items:late.map((l:any)=>l.pn)});
     });
     if(_lateItems.length>0) alerts.push({level:"critical",icon:"ti-calendar-exclamation",text:`${_lateItems.length} commande${_lateItems.length>1?"s":""} avec article(s) en retard de disponibilité`,detail:_lateItems.map(o=>`${o.client} ${o.po} (${o.items.join(", ")})`).join(" · ")});
-    return alerts.slice(0,7);
+
+    // P8 — Facturé mais livraison non confirmée (facture générée par erreur
+    // avant l'expédition réelle, ou signalée manuellement)
+    const _bnd:{po:string,client:string,montant:number}[]=[];
+    _allOrders.forEach((o:any)=>{
+      const a=getBillingDeliveryAnomaly(o);
+      if(a)_bnd.push({po:o.poNumber,client:o._client,montant:a.montant});
+    });
+    if(_bnd.length>0) alerts.push({level:"critical",icon:"ti-alert-triangle",text:`${_bnd.length} commande${_bnd.length>1?"s":""} facturée${_bnd.length>1?"s":""} sans livraison confirmée`,detail:_bnd.map(o=>`${o.client} ${o.po}${o.montant>0?` (${fmt(o.montant)} €)`:""}`).join(" · ")});
+    return alerts.slice(0,8);
   };
   const tickerAlerts=globalAlerts();
 
@@ -1740,10 +1780,13 @@ export default function App(){
       }));
     }catch{/* catalogue/projets indisponibles — le reste du contexte reste utilisable */}
 
+    const billedNotDeliveredG=allOrders.map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{client:o._client,po:o.poNumber,montant:Math.round(a.montant),signaleManuel:a.manual}:null;}).filter(Boolean);
+
     return{
       perimetre:restrictedClient?`Client unique : ${restrictedClient}`:`Tous les clients (${visibleClients.length})`,
       clients:visibleClients,
       scoresSanteClient:healthScoresG,
+      facturesNonLivrees:{total:billedNotDeliveredG.length,montantTotal:Math.round(billedNotDeliveredG.reduce((s:number,b:any)=>s+b.montant,0)),detail:billedNotDeliveredG.slice(0,15)},
       articles,troncatureArticles,
       projets:projets.length>0?projets:undefined,
       ...buildOrdersDetailForReport(allOrders),
@@ -1824,6 +1867,9 @@ export default function App(){
       if(valeur!=="annule")return{ok:false,message:"Ce changement de statut n'est pas autorisé (seule l'annulation est manuelle, les autres statuts sont automatiques)."};
       patch.status="annule";
       message=`Commande ${po} marquée comme annulée.`;
+    }else if(champ==="flagFactureNonLivree"){
+      patch.flagBilledNotDelivered=valeur==="true";
+      message=valeur==="true"?`Commande ${po} signalée "Facturé non livré".`:`Signalement "Facturé non livré" retiré de la commande ${po}.`;
     }else{
       return{ok:false,message:"Type de modification non reconnu."};
     }
@@ -1990,6 +2036,7 @@ export default function App(){
             onEditOrder={perms.canEdit?(o:any)=>setModal({type:"order",client:page,order:o}):deny}
             onDelOrder={perms.canDelete?(id:string)=>delOrder(page,id):deny}
             onToggleArchive={perms.canEdit?(id:string)=>toggleArchiveOrder(page,id):deny}
+            onToggleBilledNotDelivered={perms.canEdit?(id:string)=>toggleBilledNotDelivered(page,id):deny}
             onAddInv={perms.canEdit?(o:any)=>setModal({type:"invoice",client:page,order:o,cfg:getConfig(page)}):deny}
             onAddBulkInv={perms.canEdit?(o:any)=>setModal({type:"bulk_invoice",client:page,order:o,cfg:getConfig(page)}):deny}
             onEditInv={perms.canEdit?(o:any,i:any)=>setModal({type:"invoice",client:page,order:o,invoice:i,cfg:getConfig(page)}):deny}
@@ -2379,12 +2426,14 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   // disponible ?", "statut de la facture Y ?") et pas seulement parler en
   // agrégats.
   const lateDeliveryByClient=(()=>{const m:Record<string,number>={};lateDelivery.forEach((o:any)=>{m[o._client]=(m[o._client]||0)+1;});return m;})();
+  const billedNotDelivered=all.map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{client:o._client,po:o.poNumber,montant:Math.round(a.montant),signaleManuel:a.manual}:null;}).filter(Boolean);
   const kpiReportContext={
     annee:selYear,
     kpiGlobaux:{poTotal:Math.round(totPO),facture:Math.round(totInv),encaisse:Math.round(totPaid),ouvert:Math.round(totOpen),impaye:Math.round(totUnpaid),tauxFacturation:+txFact.toFixed(1),tauxEncaissement:+txPay.toFixed(1),nbCommandes:nbCmds,otifPct:otifPct!==null?+otifPct.toFixed(1):null,fillRatePct:fillRatePct!==null?+fillRatePct.toFixed(1):null},
     facturesEchues:{nombre:echues.length,montant:Math.round(echuesAmt)},
     echeancesAVenir30j:{nombre:upcoming.length,montant:Math.round(upcomingAmt)},
     livraisonsEnRetard:{total:lateDelivery.length,parClient:lateDeliveryByClient},
+    facturesNonLivrees:{total:billedNotDelivered.length,montantTotal:Math.round(billedNotDelivered.reduce((s:number,b:any)=>s+b.montant,0)),detail:billedNotDelivered.slice(0,15)},
     commandesSansFacture:noInv.length,
     scoresSanteClient:healthScores.map((h:any)=>({client:h.name,score:h.composite,composantPaiement:Math.round(h.paymentComponent),composantCroissance:Math.round(h.growthComponent),composantCadence:Math.round(h.cadenceComponent)})),
     clientsARisquePaiement:clientRisks.slice(0,10).map((c:any)=>({client:c.name,score:c.risk.score,niveau:c.risk.level,retardMoyenJours:c.risk.avgLateDays,pctFacturesEnRetard:c.risk.pctLate,tendance:c.risk.trend})),
@@ -3105,6 +3154,7 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
     kpiGlobaux:{poTotal:Math.round(totPO),facture:Math.round(totInv),encaisse:Math.round(totPaid),ouvert:Math.round(totOpen),tauxFacturation:+txFact.toFixed(1),tauxEncaissement:+txPay.toFixed(1)},
     objectifs:{poCible:globalTarget.po||null,invCible:globalTarget.inv||null,avancementPoPct:poTargetPct!==null?+poTargetPct.toFixed(1):null,avancementInvPct:invTargetPct!==null?+invTargetPct.toFixed(1):null},
     parClient:all.map((c:any)=>({client:c.client,poTotal:Math.round(c.totalPO),facture:Math.round(c.totalInv),encaisse:Math.round(c.totalPaid),ouvert:Math.round(c.openOrders)})).sort((a:any,b:any)=>b.poTotal-a.poTotal),
+    facturesNonLivrees:(()=>{const list=getAllOrders().map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{client:o._client,po:o.poNumber,montant:Math.round(a.montant),signaleManuel:a.manual}:null;}).filter(Boolean);return{total:list.length,montantTotal:Math.round(list.reduce((s:number,b:any)=>s+b.montant,0)),detail:list.slice(0,15)};})(),
     ...buildOrdersDetailForReport(getAllOrders()),
   };
 
@@ -3533,7 +3583,7 @@ function computeClientIntelligence(orders:any[]){
     totalOrders:sorted.length,lastOrderDate,tenureDays,guanxiScore,regularityScore,monthsCoverage};
 }
 
-function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onToggleArchive,onAddInv,onAddBulkInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true,targets,selYear,scoreNotes}:any){
+function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onToggleArchive,onToggleBilledNotDelivered,onAddInv,onAddBulkInv,onEditInv,onDelInv,onAddPay,onEditPay,onDelPay,onEditCustomer,onDelCustomer,focusOrderId,onClearFocus,lang="fr",isMobile=false,onSaveOrder,perms,isAdmin=true,targets,selYear,scoreNotes}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[exp,setExp]=useState<Record<string,boolean>>({});
   // Accordion behavior: opening an order closes any other that was open —
@@ -3589,6 +3639,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
     dynamiqueCommerciale:clientIntelSingle?{croissance12moPct:+clientIntelSingle.growthRate.toFixed(1),frequenceCommandes12mo:clientIntelSingle.frequency,statutRecommande:clientIntelSingle.reorderStatus,joursDeRetardCommande:clientIntelSingle.daysOverdue,derniereCommande:clientIntelSingle.lastOrderDate,ancienneteJours:clientIntelSingle.tenureDays}:null,
     livraisonsEnRetard:lateOrders.map((o:any)=>({po:o.poNumber,dateAttendue:o.expectedDate,montant:Math.round(+o.amount||0)})),
     facturesEchues:overdueList.map((i:any)=>({facture:i.invoiceNumber||i.id,po:i._po,montantDu:Math.round(payStatus(i).rem),echeance:i.dueDate})),
+    facturesNonLivrees:orders.map((o:any)=>{const a=getBillingDeliveryAnomaly(o);return a?{po:o.poNumber,montant:Math.round(a.montant),signaleManuel:a.manual}:null;}).filter(Boolean),
     conditionsPaiement:term.label,
     ...buildOrdersDetailForReport(orders),
   };
@@ -3614,6 +3665,9 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
       if(valeur!=="annule")return{ok:false,message:"Ce changement de statut n'est pas autorisé (seule l'annulation est manuelle)."};
       patch.status="annule";
       message=`Commande ${po} marquée comme annulée.`;
+    }else if(champ==="flagFactureNonLivree"){
+      patch.flagBilledNotDelivered=valeur==="true";
+      message=valeur==="true"?`Commande ${po} signalée "Facturé non livré".`:`Signalement "Facturé non livré" retiré de la commande ${po}.`;
     }else{
       return{ok:false,message:"Type de modification non reconnu."};
     }
@@ -3749,6 +3803,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
       <OrderTabsPanel client={client} orders={orders} exp={exp} tgl={tgl}
         onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder}
         onToggleArchive={onToggleArchive}
+        onToggleBilledNotDelivered={onToggleBilledNotDelivered}
         onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay}
         onEditInv={onEditInv} onDelInv={onDelInv}
         focusOrderId={focusOrderId} onClearFocus={onClearFocus} onAdd={onAdd} lang={lang}
@@ -4584,7 +4639,7 @@ function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
 }
 
 // ─── ORDER TABS PANEL ────────────────────────────────────────────────────────
-function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms}:any){
+function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[tab,setTab]=useState<"orders"|"invoices"|"payments">("orders");
   const[search,setSearch]=useState("");
@@ -4714,7 +4769,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{viewBucket==="archived"?"Aucune commande archivée":viewBucket==="awaiting_payment"?"Aucune commande en attente de paiement":viewBucket==="ready"?"Aucune commande prête pour l'instant":"Aucune commande trouvée"}</div>}
-            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
+            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onToggleBilledNotDelivered={onToggleBilledNotDelivered} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
                 onMouseEnter={(e:any)=>{e.currentTarget.style.background=C.blueL;e.currentTarget.style.borderColor=C.blue;}}
@@ -4863,7 +4918,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
 }
 
 // ─── ORDER CARD (extracted from CustomerPage) ───────────────────────────────────
-function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
+function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
   const open=Math.max(0,(+order.amount||0)-invoiced);
@@ -4884,6 +4939,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
   const hasEnCours=nbEnCours>0;
   const archiveElig=getArchiveEligibility(order);
   const archivable=archiveElig.archivable;
+  const bndAnomaly=getBillingDeliveryAnomaly(order);
 
   return(
     <div key={order.id} id={`order-${order.id}`}
@@ -4916,6 +4972,13 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           {nbEchues===0&&nbUpcoming===0&&nbEnCours>0&&payPct>0&&payPct<100&&<Tag label={`${payPct.toFixed(0)}% ENCAISSÉ`} c={C.teal} bg={C.tealL}/>}
           {allPaid&&invoiced>0&&<Tag label="✓ SOLDÉ" c={C.greenDk} bg={C.greenL}/>}
           {order.archived&&<span style={{fontSize:9.5,fontWeight:700,color:"#fff",background:C.t3,padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}}><i className="ti ti-archive" style={{fontSize:9}} aria-hidden="true"/>ARCHIVÉE</span>}
+          {bndAnomaly&&<span
+            title={bndAnomaly.lignes.length>0
+              ?`Lignes facturées mais pas encore disponibles :\n${bndAnomaly.lignes.map((l:any)=>`• ${l.pn} — ${l.qtyInvoiced} facturé(s), dispo ${l.availDate?fmtD(l.availDate):"non renseignée"}`).join("\n")}\n(${fmt(bndAnomaly.montant)} € concernés)`
+              :"Signalé manuellement — vérifier que la livraison a bien eu lieu."}
+            style={{fontSize:9.5,fontWeight:700,color:"#fff",background:C.red,padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",cursor:"help"}}>
+            <i className="ti ti-alert-triangle" style={{fontSize:9}} aria-hidden="true"/>FACTURÉ NON LIVRÉ
+          </span>}
           <span style={{display:"flex",alignItems:"center",gap:5,fontSize:11,background:sty.bg,color:sty.c,padding:"4px 10px",borderRadius:5,fontWeight:600,whiteSpace:"nowrap",border:`1px solid ${sty.c}30`}}>
             <i className={`ti ${meta.icon||"ti-circle"}`} style={{fontSize:13}} aria-hidden="true"/>
             {meta.label||order.status||"N/A"}
@@ -4957,6 +5020,11 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
                     onClick={()=>{if(!archivable&&!window.confirm(`Pas encore archivable : ${missing.join(" · ")}. L'archiver quand même ?`))return;onToggleArchive(order.id);}}/>
                 );
               })())}
+            {perms?.canEdit&&onToggleBilledNotDelivered&&(
+              <IBtn icon="ti-alert-triangle" title={order.flagBilledNotDelivered?"Retirer le signalement \"Facturé non livré\"":"Signaler manuellement : facturé mais livraison non confirmée"}
+                c={order.flagBilledNotDelivered?"#fff":C.t3} bg={order.flagBilledNotDelivered?C.red:"#F8FAFC"}
+                onClick={()=>onToggleBilledNotDelivered(order.id)}/>
+            )}
             {perms?.canDelete&&<IBtn icon="ti-trash" title="Supprimer" c={C.red} bg={C.redL} onClick={()=>{if(window.confirm(tr("confirm_del_order")))onDelOrder(order.id);}}/>}
           </div>
         </div>
@@ -5023,7 +5091,9 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
                       </div></div>
                       <div style={{minWidth:80}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Date</div><div style={{fontSize:12,color:C.t2}}>{fmtD(inv.date)}</div></div>
                       <div style={{minWidth:90}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Montant</div><div style={{fontWeight:700,fontSize:13,color:C.teal}}>{fmt(inv.amount)} €</div></div>
-                      <div style={{minWidth:80}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Échéance</div><div style={{fontSize:12,color:inv.dueDate?C.t2:C.t3}}>{fmtD(inv.dueDate)}</div></div>
+                      <div style={{minWidth:80}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Échéance</div><div style={{fontSize:12,color:inv.dueDate?C.t2:C.t3}}>{fmtD(inv.dueDate)}</div>
+                        {bndAnomaly&&<div title="La livraison de cette commande n'est pas confirmée — vérifie si l'échéance doit être décalée une fois la livraison réelle connue." style={{fontSize:8.5,fontWeight:700,color:C.redDk,background:C.redL,padding:"1px 5px",borderRadius:99,marginTop:3,display:"inline-flex",alignItems:"center",gap:2,cursor:"help",whiteSpace:"nowrap"}}><i className="ti ti-refresh-alert" style={{fontSize:9}} aria-hidden="true"/>À actualiser</div>}
+                      </div>
                       <div style={{minWidth:130}}>
                         <div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Paiement</div>
                         <Tag label={ps.label} c={ps.color} bg={ps.bg} sm/>
@@ -14591,18 +14661,9 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
   const[fromDate,setFromDate]=useState(new Date().getFullYear()+"-01-01");
   const[toDate,setToDate]=useState(new Date().toISOString().split("T")[0]);
   const[selCustomers,setSelCustomers]=useState<string[]>(clients||[]);
+  const[upcomingWindow,setUpcomingWindow]=useState(30);
   const toggleCustomer=(c:string)=>setSelCustomers(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
 
-  // "Commandes Partial & En cours" looks forward (readiness/delivery dates in
-  // the future, e.g. "prêt fin juillet") — the other reports default to
-  // "since Jan 1st through today", which would silently exclude any future
-  // date. Switch to a forward-looking window automatically for this type.
-  useEffect(()=>{
-    if(rtype==="ready_upcoming"){
-      setFromDate(todayStr());
-      setToDate(addDays(todayStr(),120));
-    }
-  },[rtype]);
 
   const generate=()=>{
     const fd=new Date(fromDate+"T00:00:00"),td=new Date(toDate+"T00:00:00");
@@ -14647,13 +14708,24 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
       printReport(title,fromDate,toDate,"<tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Date</th><th>Statut</th><th>PO (€)</th><th>Facturé (€)</th><th>Reste (€)</th></tr>",rows);
 
     } else if(rtype==="ready_upcoming"){
-      // Ready orders are a *current state*, not tied to the reporting window —
-      // never hide them behind the date filter. Upcoming orders ARE filtered
-      // by their expected (readiness/delivery) date, and orders missing that
-      // date are still kept (surfaced under "Sans date") rather than dropped.
-      const readyItems=allOrders.filter((o:any)=>o.status==="partial");
-      const upcomingItems=allOrders.filter((o:any)=>o.status==="en_cours"&&(!o.expectedDate||inRange(o.expectedDate)));
-      printReadyUpcoming(fromDate,toDate,readyItems,upcomingItems);
+      // "Prêtes" = même logique que le lot "Prête" des fiches client
+      // (isOrderReadyToShip) : tout ce qui reste à livrer est déjà
+      // disponible. "À venir" = lignes encore en attente dont la date de
+      // disponibilité tombe dans la fenêtre réglable (30/45j...), quelle
+      // que soit la période du rapport — ces deux vues sont des états
+      // actuels, jamais masqués par le filtre de dates général.
+      const windowEnd=addDays(todayStr(),upcomingWindow);
+      const readyOrders=allOrders.filter((o:any)=>isOrderReadyToShip(o));
+      const upcomingOrders=allOrders
+        .map((o:any)=>({
+          order:o,
+          lignes:(o.lines&&o.lines.length>0)?orderLineCoverage(o).filter((l:any)=>
+            l.qtyRemaining>0&&!FEE_LINE_PNS.has(String(l.pn||"").trim().toUpperCase())&&
+            l.availDate&&l.availDate>todayStr()&&l.availDate<=windowEnd
+          ):[],
+        }))
+        .filter((x:any)=>x.lignes.length>0);
+      printReadyUpcoming(readyOrders,upcomingOrders,upcomingWindow);
 
     } else if(rtype==="overdue"){
       title="Factures échues — Échéances dépassées non soldées";
@@ -14812,58 +14884,69 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
   // Commandes Partial (partiellement expédiées/facturées) + commandes En cours (pas encore commencées)
   // (en_cours/attente_fdi avec date attendue) — groupées par mois (période)
   // et récapitulées par client, dans un même document.
-  const printReadyUpcoming=(from:string,to:string,readyItems:any[],upcomingItems:any[])=>{
+  const printReadyUpcoming=(readyOrders:any[],upcomingOrders:{order:any,lignes:any[]}[],windowDays:number)=>{
     const w=window.open("","_blank","width=1100,height=800");
     if(!w)return;
-    const monthKey=(d:string)=>d?d.slice(0,7):"0000-00";
-    const monthLabel=(d:string)=>{if(!d)return"Sans date";const dt=new Date(d+"T00:00:00");return dt.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}).replace(/^./,c=>c.toUpperCase());};
-    const withMonthly2=(items:any[],dateField:string,rowFn:(i:any)=>string,subtotalFn:(grp:any[],label:string)=>string,totalFn:(all:any[])=>string)=>{
-      const sorted=[...items].sort((a:any,b:any)=>(a[dateField]||"").localeCompare(b[dateField]||""));
-      const byMonth:Record<string,any[]>={};
-      sorted.forEach((i:any)=>{const k=monthKey(i[dateField]);if(!byMonth[k])byMonth[k]=[];byMonth[k].push(i);});
-      let out="";
-      Object.keys(byMonth).sort().forEach(k=>{
-        const grp=byMonth[k];const label=monthLabel(grp[0][dateField]);
-        out+=`<tr style="background:#1E3A5F"><td colspan="99" style="padding:7px 12px;color:#93C5FD;font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase">📅 ${label}</td></tr>`;
-        out+=grp.map(rowFn).join("");
-        out+=subtotalFn(grp,label);
-      });
-      out+=totalFn(sorted);
-      return out;
+
+    // ── Regroupement client → commandes ────────────────────────────────────
+    const byClient=(items:any[],clientOf:(x:any)=>string)=>{
+      const m:Record<string,any[]>={};
+      items.forEach(x=>{const c=clientOf(x);(m[c]=m[c]||[]).push(x);});
+      return Object.keys(m).sort().map(c=>({client:c,items:m[c]}));
     };
 
-    const READY_META:Record<string,{label:string,color:string,bg:string}>={
-      partial:{label:"Partial",color:"#0369A1",bg:"#E0F2FE"},
+    const readyByClient=byClient(readyOrders,(o:any)=>o._client);
+    const upcomingByClient=byClient(upcomingOrders,(x:any)=>x.order._client);
+
+    const totReady=readyOrders.reduce((s:number,o:any)=>s+(+o.amount||0),0);
+    const totUpcomingLines=upcomingOrders.reduce((s:number,x:any)=>s+x.lignes.reduce((ss:number,l:any)=>ss+(+l.qtyRemaining||0)*(+l.unitPrice||0),0),0);
+    const nbUpcomingLines=upcomingOrders.reduce((s:number,x:any)=>s+x.lignes.length,0);
+
+    // ── Bloc HTML "commande" avec ses lignes en sous-tableau ───────────────
+    const orderBlock=(o:any,lignes:any[]|null,accent:string)=>{
+      const linesHtml=lignes&&lignes.length>0?`
+        <table style="width:100%;margin:4px 0 10px;font-size:10.5px;">
+          <thead><tr style="background:#F8FAFC"><th style="padding:4px 8px;text-align:left;color:#64748B;font-size:9px;text-transform:uppercase">Article</th><th style="padding:4px 8px;text-align:left;color:#64748B;font-size:9px;text-transform:uppercase">Description</th><th style="padding:4px 8px;text-align:center;color:#64748B;font-size:9px;text-transform:uppercase">Qté restante</th><th style="padding:4px 8px;text-align:center;color:#64748B;font-size:9px;text-transform:uppercase">Disponibilité</th><th style="padding:4px 8px;text-align:center;color:#64748B;font-size:9px;text-transform:uppercase">Délai</th></tr></thead>
+          <tbody>${lignes.map((l:any)=>{
+            const d=l.availDate?diffD(l.availDate):null;
+            const dLabel=d===null?"—":d<0?`${Math.abs(d)}j retard`:d===0?"Aujourd'hui":`${d}j`;
+            const dColor=d===null?"#6B7280":d<0?"#B91C1C":d<=7?"#D97706":"#0D9488";
+            return `<tr style="border-bottom:1px solid #F1F5F9"><td style="padding:4px 8px;font-family:monospace;color:#2563EB;font-weight:700">${l.pn||"—"}</td><td style="padding:4px 8px;color:#374151">${l.desc||l.description||"—"}</td><td style="padding:4px 8px;text-align:center">${l.qtyRemaining}</td><td style="padding:4px 8px;text-align:center">${fmtD(l.availDate)}</td><td style="padding:4px 8px;text-align:center;font-weight:700;color:${dColor}">${dLabel}</td></tr>`;
+          }).join("")}</tbody>
+        </table>`:"";
+      return `<div style="border:1px solid #E5EAF0;border-left:3px solid ${accent};border-radius:6px;padding:8px 12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+          <div><span style="font-weight:700">${o.poNumber||"—"}</span> <span style="color:#8FA0B3">· S/O ${o.soNumber||"—"}</span></div>
+          <div style="font-weight:700;color:${accent}">${fmt(+o.amount||0)} €</div>
+        </div>
+        <div style="font-size:10px;color:#8FA0B3;margin-top:2px">Commande du ${fmtD(o.date)}${o.expectedDate?` · Livraison prévue ${fmtD(o.expectedDate)}`:""}</div>
+        ${linesHtml}
+      </div>`;
     };
-    const UPCOMING_META:Record<string,{label:string,color:string,bg:string}>={
-      en_cours:{label:"En cours",color:"#2563EB",bg:"#DBEAFE"},
-    };
 
-    const rowReady=(o:any)=>{const meta=READY_META[o.status]||{label:o.status,color:"#374151",bg:"#F1F5F9"};
-      return `<tr><td style="font-weight:700">${o._client}</td><td>${o.poNumber||"—"}</td><td>${o.soNumber||"—"}</td><td><span style="background:${meta.bg};color:${meta.color};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">${meta.label}</span></td><td>${fmtD(o.expectedDate||o.date)}</td><td style="text-align:right;font-weight:700">${fmt(+o.amount||0)} €</td></tr>`;};
-    const subReady=(grp:any[],label:string)=>`<tr style="background:#F0FDFA;font-weight:700"><td colspan="5" style="text-align:right;color:#0D9488;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#0D9488;padding:6px 10px">${fmt(grp.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
-    const totReady=(all:any[])=>`<tr style="background:#CCFBF1;font-weight:800;font-size:12px"><td colspan="5" style="text-align:right;padding:8px 10px">TOTAL PARTIAL</td><td style="text-align:right;padding:8px 10px">${fmt(all.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
-    const readyRows=withMonthly2(readyItems,"expectedDate",rowReady,subReady,totReady);
+    const readySection=readyByClient.map(({client,items})=>`
+      <div style="margin-bottom:14px">
+        <div style="font-weight:700;font-size:12.5px;color:#0D9488;margin-bottom:6px;display:flex;align-items:center;gap:6px">🏢 ${client} <span style="font-weight:400;color:#8FA0B3;font-size:10.5px">(${items.length} commande${items.length>1?"s":""} · ${fmt(items.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €)</span></div>
+        ${items.map((o:any)=>orderBlock(o,null,"#0D9488")).join("")}
+      </div>`).join("");
 
-    const rowUp=(o:any)=>{const meta=UPCOMING_META[o.status]||{label:o.status,color:"#374151",bg:"#F1F5F9"};
-      const d=o.expectedDate?diffD(o.expectedDate):null;
-      const dLabel=d===null?"—":d<0?`${Math.abs(d)}j retard`:d===0?"Aujourd'hui":`${d}j`;
-      const dColor=d===null?"#6B7280":d<0?"#B91C1C":d<=7?"#D97706":"#2563EB";
-      return `<tr><td style="font-weight:700">${o._client}</td><td>${o.poNumber||"—"}</td><td>${o.soNumber||"—"}</td><td><span style="background:${meta.bg};color:${meta.color};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">${meta.label}</span></td><td>${fmtD(o.expectedDate)}</td><td style="text-align:center;font-weight:700;color:${dColor}">${dLabel}</td><td style="text-align:right;font-weight:700">${fmt(+o.amount||0)} €</td></tr>`;};
-    const subUp=(grp:any[],label:string)=>`<tr style="background:#EFF6FF;font-weight:700"><td colspan="6" style="text-align:right;color:#1D4ED8;font-style:italic;padding:6px 10px">Sous-total ${label}</td><td style="text-align:right;color:#1D4ED8;padding:6px 10px">${fmt(grp.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
-    const totUp=(all:any[])=>`<tr style="background:#DBEAFE;font-weight:800;font-size:12px"><td colspan="6" style="text-align:right;padding:8px 10px">TOTAL À VENIR</td><td style="text-align:right;padding:8px 10px">${fmt(all.reduce((s:number,o:any)=>s+(+o.amount||0),0))} €</td></tr>`;
-    const upRows=withMonthly2(upcomingItems,"expectedDate",rowUp,subUp,totUp);
+    const upcomingSection=upcomingByClient.map(({client,items})=>{
+      const clientTotal=items.reduce((s:number,x:any)=>s+x.lignes.reduce((ss:number,l:any)=>ss+(+l.qtyRemaining||0)*(+l.unitPrice||0),0),0);
+      return `
+      <div style="margin-bottom:14px">
+        <div style="font-weight:700;font-size:12.5px;color:#1D4ED8;margin-bottom:6px;display:flex;align-items:center;gap:6px">🏢 ${client} <span style="font-weight:400;color:#8FA0B3;font-size:10.5px">(${items.length} commande${items.length>1?"s":""} · ${fmt(clientTotal)} €)</span></div>
+        ${items.map((x:any)=>orderBlock(x.order,x.lignes,"#1D4ED8")).join("")}
+      </div>`;
+    }).join("");
 
-    const clientsSet=Array.from(new Set([...readyItems,...upcomingItems].map((o:any)=>o._client))).sort() as string[];
-    const clientRows=clientsSet.map(c=>{
-      const r=readyItems.filter((o:any)=>o._client===c).reduce((s:number,o:any)=>s+(+o.amount||0),0);
-      const u=upcomingItems.filter((o:any)=>o._client===c).reduce((s:number,o:any)=>s+(+o.amount||0),0);
+    const allClients=Array.from(new Set([...readyByClient.map(x=>x.client),...upcomingByClient.map(x=>x.client)])).sort();
+    const recapRows=allClients.map(c=>{
+      const r=readyByClient.find(x=>x.client===c)?.items.reduce((s:number,o:any)=>s+(+o.amount||0),0)||0;
+      const u=upcomingByClient.find(x=>x.client===c)?.items.reduce((s:number,x:any)=>s+x.lignes.reduce((ss:number,l:any)=>ss+(+l.qtyRemaining||0)*(+l.unitPrice||0),0),0)||0;
       return `<tr><td style="font-weight:700">${c}</td><td style="text-align:right;color:#0D9488;font-weight:700">${fmt(r)} €</td><td style="text-align:right;color:#1D4ED8;font-weight:700">${fmt(u)} €</td><td style="text-align:right;font-weight:800">${fmt(r+u)} €</td></tr>`;
     }).join("");
-    const totR=readyItems.reduce((s:number,o:any)=>s+(+o.amount||0),0);
-    const totU=upcomingItems.reduce((s:number,o:any)=>s+(+o.amount||0),0);
 
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Commandes Partial & En cours</title><style>
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Commandes prêtes & à venir</title><style>
       *{margin:0;padding:0;box-sizing:border-box;}
       body{font-family:Arial,sans-serif;font-size:12px;color:#0D1B2A;padding:28px 32px;}
       .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:16px;border-bottom:3px solid #0D1B2A;}
@@ -14874,7 +14957,6 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
       table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px;}
       th{background:#0D1B2A;color:#fff;padding:8px 10px;text-align:left;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.05em;}
       td{padding:7px 10px;border-bottom:1px solid #E5EAF0;vertical-align:middle;}
-      tr:nth-child(even){background:#F8FAFC;}
       .kpis{display:flex;gap:12px;margin:14px 0}
       .kpi{flex:1;border:1px solid #E5EAF0;border-radius:8px;padding:10px 14px}
       .kpi .l{font-size:10px;color:#8FA0B3;text-transform:uppercase}
@@ -14887,26 +14969,26 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
     <button onclick="window.close()" style="background:#6B7280;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:Arial,sans-serif">✕ Close</button>
     </div>
     <div class="header">
-      <div><div class="logo">OrderTrack</div><h1>Commandes Partial & En cours</h1></div>
-      <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Période : ${fmtD(from)} → ${fmtD(to)}</div>
+      <div><div class="logo">OrderTrack</div><h1>Commandes prêtes & à venir</h1></div>
+      <div class="meta">Généré le ${new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}<br/>Fenêtre « à venir » : ${windowDays} jours</div>
     </div>
 
     <div class="kpis">
-      <div class="kpi"><div class="l">Partial (en cours d'expédition)</div><div class="v" style="color:#0D9488">${fmt(totR)} €</div></div>
-      <div class="kpi"><div class="l">À venir</div><div class="v" style="color:#1D4ED8">${fmt(totU)} €</div></div>
-      <div class="kpi"><div class="l">Total</div><div class="v">${fmt(totR+totU)} €</div></div>
+      <div class="kpi"><div class="l">Prêtes à expédier</div><div class="v" style="color:#0D9488">${fmt(totReady)} €</div></div>
+      <div class="kpi"><div class="l">À venir (${windowDays}j)</div><div class="v" style="color:#1D4ED8">${fmt(totUpcomingLines)} €</div></div>
+      <div class="kpi"><div class="l">Total</div><div class="v">${fmt(totReady+totUpcomingLines)} €</div></div>
     </div>
 
-    <h2>📦 Commandes Partial (${readyItems.length})</h2>
-    <table><thead><tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Statut</th><th>Date</th><th>Montant (€)</th></tr></thead><tbody>${readyRows||'<tr><td colspan="6" style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande Partial</td></tr>'}</tbody></table>
+    <h2>📦 Commandes prêtes à expédier (${readyOrders.length} commande${readyOrders.length>1?"s":""})</h2>
+    ${readySection||'<div style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande prête pour l\'instant</div>'}
 
-    <h2>📅 Commandes à venir (${upcomingItems.length})</h2>
-    <table><thead><tr><th>Customer</th><th>PO #</th><th>S/O #</th><th>Statut</th><th>Date attendue</th><th>Délai</th><th>Montant (€)</th></tr></thead><tbody>${upRows||'<tr><td colspan="7" style="text-align:center;color:#8FA0B3;padding:16px">Aucune commande à venir</td></tr>'}</tbody></table>
+    <h2>📅 Lignes à venir sous ${windowDays} jours (${nbUpcomingLines} ligne${nbUpcomingLines>1?"s":""} sur ${upcomingOrders.length} commande${upcomingOrders.length>1?"s":""})</h2>
+    ${upcomingSection||'<div style="text-align:center;color:#8FA0B3;padding:16px">Aucune ligne à venir dans cette fenêtre</div>'}
 
     <h2>🏢 Récapitulatif par client</h2>
-    <table><thead><tr><th>Customer</th><th style="text-align:right">Partial (€)</th><th style="text-align:right">À venir (€)</th><th style="text-align:right">Total (€)</th></tr></thead>
-    <tbody>${clientRows||'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucune donnée</td></tr>'}
-    <tr style="background:#DBEAFE;font-weight:800"><td>TOTAL</td><td style="text-align:right">${fmt(totR)} €</td><td style="text-align:right">${fmt(totU)} €</td><td style="text-align:right">${fmt(totR+totU)} €</td></tr>
+    <table><thead><tr><th>Customer</th><th style="text-align:right">Prêtes (€)</th><th style="text-align:right">À venir (€)</th><th style="text-align:right">Total (€)</th></tr></thead>
+    <tbody>${recapRows||'<tr><td colspan="4" style="text-align:center;color:#8FA0B3;padding:16px">Aucune donnée</td></tr>'}
+    <tr style="background:#DBEAFE;font-weight:800"><td>TOTAL</td><td style="text-align:right">${fmt(totReady)} €</td><td style="text-align:right">${fmt(totUpcomingLines)} €</td><td style="text-align:right">${fmt(totReady+totUpcomingLines)} €</td></tr>
     </tbody></table>
 
     <div class="footer"><span>OrderTrack — Rapport confidentiel</span><span>Page 1</span></div>
@@ -14916,7 +14998,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
 
   const REPORT_TYPES=[
     {id:"open_orders",  label:"Open Orders",           desc:"Commandes non entièrement facturées",   icon:"ti-hourglass-low",     color:C.amber},
-    {id:"ready_upcoming",label:"Commandes Partial & En cours",desc:"Partiellement expédiées/facturées + pas encore commencées, par client/période", icon:"ti-package-export", color:"#0D9488"},
+    {id:"ready_upcoming",label:"Commandes prêtes & à venir",desc:"Prêtes à expédier + lignes à venir (30/45j), par client/commande/article", icon:"ti-package-export", color:"#0D9488"},
     {id:"overdue",      label:"Factures échues",        desc:"Échéance dépassée, solde non réglé",    icon:"ti-clock-exclamation", color:C.red},
     {id:"upcoming",     label:"Échéances à venir",      desc:"Factures dues dans les 30 prochains jours", icon:"ti-clock",         color:C.purple},
     {id:"active_invoices",label:"Factures actives",     desc:"Échues + en cours d'échéance, non soldées — photo actuelle",icon:"ti-list-check",color:C.red},
@@ -14939,10 +15021,25 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
           </div>
         ))}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-        <Fld label="Date de début" type="date" value={fromDate} onChange={setFromDate}/>
-        <Fld label="Date de fin" type="date" value={toDate} onChange={setToDate}/>
-      </div>
+      {rtype==="ready_upcoming"?(
+        <div style={{marginBottom:14}}>
+          <Label t="Fenêtre « à venir »"/>
+          <div style={{display:"flex",gap:8,marginTop:4}}>
+            {[30,45,60,90].map(d=>(
+              <button key={d} onClick={()=>setUpcomingWindow(d)}
+                style={{padding:"7px 16px",borderRadius:C.r,border:`2px solid ${upcomingWindow===d?"#0D9488":C.b}`,background:upcomingWindow===d?"#0D948815":"#fff",color:upcomingWindow===d?"#0D9488":C.t2,fontWeight:upcomingWindow===d?700:400,fontSize:12,cursor:"pointer"}}>
+                {d} jours
+              </button>
+            ))}
+          </div>
+          <div style={{fontSize:10.5,color:C.t3,marginTop:6}}>« Prêtes » n'est pas affecté par cette fenêtre — c'est un état actuel (tout ce qui reste à livrer est déjà disponible).</div>
+        </div>
+      ):(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+          <Fld label="Date de début" type="date" value={fromDate} onChange={setFromDate}/>
+          <Fld label="Date de fin" type="date" value={toDate} onChange={setToDate}/>
+        </div>
+      )}
       <div>
         <Label t="Customers inclus"/>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:4}}>
