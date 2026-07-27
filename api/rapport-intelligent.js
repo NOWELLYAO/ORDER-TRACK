@@ -35,7 +35,7 @@ ${JSON.stringify(context)}
 Consignes de style et de fond :
 - Réponds TOUJOURS en français, dans un style d'analyste qui présente son travail à l'oral : direct, concis, sans jargon inutile.
 - Si le tout premier message est une simple demande de génération de rapport (ex: "Génère le Rapport Intelligent maintenant…"), structure ta réponse ainsi, dans cet esprit :
-  1. Un bandeau d'alerte en une phrase s'il y a des points critiques (retards, échéances, risques) — sinon dis clairement qu'il n'y a rien de critique.
+  1. Un bandeau d'alerte en une phrase s'il y a des points critiques (retards, échéances, risques, factures sans livraison confirmée — champ 'facturesNonLivrees' si présent dans le contexte) — sinon dis clairement qu'il n'y a rien de critique.
   2. Les indicateurs clés expliqués simplement (pas juste des chiffres bruts — dis ce qu'ils veulent dire).
   3. Un classement ou une priorisation si plusieurs entités (clients, commandes...) sont comparables.
   4. Une phrase de résumé.
@@ -51,11 +51,12 @@ Consignes de style et de fond :
 
 MODIFICATIONS DE DONNÉES — tu ne peux JAMAIS modifier ou créer quoi que ce soit toi-même dans OrderTrack. Dans deux cas, tu dois PROPOSER une action précise plutôt que la garder pour toi ou juste en discuter :
 
-CAS 1 — Modifier une commande existante : l'utilisateur te donne une information qui justifie un changement (ex: "cette commande est bloquée en attente de la FDI du client", "la livraison est repoussée au 15/09", "cette commande est annulée"). Termine alors ta réponse par :
+CAS 1 — Modifier une commande existante : l'utilisateur te donne une information qui justifie un changement (ex: "cette commande est bloquée en attente de la FDI du client", "la livraison est repoussée au 15/09", "cette commande est annulée", "cette facture a été émise par erreur avant l'expédition"). Termine alors ta réponse par :
 ###PROPOSITION###
-{"type":"commande","po":"<numéro de PO exact tel que dans les données>","champ":"notes"|"dateLivraisonPrevue"|"statut","valeur":"<nouvelle valeur>","resume":"<résumé court en français de ce qui va changer>"}
+{"type":"commande","po":"<numéro de PO exact tel que dans les données>","champ":"notes"|"dateLivraisonPrevue"|"statut"|"flagFactureNonLivree","valeur":"<nouvelle valeur>","resume":"<résumé court en français de ce qui va changer>"}
 ###FIN###
-Règles : "champ" ne peut être que "notes" (ajoute une note — n'écris que le texte à ajouter, pas les notes existantes), "dateLivraisonPrevue" (format YYYY-MM-DD), ou "statut" (SEULE valeur valide : "annule" — les autres statuts sont automatiques). "po" doit correspondre exactement à un po présent dans les données — si tu ne le trouves pas avec certitude, ne propose rien et demande une précision.
+Règles : "champ" ne peut être que "notes" (ajoute une note — n'écris que le texte à ajouter, pas les notes existantes), "dateLivraisonPrevue" (format YYYY-MM-DD), "statut" (SEULE valeur valide : "annule" — les autres statuts sont automatiques), ou "flagFactureNonLivree" (valeur "true" pour signaler, "false" pour retirer le signalement — utilisé quand une facture semble avoir été émise avant la livraison réelle). "po" doit correspondre exactement à un po présent dans les données — si tu ne le trouves pas avec certitude, ne propose rien et demande une précision.
+Chaque commande du contexte peut contenir un champ 'factureNonLivree' (présent seulement si un problème est détecté) avec 'montantConcerne', 'signaleManuel' (true si signalé à la main plutôt que détecté automatiquement), et 'articlesConcernes' — ce sont des commandes déjà facturées sur des lignes dont la marchandise n'est pas encore disponible, un signe fréquent de facturation prématurée. Si l'utilisateur demande un état des lieux de ces cas, ou "y a-t-il des factures sans livraison", utilise ce champ directement — pas besoin de recalculer. Si une commande présente ce problème et que la conversation le confirme, tu peux proposer 'flagFactureNonLivree' même si le champ est déjà présent (ex: pour confirmer/documenter le cas avec une note explicative en plus).
 
 CAS 2 — Créer un devis : l'utilisateur te demande un devis/une offre de prix pour un client, avec une liste d'articles (et éventuellement des quantités). Avant de proposer, assure-toi d'avoir : le CLIENT destinataire (si le contexte contient une liste de clients valides — champ 'clients' ou 'clientsValides' — vérifie que le nom correspond exactement à l'un d'eux, sinon demande confirmation du nom exact), et au moins un ARTICLE identifiable dans les données (cherche par référence ou description dans 'articles[]' ou dans les lignes de commandes passées ce même client — utilise 'prixActuel' comme prix, ou le dernier prix connu pour ce client si l'article n'est pas au catalogue général). Si la quantité n'est pas précisée, utilise 1 par défaut. Si le client ou aucun article n'est identifiable avec certitude, NE PROPOSE RIEN et demande la précision manquante à la place. Termine alors ta réponse par :
 ###PROPOSITION###
@@ -187,9 +188,10 @@ export default async function handler(req, res) {
         const isValidCommandeProposal =
           parsed && parsed.type === "commande" &&
           typeof parsed.po === "string" && parsed.po &&
-          ["notes", "dateLivraisonPrevue", "statut"].includes(parsed.champ) &&
+          ["notes", "dateLivraisonPrevue", "statut", "flagFactureNonLivree"].includes(parsed.champ) &&
           typeof parsed.valeur === "string" && parsed.valeur &&
-          !(parsed.champ === "statut" && parsed.valeur !== "annule");
+          !(parsed.champ === "statut" && parsed.valeur !== "annule") &&
+          !(parsed.champ === "flagFactureNonLivree" && !["true", "false"].includes(parsed.valeur));
         const isValidDevisProposal =
           parsed && parsed.type === "devis" &&
           typeof parsed.client === "string" && parsed.client &&
