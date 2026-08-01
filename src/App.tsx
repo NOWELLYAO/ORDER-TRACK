@@ -421,6 +421,36 @@ const C = {
 const fmt   = (n:any)=>new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0);
 const fmtK  = (n:any)=>{const v=Math.abs(n||0);if(v>=1000000)return (n/1000000).toFixed(2)+"M";if(v>=1000)return(n/1000).toFixed(1)+"K";return fmt(n);};
 const fmtD  = (d:any)=>d?new Date(d+"T00:00:00").toLocaleDateString("fr-FR"):"—";
+// Copie dans le presse-papier avec repli si l'API moderne est indisponible
+// (contexte non sécurisé, vieux navigateur…).
+const copyToClipboard=async(text:string):Promise<boolean>=>{
+  if(!text)return false;
+  try{
+    if(navigator?.clipboard?.writeText){await navigator.clipboard.writeText(text);return true;}
+  }catch{/* repli ci-dessous */}
+  try{
+    const ta=document.createElement("textarea");
+    ta.value=text;ta.style.position="fixed";ta.style.opacity="0";
+    document.body.appendChild(ta);ta.focus();ta.select();
+    const ok=document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  }catch{return false;}
+};
+// Petit bouton "copier" réutilisable à côté d'un identifiant (PO #, S/O #,
+// N° facture…) — évite d'avoir à sélectionner le texte à la souris.
+function CopyBtn({text,size=12}:{text:string,size?:number}){
+  const[copied,setCopied]=useState(false);
+  if(!text||text==="—")return null;
+  return(
+    <button
+      onClick={async(e:any)=>{e.stopPropagation();const ok=await copyToClipboard(text);if(ok){setCopied(true);setTimeout(()=>setCopied(false),1200);}}}
+      title={copied?"Copié !":`Copier "${text}"`}
+      style={{background:"none",border:"none",padding:2,marginLeft:3,cursor:"pointer",color:copied?"#059669":"#94A3B8",display:"inline-flex",verticalAlign:"middle"}}>
+      <i className={`ti ${copied?"ti-check":"ti-copy"}`} style={{fontSize:size}} aria-hidden="true"/>
+    </button>
+  );
+}
 const todayStr=()=>new Date().toISOString().split("T")[0];
 const addDays=(s:string,d:number)=>{const dt=new Date(s+"T00:00:00");dt.setDate(dt.getDate()+d);return dt.toISOString().split("T")[0];};
 const diffD =(s:string)=>{const dt=new Date(s+"T00:00:00"),t=new Date();t.setHours(0,0,0,0);return Math.ceil((dt.getTime()-t.getTime())/86400000);};
@@ -1899,7 +1929,18 @@ export default function App(){
   };
 
   return(
-    <div style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:C.page,overflow:"hidden",position:"relative"}}>
+    <div style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:C.page,overflow:"hidden",position:"relative"}}
+      onClickCapture={(e:any)=>{
+        // Beaucoup de lignes cliquables (commande, facture, client…) ont un
+        // onClick pour ouvrir/fermer un détail. Sans cette garde, essayer
+        // de sélectionner du texte à la souris (ex: copier un PO #) pouvait
+        // déclencher ce clic en plein milieu du glisser-sélectionner, ce
+        // qui réouvrait/refermait la ligne et détruisait la sélection.
+        // On bloque donc TOUT clic tant qu'une sélection de texte est
+        // active au moment du clic, quel que soit l'endroit dans l'appli.
+        const sel=typeof window!=="undefined"?window.getSelection():null;
+        if(sel&&sel.toString().length>0){e.stopPropagation();}
+      }}>
       {/* Assistant global — flottant, accessible depuis n'importe quelle page */}
       {perms?.canViewReports&&<RapportIntelligent floating title="Assistant OrderTrack" contextLoader={buildGlobalAssistantContext} onApplyChange={applyOrderProposal}/>}
 
@@ -5000,8 +5041,8 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           {isExp&&<span style={{fontSize:9,fontWeight:800,color:C.blueDk,background:"#fff",padding:"2px 7px",borderRadius:99,letterSpacing:".04em",whiteSpace:"nowrap"}}>OUVERTE</span>}
         </div>
         <div style={{flex:"1 1 420px",display:"grid",gridTemplateColumns:client==="CIMELEC"?"1.2fr 0.9fr 0.9fr 0.9fr 1.1fr 1fr 1fr":"1.4fr 1fr 1fr 1.2fr 1.1fr 1.1fr",gap:10,alignItems:"center",minWidth:0}}>
-          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>PO #</div><div style={{fontWeight:700,fontSize:13,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{order.poNumber||"—"}</div></div>
-          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>S/O</div><div style={{fontSize:12,color:C.t2}}>{order.soNumber||"—"}</div></div>
+          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>PO #</div><div style={{fontWeight:700,fontSize:13,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",userSelect:"text",cursor:"text"}}>{order.poNumber||"—"}<CopyBtn text={order.poNumber}/></div></div>
+          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>S/O</div><div style={{fontSize:12,color:C.t2,userSelect:"text",cursor:"text"}}>{order.soNumber||"—"}<CopyBtn text={order.soNumber}/></div></div>
           {client==="CIMELEC"&&<div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>N° Commande</div><div style={{fontSize:12,color:C.purple,fontWeight:600}}>{order.orderNumber||"—"}</div></div>}
           <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Date</div><div style={{fontSize:12,color:C.t2}}>{fmtD(order.date)}</div></div>
           <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Montant PO</div><div style={{fontWeight:700,fontSize:13,color:C.blue}}>{fmt(order.amount)} €</div></div>
@@ -5122,7 +5163,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
                 return(
                   <div key={inv.id} style={{background:rowBg,borderRadius:C.r,border:`1px solid ${isOverdue?C.red+"50":C.b}`,borderLeft:`4px solid ${accentC}`,overflow:"hidden"}}>
                     <div style={{display:"flex",flexWrap:"wrap",gap:16,alignItems:"center",padding:"12px 14px"}}>
-                      <div style={{minWidth:130}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Invoice #</div><div style={{fontWeight:700,fontSize:13,color:C.purple,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{inv.invoiceNumber||"—"}
+                      <div style={{minWidth:130}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Invoice #</div><div style={{fontWeight:700,fontSize:13,color:C.purple,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",userSelect:"text",cursor:"text"}}>{inv.invoiceNumber||"—"}<CopyBtn text={inv.invoiceNumber}/>
                         {inv.imported&&<span title="Créée depuis un fichier importé (PDF/Excel), pas de saisie manuelle" style={{display:"flex",alignItems:"center",gap:3,fontSize:9,fontWeight:700,color:C.blueDk,background:C.blueL,padding:"2px 6px",borderRadius:99}}><i className="ti ti-file-upload" style={{fontSize:10}} aria-hidden="true"/>Importé</span>}
                         {inv.flagBilledNotDelivered&&<span title="Signalée par le client comme non livrée malgré la facture" style={{display:"flex",alignItems:"center",gap:3,fontSize:9,fontWeight:700,color:"#fff",background:C.red,padding:"2px 6px",borderRadius:99}}><i className="ti ti-alert-triangle" style={{fontSize:9}} aria-hidden="true"/>Non livrée</span>}
                       </div></div>
