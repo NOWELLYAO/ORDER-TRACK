@@ -2222,6 +2222,7 @@ function AlertTicker({alerts,lang="fr"}:any){
 // ─── KPI PAGE ────────────────────────────────────────────────────────────────
 function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,selYear,setSelYear,lang="fr",isMobile=false,canExport=true,isAdmin=true,targets,scoreNotes}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
+  const[tab,setTab]=useState<"overview"|"clients"|"performance">("overview");
   const[simDso,setSimDso]=useState<number|null>(null);
   const all=getAllOrders();
   // Same rule as getStats(): PO counted in year registered, INV in year
@@ -2517,7 +2518,25 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </div>
       </div>
 
+      {/* Onglets */}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {[
+          {id:"overview",label:"Vue d'ensemble",icon:"ti-layout-dashboard"},
+          {id:"clients",label:"Clients",icon:"ti-users"},
+          {id:"performance",label:"Performance & simulation",icon:"ti-chart-line"},
+        ].map((tb:any)=>(
+          <button key={tb.id} onClick={()=>setTab(tb.id)}
+            style={{display:"flex",alignItems:"center",gap:7,padding:"9px 16px",borderRadius:C.r,
+              border:`1px solid ${tab===tb.id?C.blue:C.b}`,background:tab===tb.id?C.blue:"#fff",
+              color:tab===tb.id?"#fff":C.t2,fontWeight:tab===tb.id?700:500,fontSize:12.5,cursor:"pointer",
+              boxShadow:tab===tb.id?"none":C.sh,transition:"all .15s"}}>
+            <i className={`ti ${tb.icon}`} style={{fontSize:15}} aria-hidden="true"/> {tb.label}
+          </button>
+        ))}
+      </div>
+
       {/* Résumé exécutif (admin uniquement) */}
+      {tab==="overview"&&(<>
       {execSummary&&(
         <div style={{background:"linear-gradient(135deg,#0D1B2A,#1E3A5F)",borderRadius:C.rLg,padding:"20px 24px",boxShadow:C.shMd}}>
           <div style={{fontSize:11,fontWeight:700,color:"#93C5FD",textTransform:"uppercase",letterSpacing:".08em",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
@@ -2548,7 +2567,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </div>
       )}
 
+      </>)}
       {/* KPI row */}
+      {tab==="overview"&&(<>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":isAdmin?"repeat(4,1fr)":"repeat(3,1fr)",gap:isMobile?10:14}}>
         <Kpi icon="ti-building-store" label={tr("kpi_clients")} val={clients.length} sub={`${clients.filter((c:string)=>(data?.[c]||[]).length>0).length} ${tr("kpi_active")}`} c={C.purple} bg={C.purpleL}/>
         <Kpi icon="ti-clipboard-list" label={tr("kpi_orders")} val={nbCmds} sub={`${noInv.length} ${tr("kpi_no_invoice")}`} c={C.blue} bg={C.blueL}/>
@@ -2565,7 +2586,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
           :<Kpi icon="ti-packages" label="Fill Rate (articles)" val={`${fillRatePct.toFixed(1)}%`} sub={`${fillTotals.invoiced}/${fillTotals.ordered} unités facturées sur ${ordersWithLines.length} commande${ordersWithLines.length>1?"s":""} détaillée${ordersWithLines.length>1?"s":""}`} c={fillRatePct>=95?C.green:fillRatePct>=85?C.amber:C.red} bg={fillRatePct>=95?C.greenL:fillRatePct>=85?C.amberL:C.redL}/>)}
       </div>
 
+      </>)}
       {/* Row 2 : jauges + alertes paiements */}
+      {tab==="overview"&&(<>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":isAdmin?"5fr 4fr":"1fr",gap:isMobile?12:16}}>
         {/* Jauge double */}
         {isAdmin&&<Card title="Progression globale" icon="ti-target">
@@ -2701,7 +2724,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </Card>
       </div>
 
+      </>)}
       {/* Clients à risque (admin uniquement) */}
+      {tab==="clients"&&(<>
       {clientRisks.length>0&&(
         <Card title="Clients à risque de paiement" icon="ti-shield-exclamation" badge={{n:clientRisks.length,color:clientRisks.some((r:any)=>r.risk.level==="high")?C.red:C.amber}}>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -2720,7 +2745,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </Card>
       )}
 
+      </>)}
       {/* Concentration client — Pareto 80/20 (admin uniquement) */}
+      {tab==="clients"&&(<>
       {revenueByClient.length>=3&&(
         <Card title="Concentration client (règle des 80/20)" icon="ti-chart-pie"
           badge={top1Share>=30?{n:`${top1Share}%`,color:C.red}:undefined}>
@@ -2761,7 +2788,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </Card>
       )}
 
+      </>)}
       {/* Simulateur "What-if" — impact trésorerie d'un objectif de DSO */}
+      {tab==="performance"&&(<>
       {dso!==null&&(
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
@@ -2786,7 +2815,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </div>
       )}
 
+      </>)}
       {/* Kaizen — amélioration continue & Suivi SLA */}
+      {tab==="performance"&&(<>
       {(kaizenCurAvg!==null||invoicingSlaCompliance!==null)&&(
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
           {kaizenCurAvg!==null&&(
@@ -2848,7 +2879,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </div>
       )}
 
+      </>)}
       {/* Matrice BCG des clients */}
+      {tab==="clients"&&(<>
       {bcgClients.length>=3&&(
         <Card title="Matrice BCG des clients" icon="ti-grid-dots">
           <div style={{fontSize:10.5,color:C.t3,marginBottom:14}}>Croissance des commandes (6 derniers mois vs 6 mois précédents) × poids dans le chiffre d'affaires.</div>
@@ -2881,7 +2914,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </Card>
       )}
 
+      </>)}
       {/* Segmentation RFM + Score de santé composite */}
+      {tab==="clients"&&(<>
       {(rfmScored.length>=3||healthScores.length>=3)&&(
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
           {rfmScored.length>=3&&(
@@ -2932,7 +2967,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </div>
       )}
 
+      </>)}
       {/* Profondeur relationnelle (Guanxi) & Jugaad — efficacité frugale */}
+      {tab==="clients"&&(<>
       {(clientIntel.length>=3)&&(
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
           <Card title="Profondeur relationnelle" icon="ti-heart-handshake">
@@ -2966,7 +3003,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </div>
       )}
 
+      </>)}
       {/* Anomalies & Next Best Action */}
+      {tab==="performance"&&(<>
       {(anomalyAlerts.length>0||reorderAlerts.length>0)&&(
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
           {anomalyAlerts.length>0&&(
@@ -3000,7 +3039,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </div>
       )}
 
+      </>)}
       {/* Row 3 : graphiques */}
+      {tab==="overview"&&(<>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:isMobile?12:16}}>
         <Card title="Évolution mensuelle 2026" icon="ti-chart-bar">
           <div style={{display:"flex",gap:16,marginBottom:12}}>
@@ -3067,7 +3108,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </Card>
       </div>
 
+      </>)}
       {/* Row 3b : Tableau factures échues */}
+      {tab==="overview"&&(<>
       {echues.length>0&&(
         <Card title={`Détail factures échues — ${fmt(echuesAmt)} € à recouvrer`} icon="ti-clock-exclamation" badge={{n:echues.length,color:C.red}} noPad>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -3110,7 +3153,9 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
         </Card>
       )}
 
+      </>)}
       {/* Row 4 : tableau clients */}
+      {tab==="overview"&&(<>
       <Card title="Classement clients" icon="ti-trophy" noPad>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead>
@@ -3151,6 +3196,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
           </tbody>
         </table>
       </Card>
+      </>)}
     </div>
   );
 }
