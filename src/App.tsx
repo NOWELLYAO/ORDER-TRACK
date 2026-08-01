@@ -1929,18 +1929,7 @@ export default function App(){
   };
 
   return(
-    <div style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:C.page,overflow:"hidden",position:"relative"}}
-      onClickCapture={(e:any)=>{
-        // Beaucoup de lignes cliquables (commande, facture, client…) ont un
-        // onClick pour ouvrir/fermer un détail. Sans cette garde, essayer
-        // de sélectionner du texte à la souris (ex: copier un PO #) pouvait
-        // déclencher ce clic en plein milieu du glisser-sélectionner, ce
-        // qui réouvrait/refermait la ligne et détruisait la sélection.
-        // On bloque donc TOUT clic tant qu'une sélection de texte est
-        // active au moment du clic, quel que soit l'endroit dans l'appli.
-        const sel=typeof window!=="undefined"?window.getSelection():null;
-        if(sel&&sel.toString().length>0){e.stopPropagation();}
-      }}>
+    <div style={{display:"flex",height:"100vh",fontFamily:"'Inter',system-ui,sans-serif",background:C.page,overflow:"hidden",position:"relative"}}>
       {/* Assistant global — flottant, accessible depuis n'importe quelle page */}
       {perms?.canViewReports&&<RapportIntelligent floating title="Assistant OrderTrack" contextLoader={buildGlobalAssistantContext} onApplyChange={applyOrderProposal}/>}
 
@@ -5004,6 +4993,17 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
 // ─── ORDER CARD (extracted from CustomerPage) ───────────────────────────────────
 function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleInvoiceBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
+  // Détecte un vrai glisser-sélectionner (la souris a bougé de façon
+  // significative entre l'appui et le relâchement) pour ne PAS réouvrir/
+  // refermer la ligne dans ce cas précis — sans bloquer les clics normaux
+  // ailleurs (ex: bouton "Annuler" d'une modale), contrairement à un blocage
+  // global basé sur "une sélection existe quelque part sur la page".
+  const mouseDownPos=useRef<{x:number,y:number}|null>(null);
+  const wasDrag=(e:any)=>{
+    const d=mouseDownPos.current;
+    if(!d)return false;
+    return Math.abs(e.clientX-d.x)>5||Math.abs(e.clientY-d.y)>5;
+  };
   const invoiced=(order.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
   const open=Math.max(0,(+order.amount||0)-invoiced);
   const pct=+order.amount>0?Math.min(100,(invoiced/+order.amount)*100):0;
@@ -5033,7 +5033,9 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
         overflow:"hidden",transition:"box-shadow .2s,border-color .2s"}}
       onMouseEnter={(e:any)=>e.currentTarget.style.boxShadow=C.shMd}
       onMouseLeave={(e:any)=>e.currentTarget.style.boxShadow=focusOrderId===order.id?`0 0 0 3px ${C.blue}40,${C.shMd}`:isExp?C.shMd:C.sh}>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",flexWrap:"wrap",background:isExp?C.blueL+"90":"transparent",transition:"background .15s"}} onClick={()=>{tgl(order.id);if(focusOrderId===order.id&&onClearFocus)onClearFocus();}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",flexWrap:"wrap",background:isExp?C.blueL+"90":"transparent",transition:"background .15s"}}
+        onMouseDown={(e:any)=>{mouseDownPos.current={x:e.clientX,y:e.clientY};}}
+        onClick={(e:any)=>{if(wasDrag(e))return;tgl(order.id);if(focusOrderId===order.id&&onClearFocus)onClearFocus();}}>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
           <span style={{display:"flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:6,background:isExp?C.blue:"#F1F5F9",transition:"background .15s"}}>
             <i className={`ti ${isExp?"ti-chevron-down":"ti-chevron-right"}`} style={{fontSize:13,color:isExp?"#fff":C.t3}} aria-hidden="true"/>
