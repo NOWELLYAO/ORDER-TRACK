@@ -15175,74 +15175,77 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
       };
 
       if(rtype==="open_orders"){
-        // Rangé PAR COMMANDE (et non par mois) : un bandeau par commande avec
-        // son récap (PO/Facturé/Reste), suivi du détail article par article
-        // avec la date de disponibilité de chaque ligne encore ouverte.
+        // Tableau plat classique (une ligne = un article), rangé PAR COMMANDE
+        // (triées par client puis date) — pas de bandeau texte qui déborde :
+        // Client/PO/S/O/Date/Statut sont de vraies colonnes, filtrables et
+        // triables dans Excel. Une fine ligne de séparation + sous-total
+        // marque la fin de chaque commande.
         fileName=`open_orders_${fromDate.slice(0,4)}.xlsx`;
         const items=allOrders.filter((o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return inv<(+o.amount||0)*0.999&&o.status!=="annule";});
         const sortedItems=[...items].sort((a:any,b:any)=>(a._client||"").localeCompare(b._client||"")||(a.date||"").localeCompare(b.date||""));
 
-        const headers=["Article (P/N)","Description","Qté restante","Disponibilité","Délai","Montant restant (€)"];
-        const aligns=["left","left","center","center","center","right"];
-        const widths=[13,34,12,14,12,17];
+        const headers=["Client","PO #","S/O #","Date","Statut","Article (P/N)","Description","Qté restante","Disponibilité","Délai","Montant restant (€)"];
+        const aligns=["left","left","left","center","left","left","left","center","center","center","right"];
+        const widths=[15,12,12,11,11,13,32,11,13,11,17];
         const ws=wb.addWorksheet("Open Orders",{properties:{defaultColWidth:14}});
         ws.columns=widths.map(w=>({width:w}));
         let r=xlsTitle(ws,"Open Orders — Commandes non entièrement facturées",periodLabel,headers.length);
-        ws.getRow(r).height=4;r++;
+        const headerRow=r;
+        xlsHead(ws,r,headers,aligns);r++;
+        ws.autoFilter={from:{row:headerRow,column:1},to:{row:headerRow,column:headers.length}} as any;
 
-        let grandTotal=0;
+        let grandTotal=0,groupToggle=false;
         sortedItems.forEach((o:any)=>{
           const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
           const open=Math.max(0,(+o.amount||0)-inv);
           grandTotal+=open;
-
-          // Bandeau commande (client · PO · S/O · date · statut · montants)
-          ws.mergeCells(r,1,r,headers.length);
-          const bandRow=ws.getRow(r);bandRow.height=20;
-          const bc=bandRow.getCell(1);
-          bc.value=`📦 ${o._client} · PO ${o.poNumber||"—"} · S/O ${o.soNumber||"—"} · ${fmtD(o.date)} · ${o.status||"—"}   —   PO : ${fmt(+o.amount||0)} €   ·   Facturé : ${fmt(inv)} €   ·   Reste : ${fmt(open)} €`;
-          bc.font={bold:true,size:9.5,color:{argb:XWHITE},name:'Arial'};
-          bc.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFB45309'}};
-          bc.alignment={vertical:'middle',indent:1};
-          r++;
+          groupToggle=!groupToggle;
+          const zebra=groupToggle;
+          const startRow=r;
 
           const lignes=(o.lines&&o.lines.length>0)?orderLineCoverage(o).filter((l:any)=>l.qtyRemaining>0&&!FEE_LINE_PNS.has(String(l.pn||"").trim().toUpperCase())):[];
+          const orderInfo=[o._client,o.poNumber||"—",o.soNumber||"—",fmtD(o.date),o.status||"—"];
 
           if(lignes.length>0){
-            // Sous-en-tête (sans toucher au gel de volet, réservé à la ligne
-            // de titre principale) — mêmes couleurs que l'en-tête standard.
-            const subHead=ws.getRow(r);subHead.height=17;
-            headers.forEach((hd,i)=>{
-              const c=subHead.getCell(i+1);c.value=hd;
-              c.font={bold:true,size:8.5,color:{argb:XWHITE},name:'Arial'};
-              c.fill={type:'pattern',pattern:'solid',fgColor:{argb:XNAVY}};
-              c.alignment={horizontal:(aligns[i]||'left') as any,vertical:'middle'};
-            });
-            r++;
-            let zebraIdx=0;
             lignes.forEach((l:any)=>{
               const d=l.availDate?diffD(l.availDate):null;
               const dLabel=d===null?"—":d<0?`${Math.abs(d)}j retard`:d===0?"Aujourd'hui":`${d}j`;
               const montantLigne=(+l.qtyRemaining||0)*(+l.unitPrice||0);
               const rowNum=r;
-              xlsRow(ws,rowNum,[l.pn||"—",l.desc||l.description||"—",l.qtyRemaining,fmtD(l.availDate),dLabel,montantLigne],aligns,[5],zebraIdx%2===0,'FFB45309');
-              const dc=ws.getRow(rowNum).getCell(5);
+              xlsRow(ws,rowNum,[...orderInfo,l.pn||"—",l.desc||l.description||"—",l.qtyRemaining,fmtD(l.availDate),dLabel,montantLigne],aligns,[10],zebra);
+              const dc=ws.getRow(rowNum).getCell(10);
               dc.font={...dc.font,bold:true,color:{argb:d===null?'FF6B7280':d<0?'FFB91C1C':d<=7?'FFD97706':'FF0D9488'}};
-              r++;zebraIdx++;
+              r++;
             });
           } else {
-            ws.mergeCells(r,1,r,headers.length);
-            const nrow=ws.getRow(r);nrow.height=16;
-            const nc=nrow.getCell(1);
-            nc.value="Pas de détail de lignes pour cette commande — importez le bon de commande (PDF/Excel) pour activer le détail par article.";
-            nc.font={italic:true,size:8.5,color:{argb:'FFB45309'},name:'Arial'};
-            nc.alignment={vertical:'middle',indent:1};
+            xlsRow(ws,r,[...orderInfo,"—","Pas de détail de lignes importé","—","—","—",open],aligns,[10],zebra);
+            ws.getRow(r).getCell(7).font={italic:true,size:9,color:{argb:'FF8FA0B3'},name:'Arial'};
             r++;
           }
-          ws.getRow(r).height=6;r++; // espace entre deux commandes
+
+          // Sous-total de la commande — rappelle aussi PO total & Facturé.
+          ws.mergeCells(r,1,r,10);
+          const subRow=ws.getRow(r);subRow.height=17;
+          const sc=subRow.getCell(1);
+          sc.value=`Sous-total commande ${o.poNumber||"—"}   ·   PO : ${fmt(+o.amount||0)} €   ·   Facturé : ${fmt(inv)} €   ·   Reste :`;
+          sc.font={italic:true,bold:true,size:8.5,color:{argb:'FFB45309'},name:'Arial'};
+          sc.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFEF3C7'}};
+          sc.alignment={horizontal:'right',vertical:'middle'};
+          const svc=subRow.getCell(11);svc.value=open;svc.numFmt=XCUR;
+          svc.font={bold:true,size:9,color:{argb:'FFB45309'},name:'Arial'};
+          svc.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFEF3C7'}};
+          svc.alignment={horizontal:'right',vertical:'middle'};
+          r++;
+
+          // Fine séparation ambrée en haut du bloc pour marquer le début
+          // d'une nouvelle commande (plus lisible qu'un gros bandeau).
+          for(let c=1;c<=headers.length;c++){
+            const cell=ws.getRow(startRow).getCell(c);
+            cell.border={...cell.border,top:{style:'thin',color:{argb:'FFD97706'}}} as any;
+          }
         });
 
-        xlsAgg(ws,r,"TOTAL OPEN ORDERS",5,headers.length,[{col:6,value:grandTotal}],XWHITE,'FFB45309',true,11);
+        xlsAgg(ws,r,"TOTAL OPEN ORDERS",10,headers.length,[{col:11,value:grandTotal}],XWHITE,'FFB45309',true,11);
 
       } else if(rtype==="overdue"){
         fileName="factures_echues.xlsx";
