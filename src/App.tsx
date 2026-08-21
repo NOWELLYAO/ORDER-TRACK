@@ -2513,7 +2513,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
           </div>}
           {isAdmin&&<RapportIntelligent title={`Vue d'ensemble ${selYear}`} context={kpiReportContext}/>}
           {canExport&&<button onClick={()=>setModal({type:"report"})} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",border:`1px solid ${C.b}`,color:C.t2,borderRadius:C.r,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-            <i className="ti ti-file-download" style={{fontSize:15}} aria-hidden="true"/> Rapports PDF
+            <i className="ti ti-file-download" style={{fontSize:15}} aria-hidden="true"/> Rapports PDF / Excel
           </button>}
         </div>
       </div>
@@ -15045,6 +15045,333 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
     onClose();
   };
 
+  // ── EXPORT EXCEL (ExcelJS via CDN) — même contenu que les rapports PDF ────
+  // ci-dessus, mais dans un classeur .xlsx mis en forme (bandeaux, couleurs,
+  // sous-totaux par mois, total général) au lieu d'une page HTML imprimable.
+  const [xlsBusy,setXlsBusy]=useState(false);
+  const loadExcelJSLib=():Promise<any>=>new Promise((resolve,reject)=>{
+    if((window as any).ExcelJS){resolve((window as any).ExcelJS);return;}
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    s.crossOrigin='anonymous';
+    s.onload=()=>resolve((window as any).ExcelJS);
+    s.onerror=()=>reject(new Error('ExcelJS load failed'));
+    document.head.appendChild(s);
+  });
+
+  const XNAVY='FF0D1B2A',XWHITE='FFFFFFFF',XGRID='FFE5EAF0',XZEBRA='FFF8FAFC',XCUR='#,##0.00" €"';
+
+  const xlsTitle=(ws:any,title:string,periodLabel:string,lastCol:number)=>{
+    ws.mergeCells(1,1,1,lastCol);
+    const t=ws.getRow(1).getCell(1);t.value='OrderTrack';t.font={bold:true,size:15,color:{argb:'FF2563EB'},name:'Arial'};t.alignment={vertical:'middle'};
+    ws.getRow(1).height=24;
+    ws.mergeCells(2,1,2,lastCol);
+    const h=ws.getRow(2).getCell(1);h.value=title;h.font={bold:true,size:12.5,color:{argb:'FF0D1B2A'},name:'Arial'};h.alignment={vertical:'middle'};
+    ws.getRow(2).height=21;
+    ws.mergeCells(3,1,3,lastCol);
+    const p=ws.getRow(3).getCell(1);
+    p.value=`Généré le ${new Date().toLocaleDateString('fr-FR',{weekday:'long',year:'numeric',month:'long',day:'numeric'})} — Période : ${periodLabel}`;
+    p.font={italic:true,size:9,color:{argb:'FF8FA0B3'},name:'Arial'};ws.getRow(3).height=16;
+    ws.getRow(4).height=6;
+    return 5;
+  };
+  const xlsHead=(ws:any,r:number,headers:string[],aligns:string[])=>{
+    const row=ws.getRow(r);row.height=22;
+    headers.forEach((hd,i)=>{
+      const c=row.getCell(i+1);c.value=hd;
+      c.font={bold:true,size:9.5,color:{argb:XWHITE},name:'Arial'};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:XNAVY}};
+      c.alignment={horizontal:(aligns[i]||'left') as any,vertical:'middle'};
+    });
+    ws.views=[{state:'frozen',ySplit:r}];
+  };
+  const xlsBand=(ws:any,r:number,label:string,colCount:number,bg:string,fg:string)=>{
+    ws.mergeCells(r,1,r,colCount);
+    const row=ws.getRow(r);row.height=18;
+    const c=row.getCell(1);c.value=`📅 ${label}`;
+    c.font={bold:true,size:9,color:{argb:fg},name:'Arial'};
+    c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}};
+    c.alignment={vertical:'middle',indent:1};
+  };
+  const xlsRow=(ws:any,r:number,values:any[],aligns:string[],currencyCols:number[],zebra:boolean,accent?:string)=>{
+    const row=ws.getRow(r);row.height=16;
+    values.forEach((v,i)=>{
+      const c=row.getCell(i+1);c.value=v;
+      c.font={size:9,name:'Arial',color:{argb:'FF1A2433'}};
+      c.alignment={horizontal:(aligns[i]||'left') as any,vertical:'middle'};
+      if(currencyCols.includes(i))c.numFmt=XCUR;
+      c.border={bottom:{style:'hair',color:{argb:XGRID}},...(i===0&&accent?{left:{style:'medium',color:{argb:accent}}}:{})} as any;
+      if(zebra)c.fill={type:'pattern',pattern:'solid',fgColor:{argb:XZEBRA}};
+    });
+  };
+  // Sous-total / total : libellé fusionné de la colonne 1 à labelSpan, puis
+  // une ou plusieurs valeurs numériques dans les colonnes suivantes.
+  const xlsAgg=(ws:any,r:number,label:string,labelSpan:number,colCount:number,cells:{col:number,value:number}[],fg:string,bg:string,bold:boolean,size:number)=>{
+    ws.mergeCells(r,1,r,labelSpan);
+    const row=ws.getRow(r);row.height=bold&&size>10?23:18;
+    const lc=row.getCell(1);lc.value=label;
+    lc.font={bold:true,italic:!bold,size,color:{argb:fg},name:'Arial'};
+    lc.alignment={horizontal:'right',vertical:'middle'};
+    lc.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}};
+    for(let i=labelSpan+1;i<=colCount;i++){
+      const c=row.getCell(i);
+      const found=cells.find(x=>x.col===i);
+      if(found){c.value=found.value;c.numFmt=XCUR;}
+      c.font={bold:true,size,color:{argb:fg},name:'Arial'};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bg}};
+      c.alignment={horizontal:'right',vertical:'middle'};
+    }
+  };
+
+  const generateExcel=async()=>{
+    if(xlsBusy)return;
+    setXlsBusy(true);
+    try{
+      const fd=new Date(fromDate+"T00:00:00"),td=new Date(toDate+"T00:00:00");td.setHours(23,59,59);
+      const inRange=(d:string)=>{if(!d)return true;const dt=new Date(d+"T00:00:00");return dt>=fd&&dt<=td;};
+      const allOrders=selCustomers.flatMap(c=>(data?.[c]||[]).map((o:any)=>({...o,_client:c})));
+      const monthKey=(d:string)=>d?d.slice(0,7):"0000-00";
+      const monthLabel=(d:string)=>{if(!d)return"Sans date";const dt=new Date(d+"T00:00:00");return dt.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}).replace(/^./,c=>c.toUpperCase());};
+      const groupByMonth=(items:any[],dateField:string)=>{
+        const sorted=[...items].sort((a:any,b:any)=>(a[dateField]||"").localeCompare(b[dateField]||""));
+        const byMonth:Record<string,any[]>={};
+        sorted.forEach((i:any)=>{const k=monthKey(i[dateField]);if(!byMonth[k])byMonth[k]=[];byMonth[k].push(i);});
+        return Object.keys(byMonth).sort().map(k=>({label:monthLabel(byMonth[k][0][dateField]),items:byMonth[k]}));
+      };
+      const periodLabel=`${fmtD(fromDate)} → ${fmtD(toDate)}`;
+
+      const ExcelJS=await loadExcelJSLib();
+      const wb=new ExcelJS.Workbook();wb.created=new Date();
+      let fileName="rapport_ordertrack.xlsx";
+
+      // ── Builder générique : table à plat, groupée par mois, avec un
+      // sous-total (une seule colonne, comme les rapports PDF) et un total.
+      const buildFlat=(sheetName:string,title:string,headers:string[],aligns:string[],widths:number[],currencyCols:number[],items:any[],dateField:string,rowMap:(i:any)=>any[],subtotalCol:number,accent:string,bgLight:string,bgTotal:string,totalLabel:string,periodOverride?:string,highlightCol?:number,highlightColorFn?:(v:any)=>string)=>{
+        const ws=wb.addWorksheet(sheetName,{properties:{defaultColWidth:14}});
+        ws.columns=widths.map(w=>({width:w}));
+        let r=xlsTitle(ws,title,periodOverride||periodLabel,headers.length);
+        xlsHead(ws,r,headers,aligns);r++;
+        const groups=groupByMonth(items,dateField);
+        let zebraIdx=0,grand=0;
+        groups.forEach(g=>{
+          xlsBand(ws,r,g.label,headers.length,'FF1E3A5F','FF93C5FD');r++;
+          let sub=0;
+          g.items.forEach((it:any)=>{
+            const vals=rowMap(it);
+            const rowNum=r;
+            xlsRow(ws,rowNum,vals,aligns,currencyCols,zebraIdx%2===0);
+            if(highlightCol!==undefined&&highlightColorFn){
+              const hc=ws.getRow(rowNum).getCell(highlightCol+1);
+              hc.font={...hc.font,bold:true,color:{argb:highlightColorFn(vals[highlightCol])}};
+            }
+            r++;zebraIdx++;
+            sub+=(+vals[subtotalCol]||0);grand+=(+vals[subtotalCol]||0);
+          });
+          xlsAgg(ws,r,`Sous-total ${g.label}`,subtotalCol,headers.length,[{col:subtotalCol+1,value:sub}],accent,bgLight,false,9);r++;
+        });
+        xlsAgg(ws,r,totalLabel,subtotalCol,headers.length,[{col:subtotalCol+1,value:grand}],XWHITE,accent,true,11);
+        // fond de la ligne total = couleur d'accent pleine (déjà passé en "bg")
+        return ws;
+      };
+
+      if(rtype==="open_orders"){
+        fileName=`open_orders_${fromDate.slice(0,4)}.xlsx`;
+        const items=allOrders.filter((o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return inv<(+o.amount||0)*0.999&&o.status!=="annule";});
+        buildFlat("Open Orders","Open Orders — Commandes non entièrement facturées",
+          ["Customer","PO #","S/O #","Date","Statut","PO (€)","Facturé (€)","Reste (€)"],
+          ["left","left","left","center","left","right","right","right"],
+          [22,14,14,12,16,13,13,13],[5,6,7],items,"date",
+          (o:any)=>{const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);return[o._client,o.poNumber||"—",o.soNumber||"—",fmtD(o.date),o.status||"—",+o.amount||0,inv,Math.max(0,(+o.amount||0)-inv)];},
+          7,'FFB45309','FFFEF9EC','FFFEF3C7',"TOTAL OPEN ORDERS");
+
+      } else if(rtype==="overdue"){
+        fileName="factures_echues.xlsx";
+        const items=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{
+          const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+          const rem=Math.max(0,(+i.amount||0)-paid);const ps=payStatus(i);
+          return{...i,_client:o._client,_po:o.poNumber,paid,rem,isOverdue:["overdue","ov_part"].includes(ps.key),daysLate:i.dueDate?Math.abs(diffD(i.dueDate)):0};
+        }).filter((i:any)=>i.isOverdue&&i.rem>0));
+        buildFlat("Factures échues","Factures échues — Échéances dépassées non soldées",
+          ["Customer","PO #","Invoice #","Date Facture","Échéance","Retard (j)","Montant (€)","Payé (€)","Reste Dû (€)"],
+          ["left","left","left","center","center","center","right","right","right"],
+          [20,13,14,13,13,10,13,13,13],[6,7,8],items,"dueDate",
+          (i:any)=>[i._client,i._po||"—",i.invoiceNumber||"—",fmtD(i.date),fmtD(i.dueDate),i.daysLate,+i.amount||0,i.paid,i.rem],
+          8,'FFB91C1C','FFFFF0F0','FFFEE2E2',"TOTAL ÉCHUES",undefined,5,(d:number)=>d>90?'FFB91C1C':d>30?'FFDC2626':'FFEF4444');
+
+      } else if(rtype==="upcoming"){
+        fileName="echeances_a_venir.xlsx";
+        const today30=new Date();today30.setDate(today30.getDate()+30);
+        const items=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{
+          const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);const rem=Math.max(0,(+i.amount||0)-paid);
+          if(rem<=0||!i.dueDate)return null;
+          const due=new Date(i.dueDate+"T00:00:00"),now=new Date();now.setHours(0,0,0,0);
+          if(due<now||due>today30)return null;
+          const daysLeft=Math.ceil((due.getTime()-now.getTime())/86400000);
+          return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:payStatus(i).label,daysLeft};
+        }).filter(Boolean));
+        buildFlat("Échéances à venir","Échéances à venir — 30 prochains jours",
+          ["Customer","PO #","Invoice #","Date émission","Échéance","Délai","Montant (€)","Payé (€)","Reste dû (€)","Statut"],
+          ["left","left","left","center","center","center","right","right","right","left"],
+          [20,13,14,14,13,10,13,13,13,18],[6,7,8],items,"dueDate",
+          (i:any)=>[i._client,i._po||"—",i.invoiceNumber||"—",fmtD(i.date),fmtD(i.dueDate),i.daysLeft===0?"Aujourd'hui":i.daysLeft+"j",+i.amount||0,i.paid,i.rem,i.psLabel],
+          8,'FF1D4ED8','FFEFF6FF','FFDBEAFE',"TOTAL À ENCAISSER");
+
+      } else if(rtype==="active_invoices"){
+        fileName="factures_actives.xlsx";
+        const items=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{
+          const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);const rem=Math.max(0,(+i.amount||0)-paid);const ps=payStatus(i);
+          return{...i,_client:o._client,_po:o.poNumber,paid,rem,isOverdue:["overdue","ov_part"].includes(ps.key),daysLate:i.dueDate?Math.abs(diffD(i.dueDate)):0,daysLeft:i.dueDate?diffD(i.dueDate):0};
+        }).filter((i:any)=>i.rem>0));
+        const overdueItems=items.filter((i:any)=>i.isOverdue);
+        const pendingItems=items.filter((i:any)=>!i.isOverdue);
+        const headers=["Customer","PO #","Invoice #","Date","Échéance","Délai","Montant (€)","Payé (€)","Reste (€)"];
+        const aligns=["left","left","left","center","center","center","right","right","right"];
+        const widths=[20,13,14,13,13,12,13,13,13];
+        const ws=wb.addWorksheet("Factures actives",{properties:{defaultColWidth:14}});
+        ws.columns=widths.map(w=>({width:w}));
+        let r=xlsTitle(ws,"Factures actives — Échues + en cours d'échéance, non soldées",`Photo actuelle au ${fmtD(todayStr())}`,headers.length);
+        xlsHead(ws,r,headers,aligns);r++;
+        const section=(label:string,grp:any[],late:boolean,accent:string,bgLight:string,bgTotal:string)=>{
+          ws.mergeCells(r,1,r,headers.length);
+          const row=ws.getRow(r);row.height=20;const c=row.getCell(1);c.value=label;
+          c.font={bold:true,size:10,color:{argb:accent},name:'Arial'};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:bgTotal}};c.alignment={vertical:'middle',indent:1};r++;
+          if(grp.length===0){const row2=ws.getRow(r);row2.getCell(1).value="Aucune facture";row2.getCell(1).font={italic:true,size:9,color:{argb:'FF8FA0B3'},name:'Arial'};r++;return;}
+          const groups=groupByMonth(grp,"dueDate");let zebraIdx=0,secTotal=0;
+          groups.forEach(g=>{
+            xlsBand(ws,r,`Échéance ${g.label}`,headers.length,'FF1E3A5F','FF93C5FD');r++;
+            let subT=0;
+            g.items.forEach((i:any)=>{
+              const vals=[i._client,i._po||"—",i.invoiceNumber||"—",fmtD(i.date),fmtD(i.dueDate),late?`${i.daysLate}j retard`:(i.daysLeft===0?"Auj.":i.daysLeft+"j"),+i.amount||0,i.paid,i.rem];
+              xlsRow(ws,r,vals,aligns,[6,7,8],zebraIdx%2===0,accent);r++;zebraIdx++;subT+=i.rem;secTotal+=i.rem;
+            });
+            xlsAgg(ws,r,`Sous-total ${g.label}`,8,headers.length,[{col:9,value:subT}],accent,bgLight,false,9);r++;
+          });
+          xlsAgg(ws,r,`TOTAL ${label.replace(/^[^A-ZÉ]*/,"")} (${grp.length})`,8,headers.length,[{col:9,value:secTotal}],XWHITE,accent,true,10);r++;
+        };
+        section(`🔴 ÉCHUES (${overdueItems.length})`,overdueItems,true,'FFB91C1C','FFFFF0F0','FFFEE2E2');
+        r++;
+        section(`🔵 EN COURS D'ÉCHÉANCE (${pendingItems.length})`,pendingItems,false,'FF1D4ED8','FFEFF6FF','FFDBEAFE');
+        r++;
+        xlsAgg(ws,r,`TOTAL FACTURES ACTIVES (${items.length})`,8,headers.length,[{col:9,value:items.reduce((s:number,i:any)=>s+i.rem,0)}],XWHITE,XNAVY,true,11);
+
+      } else if(rtype==="unpaid"){
+        fileName="factures_en_cours.xlsx";
+        const items=allOrders.flatMap((o:any)=>(o.invoices||[]).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);const rem=Math.max(0,(+i.amount||0)-paid);return{...i,_client:o._client,_po:o.poNumber,paid,rem,psLabel:payStatus(i).label};}).filter((i:any)=>i.rem>0));
+        buildFlat("Factures en cours","Factures en cours — Solde non encore encaissé",
+          ["Customer","PO #","Invoice #","Date","Échéance","Montant (€)","Payé (€)","Reste (€)","Statut"],
+          ["left","left","left","center","center","right","right","right","left"],
+          [20,13,14,13,13,13,13,13,18],[5,6,7],items,"date",
+          (i:any)=>[i._client,i._po||"—",i.invoiceNumber||"—",fmtD(i.date),fmtD(i.dueDate),+i.amount||0,i.paid,i.rem,i.psLabel],
+          7,'FFDC2626','FFFFF5F5','FFFEE2E2',"TOTAL UNPAID",`Toutes factures impayées au ${fmtD(todayStr())}`);
+
+      } else if(rtype==="all_invoices"){
+        fileName="toutes_factures.xlsx";
+        const items=allOrders.flatMap((o:any)=>(o.invoices||[]).filter((i:any)=>inRange(i.date)).map((i:any)=>{const paid=(i.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);return{...i,_client:o._client,_po:o.poNumber,paid};}));
+        const ws=wb.addWorksheet("Toutes les factures",{properties:{defaultColWidth:14}});
+        const headers=["Customer","PO #","Invoice #","Date","Échéance","Montant (€)","Payé (€)","Reste (€)"];
+        const aligns=["left","left","left","center","center","right","right","right"];
+        ws.columns=[20,13,14,13,13,13,13,13].map(w=>({width:w}));
+        let r=xlsTitle(ws,"Toutes les factures sur la période",periodLabel,headers.length);
+        xlsHead(ws,r,headers,aligns);r++;
+        const groups=groupByMonth(items,"date");let zebraIdx=0,tI=0,tP=0;
+        groups.forEach(g=>{
+          xlsBand(ws,r,g.label,headers.length,'FF1E3A5F','FF93C5FD');r++;
+          let sI=0,sP=0;
+          g.items.forEach((i:any)=>{
+            const vals=[i._client,i._po||"—",i.invoiceNumber||"—",fmtD(i.date),fmtD(i.dueDate),+i.amount||0,i.paid,Math.max(0,(+i.amount||0)-i.paid)];
+            xlsRow(ws,r,vals,aligns,[5,6,7],zebraIdx%2===0);r++;zebraIdx++;
+            sI+=+i.amount||0;sP+=i.paid;tI+=+i.amount||0;tP+=i.paid;
+          });
+          xlsAgg(ws,r,`Sous-total ${g.label}`,4,headers.length,[{col:6,value:sI},{col:7,value:sP},{col:8,value:sI-sP}],'FF0D9488','FFF0FDFA',false,9);r++;
+        });
+        xlsAgg(ws,r,"TOTAUX",4,headers.length,[{col:6,value:tI},{col:7,value:tP},{col:8,value:tI-tP}],XWHITE,'FF0D9488',true,11);
+
+      } else if(rtype==="ready_upcoming"){
+        fileName="commandes_pretes_a_venir.xlsx";
+        const windowEnd=addDays(todayStr(),upcomingWindow);
+        const readyOrders=allOrders.filter((o:any)=>isOrderReadyToShip(o)).map((o:any)=>{
+          const lignes=(o.lines&&o.lines.length>0)?orderLineCoverage(o).filter((l:any)=>l.qtyRemaining>0&&!FEE_LINE_PNS.has(String(l.pn||"").trim().toUpperCase())):[];
+          const montant=lignes.length>0?lignes.reduce((s:number,l:any)=>s+(+l.qtyRemaining||0)*(+l.unitPrice||0),0):(+o.amount||0);
+          return{order:o,lignes,montant};
+        });
+        const upcomingOrders=allOrders.map((o:any)=>({order:o,lignes:(o.lines&&o.lines.length>0)?orderLineCoverage(o).filter((l:any)=>l.qtyRemaining>0&&!FEE_LINE_PNS.has(String(l.pn||"").trim().toUpperCase())&&l.availDate&&l.availDate>todayStr()&&l.availDate<=windowEnd):[]})).filter((x:any)=>x.lignes.length>0);
+
+        const mkSheet=(name:string,title:string,rowsSrc:any[],accent:string,bgLight:string,bgTotal:string)=>{
+          const ws=wb.addWorksheet(name,{properties:{defaultColWidth:14}});
+          const headers=["Client","PO #","S/O #","Date commande","Livraison prévue","Article (PN)","Description","Qté restante","Disponibilité","Délai","Montant ligne (€)"];
+          const aligns=["left","left","left","center","center","left","left","center","center","center","right"];
+          ws.columns=[18,13,11,13,13,14,26,10,13,11,15].map(w=>({width:w}));
+          let r=xlsTitle(ws,title,`Fenêtre « à venir » : ${upcomingWindow} jours`,headers.length);
+          xlsHead(ws,r,headers,aligns);r++;
+          let zebraIdx=0,total=0;
+          rowsSrc.forEach((x:any)=>{
+            const lignes=x.lignes&&x.lignes.length>0?x.lignes:[{pn:"—",desc:"(pas de détail de lignes)",qtyRemaining:"—",availDate:null}];
+            lignes.forEach((l:any)=>{
+              const montantLigne=typeof l.qtyRemaining==="number"?(+l.qtyRemaining||0)*(+l.unitPrice||0):(x.montant||0);
+              const d=l.availDate?diffD(l.availDate):null;
+              const dLabel=d===null?"—":d<0?`${Math.abs(d)}j retard`:d===0?"Aujourd'hui":`${d}j`;
+              xlsRow(ws,r,[x.order._client,x.order.poNumber||"—",x.order.soNumber||"—",fmtD(x.order.date),fmtD(x.order.expectedDate),l.pn||"—",l.desc||l.description||"—",l.qtyRemaining,fmtD(l.availDate),dLabel,montantLigne],aligns,[10],zebraIdx%2===0,accent);
+              r++;zebraIdx++;total+=montantLigne;
+            });
+          });
+          xlsAgg(ws,r,`TOTAL (${rowsSrc.length} commande${rowsSrc.length>1?"s":""})`,9,headers.length,[{col:11,value:total}],XWHITE,accent,true,10.5);
+          return ws;
+        };
+        mkSheet("Prêtes à expédier","Commandes prêtes à expédier",readyOrders,'FF0D9488','FFF0FDFA','FFCCFBF1');
+        mkSheet("À venir","Lignes à venir dans la fenêtre",upcomingOrders,'FF1D4ED8','FFEFF6FF','FFDBEAFE');
+
+        const allClients=Array.from(new Set([...readyOrders.map((x:any)=>x.order._client),...upcomingOrders.map((x:any)=>x.order._client)])).sort();
+        const wsR=wb.addWorksheet("Récap clients",{properties:{defaultColWidth:16}});
+        const hR=["Customer","Prêtes (€)","À venir (€)","Total (€)"];
+        wsR.columns=[26,15,15,15].map(w=>({width:w}));
+        let rr=xlsTitle(wsR,"Récapitulatif par client",`Fenêtre « à venir » : ${upcomingWindow} jours`,4);
+        xlsHead(wsR,rr,hR,["left","right","right","right"]);rr++;
+        let zebraIdx2=0,gR=0,gU=0;
+        allClients.forEach((c:string)=>{
+          const r1=readyOrders.filter((x:any)=>x.order._client===c).reduce((s:number,x:any)=>s+(+x.montant||0),0);
+          const u1=upcomingOrders.filter((x:any)=>x.order._client===c).reduce((s:number,x:any)=>s+x.lignes.reduce((ss:number,l:any)=>ss+(+l.qtyRemaining||0)*(+l.unitPrice||0),0),0);
+          xlsRow(wsR,rr,[c,r1,u1,r1+u1],["left","right","right","right"],[1,2,3],zebraIdx2%2===0);rr++;zebraIdx2++;gR+=r1;gU+=u1;
+        });
+        xlsAgg(wsR,rr,"TOTAL",1,4,[{col:2,value:gR},{col:3,value:gU},{col:4,value:gR+gU}],XWHITE,XNAVY,true,11);
+
+      } else {
+        fileName="synthese_clients.xlsx";
+        const ws=wb.addWorksheet("Synthèse clients",{properties:{defaultColWidth:14}});
+        const headers=["Customer","N° Compte","Conditions","Cmds","PO Total (€)","Facturé (€)","Encaissé (€)","Open Orders (€)"];
+        const aligns=["left","left","left","center","right","right","right","right"];
+        ws.columns=[24,14,16,8,14,14,14,14].map(w=>({width:w}));
+        let r=xlsTitle(ws,"Synthèse par client",periodLabel,headers.length);
+        xlsHead(ws,r,headers,aligns);r++;
+        let zebraIdx=0,tPO=0,tInv=0,tPaid=0,tOpen=0;
+        selCustomers.forEach((c:string)=>{
+          const ords=data?.[c]||[];
+          const po=ords.reduce((s:number,o:any)=>(o.date&&inRange(o.date))?s+(+o.amount||0):s,0);
+          const inv=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).filter((i:any)=>inRange(i.date)).reduce((ss:number,i:any)=>ss+(+i.amount||0),0),0);
+          const paid=ords.reduce((s:number,o:any)=>s+(o.invoices||[]).reduce((ss:number,i:any)=>ss+(i.payments||[]).filter((p:any)=>inRange(p.date)).reduce((sss:number,p:any)=>sss+(+p.amount||0),0),0),0);
+          const open=ords.reduce((s:number,o:any)=>{const invAmt=(o.invoices||[]).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);return s+Math.max(0,(+o.amount||0)-invAmt);},0);
+          const term=PAY_TERMS.find((t:any)=>t.id===(configs[c]?.termId||"net60"))?.label||"—";
+          xlsRow(ws,r,[c,configs[c]?.accountNumber||"—",term,ords.length,po,inv,paid,open],aligns,[4,5,6,7],zebraIdx%2===0);
+          r++;zebraIdx++;tPO+=po;tInv+=inv;tPaid+=paid;tOpen+=open;
+        });
+        xlsAgg(ws,r,"TOTAL",3,headers.length,[{col:5,value:tPO},{col:6,value:tInv},{col:7,value:tPaid},{col:8,value:tOpen}],XWHITE,XNAVY,true,11);
+      }
+
+      wb.eachSheet((ws:any)=>{ws.pageSetup={paperSize:9,orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:0};});
+      const buf:ArrayBuffer=await wb.xlsx.writeBuffer();
+      const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");a.href=url;a.download=fileName;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      onClose();
+    }catch(e){
+      console.error(e);
+      alert("Impossible de générer le fichier Excel. Vérifiez votre connexion internet puis réessayez.");
+    }finally{
+      setXlsBusy(false);
+    }
+  };
+
   const printReport=(title:string,from:string,to:string,headers:string,rows:string,periodLabelOverride?:string)=>{
     const w=window.open("","_blank","width=1100,height=800");
     if(!w)return;
@@ -15210,7 +15537,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
 
   return(
     <Modal title={tr("report_title")} sub={tr("report_sub")} width={560} onClose={onClose}
-      footer={<><button onClick={onClose}>Annuler</button><Btn icon="ti-file-download" label={tr("report_generate")} onClick={generate} variant="primary"/></>}>
+      footer={<><button onClick={onClose}>Annuler</button><Btn icon="ti-file-type-pdf" label="Générer PDF" onClick={generate} variant="primary"/><Btn icon={xlsBusy?"ti-loader-2":"ti-file-spreadsheet"} label={xlsBusy?"Génération…":"Générer Excel"} onClick={generateExcel} variant="success"/></>}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:18}}>
         {REPORT_TYPES.map(rt=>(
           <div key={rt.id} onClick={()=>setRtype(rt.id)} style={{cursor:"pointer",border:`2px solid ${rtype===rt.id?rt.color:C.b}`,borderRadius:C.r,padding:"12px 14px",background:rtype===rt.id?rt.color+"10":"#fff",transition:"all .15s"}}>
