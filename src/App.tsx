@@ -899,6 +899,7 @@ function LoginScreen({onLogin}:any){
 const DEFAULT_PERMS={canEdit:true,canDelete:true,canAddCustomer:true,canViewReports:true,canExport:true};
 
 function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandled}:any){
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
   const[users,setUsers]=useState<any[]>([]);
   const[newName,setNewName]=useState("");
   const[newPin,setNewPin]=useState("");
@@ -1030,7 +1031,7 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
           {msg&&<div style={{background:msg.startsWith("✓")?"#D1FAE5":"#FEE2E2",color:msg.startsWith("✓")?"#065F46":"#B91C1C",padding:"8px 12px",borderRadius:6,marginBottom:12,fontSize:12,fontWeight:600}}>{msg}</div>}
           <div style={{marginBottom:16}}>
             <div style={{fontSize:12,fontWeight:600,color:"#0D1B2A",marginBottom:8}}>Ajouter un utilisateur</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 100px",gap:8,marginBottom:8}}>
+            <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr 100px",gap:8,marginBottom:8}}>
               <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Nom" style={{padding:"8px 10px",border:"1px solid #E5EAF0",borderRadius:6,fontSize:12,fontFamily:"inherit"}}/>
               <div style={{display:"flex",alignItems:"center",gap:4}}>
                 <input value={newPin} onChange={e=>setNewPin(e.target.value)} placeholder="Code PIN" type={newShowPin?"text":"password"}
@@ -3202,7 +3203,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
 }
 
 // ─── COMPILATION PAGE ────────────────────────────────────────────────────────
-function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYear,lang="fr",isAdmin=true,targets,getAllOrders}:any){
+function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYear,lang="fr",isAdmin=true,targets,getAllOrders,isMobile=false}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const all=clients.map((c:string)=>({client:c,...getStats(c,selYear)}));
   const totPO  = all.reduce((s:number,c:any)=>s+c.totalPO,0);
@@ -3282,7 +3283,7 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
       </div>
 
       {/* ── KPI STRIP ── */}
-      <div style={{display:"grid",gridTemplateColumns:isAdmin?"repeat(5,1fr)":"repeat(4,1fr)",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":(isAdmin?"repeat(5,1fr)":"repeat(4,1fr)"),gap:isMobile?10:14}}>
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Total PO {selYear}</div>
           <div style={{fontSize:22,fontWeight:800,color:C.blue,letterSpacing:"-.02em"}}>{fmtK(totPO)} €</div>
@@ -3373,7 +3374,7 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
           <span style={{fontSize:10,color:C.t3}}>Commandes, factures, paiements, prix catalogue, échéances, motifs — trié par importance</span>
         </div>
       )}
-      <div style={{display:"grid",gridTemplateColumns:"380px 1fr",gap:16,alignItems:"start"}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"380px 1fr",gap:16,alignItems:"start"}}>
 
         {/* Left — Customer ranking bars */}
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
@@ -3971,7 +3972,7 @@ function Card({title,icon,children,noPad,badge}:any){
           {badge&&<span style={{background:badge.color+"20",color:badge.color,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:99}}>{badge.n}</span>}
         </div>
       )}
-      <div style={{padding:noPad?0:18}}>{children}</div>
+      <div style={{padding:noPad?0:18,overflowX:"auto"}}>{children}</div>
     </div>
   );
 }
@@ -4028,7 +4029,7 @@ function Modal({title,sub,width,children,footer,onClose}:any){
         <button onClick={onClose} style={{background:"#F1F5F9",border:"none",color:C.t3,cursor:"pointer",borderRadius:6,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center"}}><i className="ti ti-x" style={{fontSize:15}} aria-hidden="true"/></button>
       </div>
       <div style={{padding:"20px 22px",overflowY:"auto",flex:1}}>{children}</div>
-      {footer&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,padding:"14px 22px",borderTop:`1px solid ${C.b}`,background:"#FAFBFD",borderRadius:`0 0 ${C.rLg} ${C.rLg}`,flexShrink:0}}>{footer}</div>}
+      {footer&&<div style={{display:"flex",justifyContent:"flex-end",flexWrap:"wrap",gap:8,padding:"14px 22px",borderTop:`1px solid ${C.b}`,background:"#FAFBFD",borderRadius:`0 0 ${C.rLg} ${C.rLg}`,flexShrink:0}}>{footer}</div>}
     </div>
   );
 }
@@ -4412,6 +4413,7 @@ function Sel({label,value,onChange,options,span}:any){
 
 function CustomerModal({name,cfg,defaultTermId,onSave,onClose,lang="fr"}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
   const[nm,setNm]=useState(name||"");
   const[acc,setAcc]=useState(cfg?.accountNumber||"");
   const[termId,setTermId]=useState(cfg?.termId||defaultTermId||"net60");
@@ -4421,7 +4423,7 @@ function CustomerModal({name,cfg,defaultTermId,onSave,onClose,lang="fr"}:any){
   return(
     <Modal title={isEdit?tr("edit_client_title"):tr("new_client")} sub={isEdit?name:undefined} onClose={onClose}
       footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon={isEdit?"ti-check":"ti-plus"} label={isEdit?tr("save_changes"):tr("create_client")} onClick={save} variant="primary"/></>}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:14}}>
         <Fld label="Nom du client *" value={nm} onChange={setNm} placeholder="ex: SODIGAZ" span={2}/>
         <Fld label="N° de compte" value={acc} onChange={setAcc} placeholder="ex: 7310000042"/>
         <Sel label="Conditions de paiement" value={termId} onChange={setTermId} options={PAY_TERMS.map(t=>({value:t.id,label:t.label}))}/>
@@ -4439,6 +4441,7 @@ function CustomerModal({name,cfg,defaultTermId,onSave,onClose,lang="fr"}:any){
 
 function OrderModal({client,order,onSave,onClose,lang="fr"}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
   const isCimelec=client==="CIMELEC";
   const[f,setF]=useState({date:order?.date||todayStr(),poNumber:order?.poNumber||"",soNumber:order?.soNumber||"",orderNumber:order?.orderNumber||"",amount:order?.amount||"",deliveryMode:order?.deliveryMode||"Transitaire FCA",expectedDate:order?.expectedDate||"",notes:order?.notes||"",id:order?.id});
   const[cancelled,setCancelled]=useState(order?.status==="annule");
@@ -4457,7 +4460,7 @@ function OrderModal({client,order,onSave,onClose,lang="fr"}:any){
     <Modal title={order?tr("edit_order"):tr("new_order")} sub={client} width={560} onClose={onClose}
       footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon="ti-check" label={order?tr("save_order"):tr("create_order")} onClick={()=>{if(!f.poNumber||!f.amount){alert("PO # et montant requis");return;}onSave({...f,status:cancelled?"annule":"en_cours"});}} variant="primary"/></>}>
       {/* Infos de base */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:12,marginBottom:16}}>
         <Fld label="Date commande *" type="date" value={f.date} onChange={(v:any)=>s("date",v)}/>
         <Fld label="PO # Customer *" value={f.poNumber} onChange={(v:any)=>s("poNumber",v)} placeholder="ex: T526.2026"/>
         <Fld label="S/O # *" value={f.soNumber} onChange={(v:any)=>s("soNumber",v)} placeholder="ex: 14560128"/>
@@ -4500,6 +4503,7 @@ function OrderModal({client,order,onSave,onClose,lang="fr"}:any){
 
 function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
   const term=PAY_TERMS.find(t=>t.id===(cfg?.termId||"net60"))||PAY_TERMS[5];
   const autoDate=(d:string)=>calcDueDate(d,cfg?.termId||"net60",cfg?.customDays||0);
   const invoiceIdRef=useRef(invoice?.id||Date.now().toString());
@@ -4515,7 +4519,7 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
         <span style={{color:C.teal}}>Déjà facturé : <strong>{fmt(already)} €</strong></span>
         <span style={{color:C.amberDk}}>Reste : <strong>{fmt(remaining)} €</strong></span>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:14}}>
         <Fld label="Invoice # *" value={f.invoiceNumber} onChange={(v:any)=>s("invoiceNumber",v)} placeholder="ex: INV-2026-001"/>
         <Fld label="Date facture *" type="date" value={f.date} onChange={(v:any)=>{s("date",v);if(!f.overrideDueDate)s("dueDate",autoDate(v));}}/>
         <Fld label="Montant (€) *" type="number" value={f.amount} onChange={(v:any)=>s("amount",v)} placeholder="0.00"/>
@@ -4562,6 +4566,7 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
 // N°/date/lignes/montant auto-detected via the same extraction engine as the
 // single-invoice import — still reviewable/editable per file before creating.
 function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,onClose}:any){
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
   const[items,setItems]=useState<any[]>([]);
   const[processing,setProcessing]=useState(false);
   const[globalError,setGlobalError]=useState("");
@@ -4678,7 +4683,7 @@ function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,o
                 <div style={{fontSize:11,color:C.amberDk}}>{it.error}</div>
               ):(
                 <>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                  <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr 1fr":"1fr 1fr 1fr",gap:8}}>
                     <div>
                       <label style={{fontSize:9,color:C.t3,fontWeight:700,textTransform:"uppercase"}}>N° facture</label>
                       <input value={it.invoiceNumber} onChange={(e:any)=>updateItem(it._id,"invoiceNumber",e.target.value)} placeholder="ex: INV-001"
@@ -4710,6 +4715,7 @@ function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,o
 
 function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
   const ps=payStatus(invoice);
   const[f,setF]=useState({date:payment?.date||todayStr(),amount:payment?.amount||ps.rem||"",method:payment?.method||"Virement bancaire",reference:payment?.reference||"",notes:payment?.notes||"",id:payment?.id});
   const s=(k:string,v:any)=>setF(p=>({...p,[k]:v}));
@@ -4727,7 +4733,7 @@ function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
           Échéance : {fmtD(invoice.dueDate)} · {ps.label}
         </div>
       )}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:14}}>
         <Fld label="Date du paiement *" type="date" value={f.date} onChange={(v:any)=>s("date",v)}/>
         <Fld label="Montant reçu (€) *" type="number" value={f.amount} onChange={(v:any)=>s("amount",v)} placeholder="0.00"/>
         <Sel label="Mode de paiement" value={f.method} onChange={(v:any)=>s("method",v)} options={PAY_METHODS}/>
@@ -4888,7 +4894,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{viewBucket==="archived"?"Aucune commande archivée":viewBucket==="awaiting_payment"?"Aucune commande en attente de paiement":viewBucket==="ready"?"Aucune commande prête pour l'instant":"Aucune commande trouvée"}</div>}
-            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onToggleInvoiceBilledNotDelivered={onToggleInvoiceBilledNotDelivered} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms}/>)}
+            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onToggleInvoiceBilledNotDelivered={onToggleInvoiceBilledNotDelivered} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms} isMobile={isMobile}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
                 onMouseEnter={(e:any)=>{e.currentTarget.style.background=C.blueL;e.currentTarget.style.borderColor=C.blue;}}
@@ -5037,7 +5043,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
 }
 
 // ─── ORDER CARD (extracted from CustomerPage) ───────────────────────────────────
-function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleInvoiceBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms}:any){
+function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleInvoiceBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms,isMobile=false}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   // Détecte un vrai glisser-sélectionner (la souris a bougé de façon
   // significative entre l'appui et le relâchement) pour ne PAS réouvrir/
@@ -5088,14 +5094,14 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           </span>
           {isExp&&<span style={{fontSize:9,fontWeight:800,color:C.blueDk,background:"#fff",padding:"2px 7px",borderRadius:99,letterSpacing:".04em",whiteSpace:"nowrap"}}>OUVERTE</span>}
         </div>
-        <div style={{flex:"1 1 420px",display:"grid",gridTemplateColumns:client==="CIMELEC"?"1.2fr 0.9fr 0.9fr 0.9fr 1.1fr 1fr 1fr":"1.4fr 1fr 1fr 1.2fr 1.1fr 1.1fr",gap:10,alignItems:"center",minWidth:0}}>
-          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>PO #</div><div style={{fontWeight:700,fontSize:13,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",userSelect:"text",cursor:"text"}}>{order.poNumber||"—"}<CopyBtn text={order.poNumber}/></div></div>
-          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>S/O</div><div style={{fontSize:12,color:C.t2,userSelect:"text",cursor:"text"}}>{order.soNumber||"—"}<CopyBtn text={order.soNumber}/></div></div>
-          {client==="CIMELEC"&&<div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>N° Commande</div><div style={{fontSize:12,color:C.purple,fontWeight:600}}>{order.orderNumber||"—"}</div></div>}
-          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Date</div><div style={{fontSize:12,color:C.t2}}>{fmtD(order.date)}</div></div>
-          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Montant PO</div><div style={{fontWeight:700,fontSize:13,color:C.blue}}>{fmt(order.amount)} €</div></div>
-          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Facturé / Reste</div><div style={{fontSize:12}}><span style={{color:C.teal,fontWeight:600}}>{fmt(invoiced)}</span><span style={{color:C.t3}}> / </span><span style={{color:open>0?C.amber:C.green,fontWeight:600}}>{fmt(open)}</span></div></div>
-          <div><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Encaissé</div><div style={{fontSize:12,color:C.green,fontWeight:600}}>{fmt(totalPaid)} €</div></div>
+        <div style={{flex:isMobile?"1 1 100%":"1 1 420px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":(client==="CIMELEC"?"1.2fr 0.9fr 0.9fr 0.9fr 1.1fr 1fr 1fr":"1.4fr 1fr 1fr 1.2fr 1.1fr 1.1fr"),gap:isMobile?"10px 12px":10,alignItems:"center",minWidth:0,width:"100%"}}>
+          <div style={{minWidth:0}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>PO #</div><div style={{fontWeight:700,fontSize:13,color:C.t1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",userSelect:"text",cursor:"text"}}>{order.poNumber||"—"}<CopyBtn text={order.poNumber}/></div></div>
+          <div style={{minWidth:0}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>S/O</div><div style={{fontSize:12,color:C.t2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",userSelect:"text",cursor:"text"}}>{order.soNumber||"—"}<CopyBtn text={order.soNumber}/></div></div>
+          {client==="CIMELEC"&&<div style={{minWidth:0}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>N° Commande</div><div style={{fontSize:12,color:C.purple,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{order.orderNumber||"—"}</div></div>}
+          <div style={{minWidth:0}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Date</div><div style={{fontSize:12,color:C.t2}}>{fmtD(order.date)}</div></div>
+          <div style={{minWidth:0}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Montant PO</div><div style={{fontWeight:700,fontSize:13,color:C.blue,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fmt(order.amount)} €</div></div>
+          <div style={{minWidth:0}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Facturé / Reste</div><div style={{fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:C.teal,fontWeight:600}}>{fmt(invoiced)}</span><span style={{color:C.t3}}> / </span><span style={{color:open>0?C.amber:C.green,fontWeight:600}}>{fmt(open)}</span></div></div>
+          <div style={{minWidth:0}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Encaissé</div><div style={{fontSize:12,color:C.green,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fmt(totalPaid)} €</div></div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",flexShrink:0}}>
           {isLate&&<Tag label="⏰ RETARD LIVR." c={C.red} bg={C.redL}/>}
@@ -5160,7 +5166,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
       </div>
       {isExp&&(
         <div style={{padding:18,borderTop:`1px solid ${C.b}`,background:"#FAFBFD"}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16,background:"#fff",padding:14,borderRadius:C.r,border:`1px solid ${C.b}`,fontSize:12}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":"repeat(4,1fr)",gap:12,marginBottom:16,background:"#fff",padding:14,borderRadius:C.r,border:`1px solid ${C.b}`,fontSize:12}}>
             <div><span style={{color:C.t3,fontSize:11}}>Mode livraison</span><br/><strong>{order.deliveryMode||"—"}</strong></div>
             <div><span style={{color:C.t3,fontSize:11}}>Date prévue</span><br/><strong style={{color:isLate?C.red:"inherit"}}>{fmtD(order.expectedDate)}{isLate?" ⚠":""}</strong></div>
             <div><span style={{color:C.t3,fontSize:11}}>Nb factures</span><br/><strong>{(order.invoices||[]).length}</strong></div>
@@ -5384,9 +5390,9 @@ function PoLinesPanel({order,onSave,canEdit}:any){
       {draftLines?(
         <div style={{background:C.blueL,border:`1px solid ${C.blue}`,borderRadius:C.rSm,padding:12}}>
           <div style={{fontSize:11,color:C.blueDk,marginBottom:10}}>{importMsg}</div>
-          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10,overflowX:"auto"}}>
             {draftLines.map((l:any,i:number)=>(
-              <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center"}}>
+              <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center",minWidth:400}}>
                 <input value={l.pn} onChange={(e:any)=>updateDraft(i,"pn",e.target.value)} placeholder="PN" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,fontFamily:"monospace",width:"100%",boxSizing:"border-box"}}/>
                 <input value={l.desc} onChange={(e:any)=>updateDraft(i,"desc",e.target.value)} placeholder="Description" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
                 <input type="number" value={l.qty} onChange={(e:any)=>updateDraft(i,"qty",e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
@@ -5641,10 +5647,10 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
               </div>
             </div>
           )}
-          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10,overflowX:"auto"}}>
             {draftLines.map((l:any,i:number)=>(
               <div key={i}>
-                <div style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center"}}>
+                <div style={{display:"grid",gridTemplateColumns:"110px 1fr 55px 85px 26px",gap:6,alignItems:"center",minWidth:400}}>
                   <input value={l.pn} onChange={(e:any)=>updateDraft(i,"pn",e.target.value)} placeholder="PN" style={{padding:"5px 7px",border:`1px solid ${l.orderPn?C.blue:C.b}`,borderRadius:4,fontSize:11,fontFamily:"monospace",width:"100%",boxSizing:"border-box"}}/>
                   <input value={l.desc} onChange={(e:any)=>updateDraft(i,"desc",e.target.value)} placeholder="Description" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
                   <input type="number" value={l.qtyInvoiced} onChange={(e:any)=>updateDraft(i,"qtyInvoiced",e.target.value)} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,width:"100%",boxSizing:"border-box"}}/>
@@ -5716,9 +5722,9 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
               <div style={{marginTop:12,background:C.amberL,border:`1px solid ${C.amber}`,borderRadius:C.rSm,padding:10}}>
                 <div style={{fontSize:11,fontWeight:700,color:C.amberDk,marginBottom:6}}><i className="ti ti-alert-triangle" style={{fontSize:12}} aria-hidden="true"/> {orphans.length} ligne{orphans.length>1?"s":""} facturée{orphans.length>1?"s":""} sans article commandé correspondant</div>
                 <div style={{fontSize:10,color:C.t2,marginBottom:8}}>Ces PN ne figurent pas dans le bon de commande — s'il s'agit d'une substitution, associe-les à l'article d'origine ci-dessous. Sinon, ce sont de nouveaux articles hors PO.</div>
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <div style={{display:"flex",flexDirection:"column",gap:6,overflowX:"auto"}}>
                   {orphans.map((l:any,i:number)=>(
-                    <div key={i} style={{display:"grid",gridTemplateColumns:"120px 1fr 60px 1fr",gap:6,alignItems:"center",background:"#fff",borderRadius:4,padding:6}}>
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"120px 1fr 60px 1fr",gap:6,alignItems:"center",background:"#fff",borderRadius:4,padding:6,minWidth:420}}>
                       <span style={{fontFamily:"monospace",color:C.blue,fontWeight:700,fontSize:11}}>{l.pn}</span>
                       <span style={{fontSize:10,color:C.t2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.desc||"—"}</span>
                       <span style={{fontSize:10,color:C.t3}}>Qté {l.qtyInvoiced}</span>
@@ -7537,8 +7543,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
             </div>
             {openOrdersList.length===0
               ?<div style={{padding:"16px 18px",fontSize:12,color:C.t3}}>No open orders disponible</div>
-              :<div style={{maxHeight:320,overflowY:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              :<div style={{maxHeight:320,overflowY:"auto",overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:640}}>
                   <thead>
                     <tr style={{background:"#F8FAFC",borderBottom:`1px solid ${C.b}`}}>
                       <th style={{padding:"8px 14px",textAlign:"left",color:C.t3,fontWeight:500,fontSize:11,width:40}}/>
@@ -8106,6 +8112,7 @@ const extractCustomer=(rows:any[][],headerIdx:number):string=>{
 
 // ─── MANUAL PRODUCT ENTRY ────────────────────────────────────────────────────
 function ManualProductEntry({products,saveProducts}:any){
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
   const[pn,setPn]=useState("");
   const[desc,setDesc]=useState("");
   const[price,setPrice]=useState("");
@@ -8165,7 +8172,7 @@ function ManualProductEntry({products,saveProducts}:any){
             {msg}
           </div>
         )}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr 1fr 1fr 1fr",gap:10,alignItems:"end"}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr 1fr":"1fr 2fr 1fr 1fr 1fr",gap:10,alignItems:"end"}}>
           {/* PN */}
           <div>
             <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>
@@ -8253,6 +8260,7 @@ function ManualProductEntry({products,saveProducts}:any){
 
 // ─── CATALOGUE EDIT MODAL ────────────────────────────────────────────────────
 function CatEditModal({product,allProducts,onSave,onClose}:any){
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
   const[pn,setPn]=useState(product?.pn||"");
   const[desc,setDesc]=useState(product?.description||"");
   const[prices,setPrices]=useState<any[]>(product?.prices||[]);
@@ -8297,7 +8305,7 @@ function CatEditModal({product,allProducts,onSave,onClose}:any){
         {/* Body */}
         <div style={{overflowY:"auto",flex:1,padding:"18px 22px",display:"flex",flexDirection:"column",gap:14}}>
           {/* PN + Description */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 2fr",gap:10}}>
             <div>
               <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Part Number</label>
               <input value={pn} onChange={e=>setPn(e.target.value)}
@@ -8354,7 +8362,7 @@ function CatEditModal({product,allProducts,onSave,onClose}:any){
               {prices.length===0&&<div style={{color:C.t3,fontSize:12,padding:"8px 0"}}>Aucun prix enregistré</div>}
             </div>
             {/* Add new price */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 130px 120px 32px",gap:6,alignItems:"end"}}>
+            <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr 1fr":"1fr 130px 120px 32px",gap:6,alignItems:"end"}}>
               <div>
                 <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>New prix (€)</label>
                 <input value={newPrice} onChange={e=>setNewPrice(e.target.value)} type="number" step="0.01" placeholder="ex: 1250.00"
@@ -10343,7 +10351,8 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
                           <div style={{fontSize:11,fontWeight:600,color:C.t3,textTransform:"uppercase" as const,letterSpacing:".05em",marginBottom:8}}>
                             {matchedLines.length} ligne{matchedLines.length>1?"s":""} correspondante{matchedLines.length>1?"s":""}
                           </div>
-                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                          <div style={{overflowX:"auto"}}>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:480}}>
                             <thead><tr style={{background:"#F8FAFC"}}>
                               {["PN","Désignation","Qté","Prix U.","Total"].map(h=>(
                                 <th key={h} style={{padding:"5px 10px",textAlign:"left",color:C.t3,fontWeight:600,fontSize:10,textTransform:"uppercase" as const,borderBottom:`1px solid ${C.b}`}}>{h}</th>
@@ -10367,6 +10376,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
                               ))}
                             </tbody>
                           </table>
+                          </div>
                         </div>
                       )}
                       {/* Si match sur client/ref seulement, montrer toutes les lignes */}
@@ -14743,6 +14753,7 @@ function ClientScoreMotifsModal({client,breakdown,savedNotes,onSave,onClose}:any
 }
 
 function TargetsModal({clients,targets,onSave,onClose,year}:any){
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
   const[selYear,setSelYear]=useState(year||new Date().getFullYear());
   const[draft,setDraft]=useState<any>(()=>{
     const y=targets?.[selYear]||{global:{po:"",inv:""},clients:{}};
@@ -14790,7 +14801,7 @@ function TargetsModal({clients,targets,onSave,onClose,year}:any){
 
       <div style={{background:C.blueL,border:`1px solid ${C.blue}`,borderRadius:C.rSm,padding:"12px 14px",marginBottom:14}}>
         <div style={{fontSize:11,fontWeight:700,color:C.blueDk,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><i className="ti ti-world" style={{fontSize:13}} aria-hidden="true"/> Objectif GLOBAL {selYear}</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:10}}>
           <div>
             <label style={{fontSize:10,color:C.t3,fontWeight:700,textTransform:"uppercase"}}>Cible Open Orders (€)</label>
             <input type="number" value={draft.global.po} onChange={(e:any)=>setDraft((p:any)=>({...p,global:{...p.global,po:e.target.value}}))} placeholder="ex: 2000000"
@@ -14836,6 +14847,7 @@ function TargetsModal({clients,targets,onSave,onClose,year}:any){
 }
 
 function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
+  const isMobileV=typeof window!=="undefined"&&window.innerWidth<768;
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[rtype,setRtype]=useState("open_orders");
   const[fromDate,setFromDate]=useState(new Date().getFullYear()+"-01-01");
@@ -15601,7 +15613,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
   return(
     <Modal title={tr("report_title")} sub={tr("report_sub")} width={560} onClose={onClose}
       footer={<><button onClick={onClose}>Annuler</button><Btn icon="ti-file-type-pdf" label="Générer PDF" onClick={generate} variant="primary"/><Btn icon={xlsBusy?"ti-loader-2":"ti-file-spreadsheet"} label={xlsBusy?"Génération…":"Générer Excel"} onClick={generateExcel} variant="success"/></>}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:18}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr 1fr":"1fr 1fr 1fr",gap:10,marginBottom:18}}>
         {REPORT_TYPES.map(rt=>(
           <div key={rt.id} onClick={()=>setRtype(rt.id)} style={{cursor:"pointer",border:`2px solid ${rtype===rt.id?rt.color:C.b}`,borderRadius:C.r,padding:"12px 14px",background:rtype===rt.id?rt.color+"10":"#fff",transition:"all .15s"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
@@ -15626,7 +15638,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
           <div style={{fontSize:10.5,color:C.t3,marginTop:6}}>« Prêtes » n'est pas affecté par cette fenêtre — c'est un état actuel (tout ce qui reste à livrer est déjà disponible).</div>
         </div>
       ):(
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:14,marginBottom:14}}>
           <Fld label="Date de début" type="date" value={fromDate} onChange={setFromDate}/>
           <Fld label="Date de fin" type="date" value={toDate} onChange={setToDate}/>
         </div>
