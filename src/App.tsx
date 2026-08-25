@@ -2571,7 +2571,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       </>)}
       {/* KPI row */}
       {tab==="overview"&&(<>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":isAdmin?"repeat(4,1fr)":"repeat(3,1fr)",gap:isMobile?10:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":isAdmin?"repeat(4,1fr)":"repeat(3,1fr)",gap:isMobile?10:14}}>
         <Kpi icon="ti-building-store" label={tr("kpi_clients")} val={clients.length} sub={`${clients.filter((c:string)=>(data?.[c]||[]).length>0).length} ${tr("kpi_active")}`} c={C.purple} bg={C.purpleL}/>
         <Kpi icon="ti-clipboard-list" label={tr("kpi_orders")} val={nbCmds} sub={`${noInv.length} ${tr("kpi_no_invoice")}`} c={C.blue} bg={C.blueL}/>
         {isAdmin&&<Kpi icon="ti-file-invoice" label={tr("kpi_po")} val={`${fmtK(totPO)} €`} sub={tr("commanded")} c={C.t2} bg="#F1F5F9"/>}
@@ -3283,7 +3283,7 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
       </div>
 
       {/* ── KPI STRIP ── */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":(isAdmin?"repeat(5,1fr)":"repeat(4,1fr)"),gap:isMobile?10:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":(isAdmin?"repeat(5,1fr)":"repeat(4,1fr)"),gap:isMobile?10:14}}>
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Total PO {selYear}</div>
           <div style={{fontSize:22,fontWeight:800,color:C.blue,letterSpacing:"-.02em"}}>{fmtK(totPO)} €</div>
@@ -3870,7 +3870,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
         const poPct=clientTarget.po>0?Math.min(100,stats.openOrders/clientTarget.po*100):null;
         const invPct=clientTarget.inv>0?Math.min(100,stats.totalInv/clientTarget.inv*100):null;
         return(
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:isMobile?8:12}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":"repeat(6,1fr)",gap:isMobile?8:12}}>
             <Kpi icon="ti-file-invoice"    label="PO total"           val={`${fmtK(stats.totalPO)} €`}    sub="Commandé"                                   c={C.blue}   bg={C.blueL}/>
             <Kpi icon="ti-receipt"         label="Facturé"            val={`${fmtK(stats.totalInv)} €`}   sub={isAdmin?(invPct!==null?`🎯 ${invPct.toFixed(0)}% de l'objectif (${fmtK(clientTarget.inv)} €)`:`${txFact.toFixed(1)}% du PO`):""}              c={C.teal}   bg={C.tealL}/>
             <Kpi icon="ti-coin"            label="Encaissé"           val={`${fmtK(stats.totalPaid)} €`}  sub={isAdmin?`${txPay.toFixed(1)}% des factures`:""}         c={C.green}  bg={C.greenL}/>
@@ -3949,15 +3949,15 @@ function SCustomerBtn({label,active,open,onClick,onEdit,onDelete}:any){
 
 function Kpi({icon,label,val,sub,c,bg}:any){
   return(
-    <div style={{background:"#fff",borderRadius:C.r,boxShadow:C.sh,padding:"16px 18px",border:`1px solid ${C.b}`}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-        <span style={{fontSize:11,color:C.t3,fontWeight:500,textTransform:"uppercase",letterSpacing:".05em"}}>{label}</span>
-        <div style={{width:30,height:30,borderRadius:8,background:bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div style={{background:"#fff",borderRadius:C.r,boxShadow:C.sh,padding:"16px 18px",border:`1px solid ${C.b}`,minWidth:0,boxSizing:"border-box",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:6}}>
+        <span style={{fontSize:11,color:C.t3,fontWeight:500,textTransform:"uppercase",letterSpacing:".05em",minWidth:0,overflowWrap:"break-word"}}>{label}</span>
+        <div style={{width:30,height:30,borderRadius:8,background:bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
           <i className={`ti ${icon}`} style={{fontSize:15,color:c}} aria-hidden="true"/>
         </div>
       </div>
-      <div style={{fontSize:18,fontWeight:700,color:C.t1,marginBottom:3}}>{val}</div>
-      <div style={{fontSize:11,color:C.t3}}>{sub}</div>
+      <div style={{fontSize:18,fontWeight:700,color:C.t1,marginBottom:3,overflowWrap:"break-word"}}>{val}</div>
+      <div style={{fontSize:11,color:C.t3,overflowWrap:"break-word"}}>{sub}</div>
     </div>
   );
 }
@@ -4683,7 +4683,7 @@ function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,o
                 <div style={{fontSize:11,color:C.amberDk}}>{it.error}</div>
               ):(
                 <>
-                  <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr 1fr":"1fr 1fr 1fr",gap:8}}>
+                  <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr) minmax(0,1fr)":"1fr 1fr 1fr",gap:8}}>
                     <div>
                       <label style={{fontSize:9,color:C.t3,fontWeight:700,textTransform:"uppercase"}}>N° facture</label>
                       <input value={it.invoiceNumber} onChange={(e:any)=>updateItem(it._id,"invoiceNumber",e.target.value)} placeholder="ex: INV-001"
@@ -8172,7 +8172,7 @@ function ManualProductEntry({products,saveProducts}:any){
             {msg}
           </div>
         )}
-        <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr 1fr":"1fr 2fr 1fr 1fr 1fr",gap:10,alignItems:"end"}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr) minmax(0,1fr)":"1fr 2fr 1fr 1fr 1fr",gap:10,alignItems:"end"}}>
           {/* PN */}
           <div>
             <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>
@@ -8362,7 +8362,7 @@ function CatEditModal({product,allProducts,onSave,onClose}:any){
               {prices.length===0&&<div style={{color:C.t3,fontSize:12,padding:"8px 0"}}>Aucun prix enregistré</div>}
             </div>
             {/* Add new price */}
-            <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr 1fr":"1fr 130px 120px 32px",gap:6,alignItems:"end"}}>
+            <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr) minmax(0,1fr)":"1fr 130px 120px 32px",gap:6,alignItems:"end"}}>
               <div>
                 <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>New prix (€)</label>
                 <input value={newPrice} onChange={e=>setNewPrice(e.target.value)} type="number" step="0.01" placeholder="ex: 1250.00"
@@ -11084,7 +11084,7 @@ function DocumentsPage({isMobile}:any){
           {/* Category cards */}
           <div>
             <div style={{fontSize:11,fontWeight:700,color:C.t3,textTransform:"uppercase",letterSpacing:".08em",marginBottom:12}}>Parcourir par catégorie</div>
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":"repeat(4,1fr)",gap:10}}>
               {CATEGORIES.filter(c=>c.id!=="all").map(cat=>{
                 const cs=getCatStyle(cat.id);
                 const count=catCounts[cat.id]||0;
@@ -12196,7 +12196,7 @@ function ProjectsPage({isMobile}:any){
       )}
 
       {/* KPI row */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":"repeat(3,1fr)",gap:10}}>
         <ProjectKpi icon="ti-briefcase" label="En cours" value={ongoingP.length} color={C.blue}/>
         <ProjectKpi icon="ti-currency-euro" label="Pipeline total" value={fmtK(pipelineTotal)+" €"} color={C.teal} delta={pipelineDelta}/>
         <ProjectKpi icon="ti-chart-donut" label="Pipeline pondéré" value={fmtK(pipelineWeighted)+" €"} color={C.purple} sub={`chance moy. ${Math.round(avgChance)}%`} delta={weightedDelta}/>
@@ -12557,7 +12557,7 @@ function ProjectsPage({isMobile}:any){
                 {expanded&&(
                   <div style={{padding:"0 16px 16px",borderTop:`1px solid ${C.b}`}}>
                     {p.description&&<p style={{fontSize:12.5,color:C.t2,margin:"12px 0"}}>{p.description}</p>}
-                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,fontSize:11.5,marginBottom:12}}>
+                    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":"repeat(4,1fr)",gap:10,fontSize:11.5,marginBottom:12}}>
                       <div><div style={{color:C.t3}}>Date de traitement</div><div style={{fontWeight:700,color:C.t1}}>{fmtD(p.processingDate)}</div></div>
                       <div><div style={{color:C.t3}}>Enregistré le</div><div style={{fontWeight:700,color:C.t1}}>{new Date(p.createdAt).toLocaleDateString("fr-FR")}</div></div>
                       <div><div style={{color:C.t3}}>Dernière modification</div><div style={{fontWeight:700,color:C.t1}}>{new Date(p.updatedAt).toLocaleDateString("fr-FR")}</div></div>
@@ -14522,7 +14522,7 @@ function TresoreriePage({getAllOrders,clients,lang,isMobile}:any){
       </div>
 
       {/* KPI strip */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,minmax(0,1fr))":"repeat(4,1fr)",gap:14}}>
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"16px 18px"}}>
           <div style={{fontSize:10,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6}}>Total à encaisser</div>
           <div style={{fontSize:20,fontWeight:800,color:C.blue}}>{fmtK(totalExpected)} €</div>
@@ -15613,7 +15613,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
   return(
     <Modal title={tr("report_title")} sub={tr("report_sub")} width={560} onClose={onClose}
       footer={<><button onClick={onClose}>Annuler</button><Btn icon="ti-file-type-pdf" label="Générer PDF" onClick={generate} variant="primary"/><Btn icon={xlsBusy?"ti-loader-2":"ti-file-spreadsheet"} label={xlsBusy?"Génération…":"Générer Excel"} onClick={generateExcel} variant="success"/></>}>
-      <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr 1fr":"1fr 1fr 1fr",gap:10,marginBottom:18}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr) minmax(0,1fr)":"1fr 1fr 1fr",gap:10,marginBottom:18}}>
         {REPORT_TYPES.map(rt=>(
           <div key={rt.id} onClick={()=>setRtype(rt.id)} style={{cursor:"pointer",border:`2px solid ${rtype===rt.id?rt.color:C.b}`,borderRadius:C.r,padding:"12px 14px",background:rtype===rt.id?rt.color+"10":"#fff",transition:"all .15s"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
