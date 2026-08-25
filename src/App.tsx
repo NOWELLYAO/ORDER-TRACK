@@ -4758,11 +4758,42 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
   // ── lot scope (only affects the "Commandes" tab, and cascades to the
   // "Factures"/"Paiements" tabs so the three views stay consistent) ──
   const bucketOf=(o:any)=>getOrderBucket(o);
+  // ── Épinglage d'une commande en cours de modification ─────────────────
+  // Une commande change automatiquement d'onglet (Actives/Prêtes/En attente
+  // paiement/Archivées) dès que son état réel change — par ex. dès qu'on lui
+  // ajoute une facture. Sans ce garde-fou, une commande qu'on est encore en
+  // train de développer/modifier (ex : on vient d'ajouter une facture et on
+  // veut enchaîner avec le paiement) disparaît de l'onglet où on travaillait
+  // dessus, obligeant à aller la rechercher ailleurs. Tant que la commande
+  // reste développée (accordéon ouvert), on la garde affichée dans l'onglet
+  // où elle était au moment de l'ouverture — elle ne bascule réellement vers
+  // son nouvel onglet qu'une fois repliée (modification "validée").
+  const expandedOrderId=Object.keys(exp||{}).find(id=>exp[id]);
+  const[pinnedOrder,setPinnedOrder]=useState<{id:string,bucket:string}|null>(null);
+  useEffect(()=>{
+    if(expandedOrderId){
+      const o=orders.find((x:any)=>x.id===expandedOrderId);
+      if(o)setPinnedOrder(prev=>prev&&prev.id===expandedOrderId?prev:{id:expandedOrderId,bucket:bucketOf(o)});
+    } else {
+      setPinnedOrder(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[expandedOrderId]);
+  const isPinnedInBucket=(id:string,bucket:string)=>!!pinnedOrder&&pinnedOrder.id===id&&pinnedOrder.bucket===bucket;
+  const BUCKET_LABEL:any={ready:"Prêtes",active:"Actives",awaiting_payment:"En attente paiement",archived:"Archivées"};
+  // Libellé affiché sur la carte quand une commande épinglée a réellement
+  // changé de catégorie pendant qu'on la modifiait — explique pourquoi elle
+  // n'a pas encore bougé, plutôt que de laisser croire à un bug d'affichage.
+  const pendingBucketLabel=(o:any)=>{
+    if(!pinnedOrder||pinnedOrder.id!==o.id)return null;
+    const real=bucketOf(o);
+    return real!==pinnedOrder.bucket?BUCKET_LABEL[real]:null;
+  };
   const nbReady=orders.filter((o:any)=>bucketOf(o)==="ready").length;
   const nbAwaitingPay=orders.filter((o:any)=>bucketOf(o)==="awaiting_payment").length;
   const nbArchived=orders.filter((o:any)=>bucketOf(o)==="archived").length;
   const archivableOrders=orders.filter((o:any)=>isOrderArchivable(o));
-  const scopedOrders=orders.filter((o:any)=>bucketOf(o)===viewBucket);
+  const scopedOrders=orders.filter((o:any)=>bucketOf(o)===viewBucket||isPinnedInBucket(o.id,viewBucket));
   const archiveAllReady=()=>{
     if(!onToggleArchive||archivableOrders.length===0)return;
     if(!window.confirm(`Archiver ${archivableOrders.length} commande${archivableOrders.length>1?"s":""} "Full" et soldée${archivableOrders.length>1?"s":""} ?`))return;
@@ -4790,7 +4821,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
   const sorted=[...scopedOrders].sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
   const allInvoices=orders
     .flatMap((o:any)=>(o.invoices||[]).map((i:any)=>({...i,_order:o,_po:o.poNumber,_oid:o.id,_effectiveBucket:invoiceEffectiveBucket(o,i)})))
-    .filter((i:any)=>i._effectiveBucket===viewBucket)
+    .filter((i:any)=>i._effectiveBucket===viewBucket||isPinnedInBucket(i._oid,viewBucket))
     .sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
   const allPayments=allInvoices.flatMap((i:any)=>(i.payments||[]).map((p:any)=>({...p,_inv:i,_po:i._po,_invNum:i.invoiceNumber,_oid:i._oid})))
     .sort((a:any,b:any)=>new Date(b.date||"1970").getTime()-new Date(a.date||"1970").getTime());
@@ -4896,7 +4927,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{viewBucket==="archived"?"Aucune commande archivée":viewBucket==="awaiting_payment"?"Aucune commande en attente de paiement":viewBucket==="ready"?"Aucune commande prête pour l'instant":"Aucune commande trouvée"}</div>}
-            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onToggleInvoiceBilledNotDelivered={onToggleInvoiceBilledNotDelivered} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms} isMobile={isMobile}/>)}
+            {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onToggleInvoiceBilledNotDelivered={onToggleInvoiceBilledNotDelivered} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms} isMobile={isMobile} pendingBucketLabel={pendingBucketLabel(order)}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
                 onMouseEnter={(e:any)=>{e.currentTarget.style.background=C.blueL;e.currentTarget.style.borderColor=C.blue;}}
@@ -5045,7 +5076,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
 }
 
 // ─── ORDER CARD (extracted from CustomerPage) ───────────────────────────────────
-function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleInvoiceBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms,isMobile=false}:any){
+function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleInvoiceBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,lang="fr",onSaveOrder,perms,isMobile=false,pendingBucketLabel=null}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   // Détecte un vrai glisser-sélectionner (la souris a bougé de façon
   // significative entre l'appui et le relâchement) pour ne PAS réouvrir/
@@ -5106,6 +5137,10 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
           <div style={{minWidth:0}}><div style={{fontSize:10,color:C.t3,marginBottom:2,textTransform:"uppercase",letterSpacing:".04em"}}>Encaissé</div><div style={{fontSize:12,color:C.green,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fmt(totalPaid)} €</div></div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",flexShrink:0}}>
+          {pendingBucketLabel&&<span title="Cette commande a changé de statut mais reste affichée ici tant que tu la modifies — elle basculera vers son nouvel onglet une fois repliée."
+            style={{fontSize:9.5,fontWeight:700,color:C.blueDk,background:C.blueL,padding:"2px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",cursor:"help"}}>
+            <i className="ti ti-pin" style={{fontSize:9}} aria-hidden="true"/>Ira vers « {pendingBucketLabel} »
+          </span>}
           {isLate&&<Tag label="⏰ RETARD LIVR." c={C.red} bg={C.redL}/>}
           {nbEchues>0&&<Tag label={`⚠ ${nbEchues} ÉCHU${nbEchues>1?"ES":"E"} · ${fmtK(amtEchues)} €`} c={C.redDk} bg={C.redL}/>}
           {nbEchues===0&&nbUpcoming>0&&<Tag label={`🔔 ${nbUpcoming} ÉCHÉANCE${nbUpcoming>1?"S":""} PROCHE${nbUpcoming>1?"S":""}`} c={C.amberDk} bg={C.amberL}/>}
@@ -5143,9 +5178,9 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
                 cov.map((l:any)=>({pn:l.pn,desc:l.desc,qty:l.qtyOrdered,unitPrice:l.unitPrice})),
                 cov.map((l:any)=>({pn:l.pn,desc:l.desc,qty:l.qtyInvoiced,unitPrice:l.unitPrice})));
             }}/>
-            {perms?.canEdit&&<IBtn icon="ti-plus" title="Ajouter facture" c={C.teal} bg={C.tealL} onClick={()=>onAddInv(order)}/>}
-            {perms?.canEdit&&onAddBulkInv&&<IBtn icon="ti-files" title="Importer plusieurs factures" c={C.purple} bg={C.purpleL} onClick={()=>onAddBulkInv(order)}/>}
-            {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>onEditOrder(order)}/>}
+            {perms?.canEdit&&<IBtn icon="ti-plus" title="Ajouter facture" c={C.teal} bg={C.tealL} onClick={()=>{if(!exp[order.id])tgl(order.id);onAddInv(order);}}/>}
+            {perms?.canEdit&&onAddBulkInv&&<IBtn icon="ti-files" title="Importer plusieurs factures" c={C.purple} bg={C.purpleL} onClick={()=>{if(!exp[order.id])tgl(order.id);onAddBulkInv(order);}}/>}
+            {perms?.canEdit&&<IBtn icon="ti-edit" title="Modifier" c={C.blue} bg={C.blueL} onClick={()=>{if(!exp[order.id])tgl(order.id);onEditOrder(order);}}/>}
             {perms?.canEdit&&onToggleArchive&&(order.archived
               ?<IBtn icon="ti-archive-off" title="Désarchiver" c={C.t2} bg="#F1F5F9" onClick={()=>onToggleArchive(order.id)}/>
               :(()=>{
