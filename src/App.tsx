@@ -4835,7 +4835,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
 
       {/* ── TAB BAR + SEARCH ── */}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}}>
-        <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh}}>
+        <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflowX:isMobile?"auto":"hidden",overflowY:"hidden",boxShadow:C.sh,maxWidth:"100%",WebkitOverflowScrolling:"touch"}}>
           {TABS.map(t=>(
             <button key={t.key} onClick={()=>{setTab(t.key as any);setSearch("");setShowAll(false);}}
               style={{display:"flex",alignItems:"center",gap:6,padding:"9px 16px",border:"none",borderRight:`1px solid ${C.b}`,
@@ -4851,7 +4851,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
         </div>
         {/* Toggle par lot : Prêtes / Actives / En attente de paiement / Archivées */}
         {onToggleArchive&&(
-          <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",boxShadow:C.sh,flexShrink:0}}>
+          <div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflowX:isMobile?"auto":"hidden",overflowY:"hidden",boxShadow:C.sh,flexShrink:0,maxWidth:"100%",WebkitOverflowScrolling:"touch"}}>
             <button onClick={()=>{setViewBucket("active");setSearch("");setShowAll(false);}}
               style={{padding:"9px 14px",border:"none",borderRight:`1px solid ${C.b}`,background:viewBucket==="active"?"#0D1B2A":"transparent",color:viewBucket==="active"?"#fff":C.t2,fontWeight:viewBucket==="active"?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
               Actives
