@@ -45,6 +45,22 @@ const cloudLoad = async (): Promise<any|null> => {
   } catch(e) { console.warn("[CloudLoad] Exception:",e); return null; }
 };
 
+// Vérif "légère" utilisée par le polling multi-appareils : ne récupère QUE
+// l'horodatage (quelques octets), jamais le payload complet (qui peut
+// peser plusieurs centaines de Ko — toute la base clients/commandes/
+// factures/paiements). Évite de retélécharger tout le jeu de données
+// toutes les 15s sur chaque appareil ouvert alors que rien n'a changé,
+// ce qui épuisait le quota gratuit de bande passante (egress) Supabase.
+const cloudCheckUpdatedAt = async (): Promise<string|null> => {
+  try {
+    const url=SUPABASE_URL+"/rest/v1/ordertrack_data?apikey="+SUPABASE_KEY+"&user_key=eq."+USER_KEY+"&select=updated_at&limit=1";
+    const res = await fetch(url, { headers: SB_HEADERS });
+    if(!res.ok) return null;
+    const rows = await res.json();
+    return rows?.[0]?.updated_at || null;
+  } catch(e) { console.warn("[CloudCheck] Exception:",e); return null; }
+};
+
 const cloudSave = async (payload: any): Promise<boolean> => {
   const K = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eHJ4bnl4Zm1nY2R6eGNpZ2R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMTg5MzIsImV4cCI6MjA5NTc5NDkzMn0.wF2mt8BK1KGk-VyK4zZQvFGJCxCp8UGDPdgT_8DHc6o";
   const B = "https://vxxrxnyxfmgcdzxcigdw.supabase.co";
@@ -1492,12 +1508,23 @@ export default function App(){
     return c;
   };
 
-  // ── Auto-sync: poll Supabase every 15s using updated_at timestamp ───────────
+  // ── Auto-sync: poll Supabase every 20s, but only download the FULL
+  // dataset when a lightweight timestamp check confirms something actually
+  // changed on another device. Avant ce correctif, le payload complet (tout
+  // le cloud — clients/commandes/factures/paiements) était retéléchargé
+  // toutes les 15s sur CHAQUE appareil ouvert, même sans aucun changement —
+  // ce qui épuisait rapidement le quota gratuit de bande passante Supabase
+  // avec 2-3 appareils ouverts plusieurs heures par jour.
   const lastCloudUpdate=React.useRef<string>("");
   const [updateAlert,setUpdateAlert]=useState<string|null>(null);
   useEffect(()=>{
     const interval=setInterval(async()=>{
       try{
+        const remoteUpdatedAt=await cloudCheckUpdatedAt();
+        if(!remoteUpdatedAt)return;
+        if(lastCloudUpdate.current&&new Date(remoteUpdatedAt)<=new Date(lastCloudUpdate.current))return;
+        // Un changement est détecté — SEULEMENT dans ce cas on télécharge le
+        // payload complet.
         const result=await cloudLoad();
         if(!result?.payload||!result.updatedAt)return;
         if(result.updatedAt&&lastCloudUpdate.current&&new Date(result.updatedAt)<=new Date(lastCloudUpdate.current))return;
@@ -1519,7 +1546,7 @@ export default function App(){
           setTimeout(()=>setUpdateAlert(null),8000);
         }
       }catch(e){console.warn("[Poll]",e);}
-    },15000);
+    },20000);
     return()=>clearInterval(interval);
   },[]);
 
