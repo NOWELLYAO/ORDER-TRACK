@@ -3901,7 +3901,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
       </Card>
 
       {/* Commandes */}
-      <OrderTabsPanel client={client} orders={orders} exp={exp} tgl={tgl}
+      <OrderTabsPanel client={client} orders={orders} exp={exp} tgl={tgl} isMobile={isMobile}
         onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder}
         onToggleArchive={onToggleArchive}
         onToggleInvoiceBilledNotDelivered={onToggleInvoiceBilledNotDelivered}
@@ -4745,7 +4745,7 @@ function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
 }
 
 // ─── ORDER TABS PANEL ────────────────────────────────────────────────────────
-function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleInvoiceBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms}:any){
+function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDelOrder,onToggleArchive,onToggleInvoiceBilledNotDelivered,onAddPay,onEditPay,onDelPay,onEditInv,onDelInv,focusOrderId,onClearFocus,onAdd,lang="fr",onSaveOrder,perms,isMobile=false}:any){
   const tr=(k:string,v?:any)=>t(lang as Lang,k,v);
   const[tab,setTab]=useState<"orders"|"invoices"|"payments">("orders");
   const[search,setSearch]=useState("");
