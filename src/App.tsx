@@ -1178,7 +1178,7 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
   );
 }
 
-function AdminPage({session,clients,configs,getConfig,getAllOrders,setModal,delCustomer,appSettings,saveAppSettings,lang,isMobile}:any){
+function AdminPage({session,clients,configs,getConfig,getAllOrders,setModal,delCustomer,appSettings,saveAppSettings,lang,isMobile,data,onRestoreBackup}:any){
   const[tab,setTab]=useState<"users"|"clients"|"settings"|"logs">("users");
   const TABS=[
     {id:"users",label:"Utilisateurs & accès",icon:"ti-users"},
@@ -1195,6 +1195,51 @@ function AdminPage({session,clients,configs,getConfig,getAllOrders,setModal,delC
     setTimeout(()=>setSettingsMsg(""),2000);
   };
   const allOrders=getAllOrders()||[];
+  // ── Sauvegarde locale (export / import JSON) — même principe que
+  // Patrimoine-Pro : un filet de sécurité indépendant de la synchro cloud
+  // automatique, et un moyen simple de transférer les données à la main
+  // (utile en particulier si l'app doit être utilisée hors ligne).
+  const backupFileRef=useRef<HTMLInputElement>(null);
+  const[backupMsg,setBackupMsg]=useState<{ok:boolean,text:string}|null>(null);
+  const downloadBackup=()=>{
+    const payload={clients,orders:data,configs,exportedAt:new Date().toISOString()};
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download=`ordertrack-sauvegarde-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setBackupMsg({ok:true,text:"✓ Sauvegarde téléchargée."});
+    setTimeout(()=>setBackupMsg(null),4000);
+  };
+  const onBackupFileSelected=(e:any)=>{
+    const file=e.target.files?.[0];
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{
+        const json=JSON.parse(reader.result as string);
+        if(!json||typeof json!=="object"||!json.orders||!json.clients){
+          setBackupMsg({ok:false,text:"Fichier invalide — ce n'est pas une sauvegarde OrderTrack reconnaissable (.json)."});
+          return;
+        }
+        const nbClients=Array.isArray(json.clients)?json.clients.length:0;
+        const nbOrders=Object.values(json.orders||{}).reduce((s:number,arr:any)=>s+(Array.isArray(arr)?arr.length:0),0);
+        if(!window.confirm(`Restaurer cette sauvegarde va REMPLACER toutes les données actuelles (${nbClients} client(s), ${nbOrders} commande(s) dans le fichier) — sur cet appareil ET sur le cloud, donc pour tout le monde dès la prochaine synchro des autres appareils.\n\nCette action n'est pas réversible directement (tu peux réimporter une sauvegarde plus ancienne si tu en as une). Continuer ?`)){
+          if(backupFileRef.current)backupFileRef.current.value="";
+          return;
+        }
+        onRestoreBackup(json);
+        setBackupMsg({ok:true,text:"✓ Données restaurées et synchronisées."});
+      }catch{
+        setBackupMsg({ok:false,text:"Fichier invalide — impossible de le lire comme du JSON."});
+      }finally{
+        if(backupFileRef.current)backupFileRef.current.value="";
+        setTimeout(()=>setBackupMsg(null),6000);
+      }
+    };
+    reader.readAsText(file);
+  };
 
   // Light read-only view of the users list, just to show which clients
   // already have a dedicated access configured — refreshed whenever the
@@ -1303,6 +1348,27 @@ function AdminPage({session,clients,configs,getConfig,getAllOrders,setModal,delC
               Enregistrer
             </button>
             {settingsMsg&&<span style={{fontSize:12,color:C.greenDk,fontWeight:600}}>{settingsMsg}</span>}
+          </div>
+        </div>
+      )}
+
+      {tab==="settings"&&(
+        <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"20px 24px",maxWidth:520,display:"flex",flexDirection:"column",gap:12,marginTop:20}}>
+          <div>
+            <Label t="Sauvegarde & restauration (fichier .json)"/>
+            <div style={{fontSize:11,color:C.t3,marginBottom:12,lineHeight:1.5}}>
+              Exporte l'intégralité des données (clients, commandes, factures, paiements) dans un fichier que tu peux garder de côté ou transférer manuellement d'un appareil à l'autre — en complément de la synchronisation cloud automatique, utile aussi comme filet de sécurité ou pour préparer un usage hors ligne.
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={downloadBackup} style={{display:"flex",alignItems:"center",gap:6,background:C.blue,color:"#fff",border:"none",borderRadius:C.rSm,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                <i className="ti ti-download" style={{fontSize:15}} aria-hidden="true"/> Télécharger une sauvegarde
+              </button>
+              <button onClick={()=>backupFileRef.current?.click()} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",color:C.t2,border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                <i className="ti ti-upload" style={{fontSize:15}} aria-hidden="true"/> Restaurer depuis un fichier
+              </button>
+              <input ref={backupFileRef} type="file" accept="application/json" style={{display:"none"}} onChange={onBackupFileSelected}/>
+            </div>
+            {backupMsg&&<div style={{fontSize:12,marginTop:10,fontWeight:600,color:backupMsg.ok?C.greenDk:C.redDk}}>{backupMsg.text}</div>}
           </div>
         </div>
       )}
@@ -2104,7 +2170,7 @@ export default function App(){
         {page==="documents"&&!restrictedClient&&<DocumentsPage isMobile={isMobile}/>}
         {page==="projects"&&!restrictedClient&&<ProjectsPage isMobile={isMobile}/>}
         {page==="logs"&&<ActivityLogsPage session={session}/>}
-        {page==="admin"&&session?.role==="admin"&&<AdminPage session={session} clients={clients} configs={configs} getConfig={getConfig} getAllOrders={getAllOrders} setModal={setModal} delCustomer={delCustomer} appSettings={appSettings} saveAppSettings={saveAppSettings} lang={lang} isMobile={isMobile}/>}
+        {page==="admin"&&session?.role==="admin"&&<AdminPage session={session} clients={clients} configs={configs} getConfig={getConfig} getAllOrders={getAllOrders} setModal={setModal} delCustomer={delCustomer} appSettings={appSettings} saveAppSettings={saveAppSettings} lang={lang} isMobile={isMobile} data={data} onRestoreBackup={(json:any)=>persist(json.clients,json.orders,json.configs)}/>}
         {!special.includes(page)&&(!restrictedClient||page===restrictedClient)&&(
           <CustomerPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
