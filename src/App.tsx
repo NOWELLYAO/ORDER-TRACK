@@ -2497,13 +2497,13 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
   return(
     <div style={{display:"flex",flexDirection:"column",gap:24}}>
       {/* Header */}
-      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between"}}>
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
         <div>
           <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:700,color:C.t1}}>{tr("page_dashboard")}</h1>
           <p style={{margin:0,color:C.t3,fontSize:13}}>{new Date().toLocaleDateString(lang==="en"?"en-GB":"fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          {isAdmin&&<div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden"}}>
+          {isAdmin&&<div style={{display:"flex",background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.r,overflow:"hidden",flexWrap:"wrap"}}>
             {[2025,2026,2027,2028,2029,2030].map(y=>(
               <button key={y} onClick={()=>setSelYear(y)} style={{padding:"7px 14px",border:"none",background:y===selYear?C.blue:"transparent",color:y===selYear?"#fff":C.t2,fontWeight:y===selYear?700:400,fontSize:12,cursor:"pointer",transition:"all .15s"}}>{y}</button>
             ))}
@@ -3780,7 +3780,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
     <>
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       {/* Header */}
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,flexWrap:"wrap"}}>
             <h1 style={{margin:0,fontSize:22,fontWeight:700,color:C.t1}}>{client}</h1>
@@ -3802,7 +3802,7 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
             {overduePayments.length>0&&<span style={{background:C.amberL,color:C.amberDk,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:4,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-clock-exclamation" style={{fontSize:13}} aria-hidden="true"/> {overduePayments.length} paiement{overduePayments.length>1?"s":""} à surveiller</span>}
           </div>}
         </div>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {perms?.canAddCustomer&&<Btn icon="ti-edit" label="Modifier" onClick={onEditCustomer} variant="ghost"/>}
           {isAdmin&&<Btn icon="ti-trash" label="Supprimer" onClick={onDelCustomer} variant="danger"/>}
           {isAdmin&&<RapportIntelligent title={`Client ${client}`} context={clientReportContext} onApplyChange={applyOrderProposalClient}/>}
