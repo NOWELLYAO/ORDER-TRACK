@@ -1031,7 +1031,7 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
           {msg&&<div style={{background:msg.startsWith("✓")?"#D1FAE5":"#FEE2E2",color:msg.startsWith("✓")?"#065F46":"#B91C1C",padding:"8px 12px",borderRadius:6,marginBottom:12,fontSize:12,fontWeight:600}}>{msg}</div>}
           <div style={{marginBottom:16}}>
             <div style={{fontSize:12,fontWeight:600,color:"#0D1B2A",marginBottom:8}}>Ajouter un utilisateur</div>
-            <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr 100px",gap:8,marginBottom:8}}>
+            <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr)":"1fr 1fr 100px",gap:8,marginBottom:8}}>
               <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Nom" style={{padding:"8px 10px",border:"1px solid #E5EAF0",borderRadius:6,fontSize:12,fontFamily:"inherit"}}/>
               <div style={{display:"flex",alignItems:"center",gap:4}}>
                 <input value={newPin} onChange={e=>setNewPin(e.target.value)} placeholder="Code PIN" type={newShowPin?"text":"password"}
@@ -2543,7 +2543,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
           <div style={{fontSize:11,fontWeight:700,color:"#93C5FD",textTransform:"uppercase",letterSpacing:".08em",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
             <i className="ti ti-report-analytics" style={{fontSize:14}} aria-hidden="true"/> Résumé exécutif
           </div>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:20}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 1fr",gap:20}}>
             <div>
               <div style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>Constat</div>
               <ul style={{margin:0,padding:0,listStyle:"none",display:"flex",flexDirection:"column",gap:6}}>
@@ -2590,7 +2590,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       </>)}
       {/* Row 2 : jauges + alertes paiements */}
       {tab==="overview"&&(<>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":isAdmin?"5fr 4fr":"1fr",gap:isMobile?12:16}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":isAdmin?"5fr 4fr":"1fr",gap:isMobile?12:16}}>
         {/* Jauge double */}
         {isAdmin&&<Card title="Progression globale" icon="ti-target">
           {/* KPI globaux */}
@@ -2820,7 +2820,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       {/* Kaizen — amélioration continue & Suivi SLA */}
       {tab==="performance"&&(<>
       {(kaizenCurAvg!==null||invoicingSlaCompliance!==null)&&(
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 1fr",gap:16}}>
           {kaizenCurAvg!==null&&(
             <Card title="Kaizen — Amélioration continue" icon="ti-refresh-dot">
               <div style={{fontSize:10.5,color:C.t3,marginBottom:14}}>90 derniers jours vs les 90 jours précédents — l'esprit Kaizen : de petites améliorations constantes plutôt qu'un grand changement ponctuel.</div>
@@ -2886,7 +2886,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       {bcgClients.length>=3&&(
         <Card title="Matrice BCG des clients" icon="ti-grid-dots">
           <div style={{fontSize:10.5,color:C.t3,marginBottom:14}}>Croissance des commandes (6 derniers mois vs 6 mois précédents) × poids dans le chiffre d'affaires.</div>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 1fr",gap:10}}>
             {["star","cash_cow","question_mark","dog"].map(q=>{
               const meta=BCG_META[q];
               const list=bcgClients.filter((c:any)=>c.quadrant===q).sort((a:any,b:any)=>b.intel.monetary-a.intel.monetary);
@@ -2919,7 +2919,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       {/* Segmentation RFM + Score de santé composite */}
       {tab==="clients"&&(<>
       {(rfmScored.length>=3||healthScores.length>=3)&&(
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 1fr",gap:16}}>
           {rfmScored.length>=3&&(
             <Card title="Segmentation RFM" icon="ti-users-group">
               <div style={{fontSize:10.5,color:C.t3,marginBottom:12}}>Récence · Fréquence · Montant (score 1-5 par client, sur 12 mois glissants)</div>
@@ -2972,7 +2972,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       {/* Profondeur relationnelle (Guanxi) & Jugaad — efficacité frugale */}
       {tab==="clients"&&(<>
       {(clientIntel.length>=3)&&(
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 1fr",gap:16}}>
           <Card title="Profondeur relationnelle" icon="ti-heart-handshake">
             <div style={{fontSize:10.5,color:C.t3,marginBottom:12}}>Inspiré du 关系 (guanxi) — ancienneté et régularité de la relation, au-delà du seul volume transactionnel.</div>
             <div style={{display:"flex",flexDirection:"column",gap:7}}>
@@ -3008,7 +3008,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       {/* Anomalies & Next Best Action */}
       {tab==="performance"&&(<>
       {(anomalyAlerts.length>0||reorderAlerts.length>0)&&(
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 1fr",gap:16}}>
           {anomalyAlerts.length>0&&(
             <Card title="Anomalies détectées" icon="ti-alert-octagon" badge={{n:anomalyAlerts.length,color:C.red}}>
               <div style={{fontSize:10.5,color:C.t3,marginBottom:10}}>Commandes anormalement élevées vs l'historique du client (≥3× la moyenne, mini. 5 000 €)</div>
@@ -3043,7 +3043,7 @@ function KpiPage({clients,data,configs,getStats,getAllOrders,setPage,setModal,se
       </>)}
       {/* Row 3 : graphiques */}
       {tab==="overview"&&(<>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:isMobile?12:16}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"2fr 1fr",gap:isMobile?12:16}}>
         <Card title="Évolution mensuelle 2026" icon="ti-chart-bar">
           <div style={{display:"flex",gap:16,marginBottom:12}}>
             {[["#3B82F6","PO"],["#F59E0B","Facturé"],["#10B981","Encaissé"]].map(([col,lbl])=>(
@@ -3374,7 +3374,7 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
           <span style={{fontSize:10,color:C.t3}}>Commandes, factures, paiements, prix catalogue, échéances, motifs — trié par importance</span>
         </div>
       )}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"380px 1fr",gap:16,alignItems:"start"}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"380px 1fr",gap:16,alignItems:"start"}}>
 
         {/* Left — Customer ranking bars */}
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
@@ -4290,6 +4290,7 @@ function RapportIntelligent({title,context,contextLoader,label,floating,autoGene
                         <div style={{fontSize:12,color:C.t1,marginBottom:6,lineHeight:1.5}}>
                           {m.proposal.resume||`Devis pour ${m.proposal.client}`}
                         </div>
+                        <div style={{overflowX:"auto"}}>
                         <table style={{width:"100%",fontSize:11,borderCollapse:"collapse",background:"#fff",borderRadius:6,overflow:"hidden",border:`1px solid ${C.b}`}}>
                           <thead><tr style={{background:"#F8FAFC"}}>
                             <th style={{textAlign:"left",padding:"5px 7px",fontWeight:700,color:C.t3,fontSize:9.5,textTransform:"uppercase"}}>Article</th>
@@ -4308,6 +4309,7 @@ function RapportIntelligent({title,context,contextLoader,label,floating,autoGene
                             ))}
                           </tbody>
                         </table>
+                        </div>
                         <div style={{textAlign:"right",fontSize:11.5,fontWeight:700,color:C.t1,marginTop:5}}>
                           Total HT : {fmt((m.proposal.lignes||[]).reduce((s:number,l:any)=>s+(+l.qte||0)*(+l.prixUnitaire||0),0))} €
                         </div>
@@ -4423,7 +4425,7 @@ function CustomerModal({name,cfg,defaultTermId,onSave,onClose,lang="fr"}:any){
   return(
     <Modal title={isEdit?tr("edit_client_title"):tr("new_client")} sub={isEdit?name:undefined} onClose={onClose}
       footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon={isEdit?"ti-check":"ti-plus"} label={isEdit?tr("save_changes"):tr("create_client")} onClick={save} variant="primary"/></>}>
-      <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr)":"1fr 1fr",gap:14}}>
         <Fld label="Nom du client *" value={nm} onChange={setNm} placeholder="ex: SODIGAZ" span={2}/>
         <Fld label="N° de compte" value={acc} onChange={setAcc} placeholder="ex: 7310000042"/>
         <Sel label="Conditions de paiement" value={termId} onChange={setTermId} options={PAY_TERMS.map(t=>({value:t.id,label:t.label}))}/>
@@ -4460,7 +4462,7 @@ function OrderModal({client,order,onSave,onClose,lang="fr"}:any){
     <Modal title={order?tr("edit_order"):tr("new_order")} sub={client} width={560} onClose={onClose}
       footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon="ti-check" label={order?tr("save_order"):tr("create_order")} onClick={()=>{if(!f.poNumber||!f.amount){alert("PO # et montant requis");return;}onSave({...f,status:cancelled?"annule":"en_cours"});}} variant="primary"/></>}>
       {/* Infos de base */}
-      <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr)":"1fr 1fr",gap:12,marginBottom:16}}>
         <Fld label="Date commande *" type="date" value={f.date} onChange={(v:any)=>s("date",v)}/>
         <Fld label="PO # Customer *" value={f.poNumber} onChange={(v:any)=>s("poNumber",v)} placeholder="ex: T526.2026"/>
         <Fld label="S/O # *" value={f.soNumber} onChange={(v:any)=>s("soNumber",v)} placeholder="ex: 14560128"/>
@@ -4519,7 +4521,7 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
         <span style={{color:C.teal}}>Déjà facturé : <strong>{fmt(already)} €</strong></span>
         <span style={{color:C.amberDk}}>Reste : <strong>{fmt(remaining)} €</strong></span>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr)":"1fr 1fr",gap:14}}>
         <Fld label="Invoice # *" value={f.invoiceNumber} onChange={(v:any)=>s("invoiceNumber",v)} placeholder="ex: INV-2026-001"/>
         <Fld label="Date facture *" type="date" value={f.date} onChange={(v:any)=>{s("date",v);if(!f.overrideDueDate)s("dueDate",autoDate(v));}}/>
         <Fld label="Montant (€) *" type="number" value={f.amount} onChange={(v:any)=>s("amount",v)} placeholder="0.00"/>
@@ -4733,7 +4735,7 @@ function PaymentModal({invoice,payment,onSave,onClose,lang="fr"}:any){
           Échéance : {fmtD(invoice.dueDate)} · {ps.label}
         </div>
       )}
-      <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:14}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr)":"1fr 1fr",gap:14}}>
         <Fld label="Date du paiement *" type="date" value={f.date} onChange={(v:any)=>s("date",v)}/>
         <Fld label="Montant reçu (€) *" type="number" value={f.amount} onChange={(v:any)=>s("amount",v)} placeholder="0.00"/>
         <Sel label="Mode de paiement" value={f.method} onChange={(v:any)=>s("method",v)} options={PAY_METHODS}/>
@@ -5132,7 +5134,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
               </span>
             );
           })()}
-          <div style={{display:"flex",gap:4,flexWrap:"wrap",minWidth:0}} onClick={(e:any)=>e.stopPropagation()}>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",minWidth:0,flex:isMobile?"1 1 100%":undefined,width:isMobile?"100%":undefined}} onClick={(e:any)=>e.stopPropagation()}>
             <IBtn icon="ti-file-type-pdf" title="Rapport PDF" c={C.red} bg={C.redL} onClick={()=>printOrderReport(order,client)}/>
             <IBtn icon="ti-file-spreadsheet" title="Rapport Excel" c={C.green} bg={C.greenL} onClick={()=>exportOrderExcel(order,client)}/>
             <IBtn icon="ti-chart-pie" title="Analyse par type de produit" c={C.purple} bg={C.purpleL} onClick={()=>{
@@ -5636,7 +5638,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
         <div style={{background:C.blueL,border:`1px solid ${C.blue}`,borderRadius:C.rSm,padding:12}}>
           <div style={{fontSize:11,color:C.blueDk,marginBottom:10}}>{importMsg} L'extraction automatique n'est jamais fiable à 100% — relis chaque ligne avant de valider.</div>
           {(draftMeta.invoiceNumber||draftMeta.date)&&(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10,background:"#fff",border:`1px solid ${C.blue}`,borderRadius:6,padding:10}}>
+            <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:8,marginBottom:10,background:"#fff",border:`1px solid ${C.blue}`,borderRadius:6,padding:10}}>
               <div>
                 <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:3,textTransform:"uppercase"}}>N° de facture détecté</label>
                 <input value={draftMeta.invoiceNumber} onChange={(e:any)=>setDraftMeta((p:any)=>({...p,invoiceNumber:e.target.value}))} placeholder="ex: INV-2026-001" style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:12,width:"100%",boxSizing:"border-box"}}/>
@@ -5872,7 +5874,7 @@ function ActivityTable({items,onAdd,onUpdate,onRemove,title,color,isMobile}:any)
       </div>
       <div style={{padding:"12px 18px",display:"flex",flexDirection:"column",gap:8}}>
         {items.map((item:any,idx:number)=>(
-          <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr 80px 32px",gap:8,alignItems:"center"}}>
+          <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 2fr 80px 32px",gap:8,alignItems:"center"}}>
             <input value={item.client} onChange={e=>onUpdate(idx,"client",e.target.value)}
               placeholder="Customer / Prospect"
               style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"}}/>
@@ -7307,7 +7309,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
           <span style={{display:"flex",alignItems:"center",gap:6}}><i className="ti ti-settings" style={{fontSize:14,color:C.t3}} aria-hidden="true"/> Report settings</span>
           <span style={{fontSize:10,color:C.t3,fontStyle:"italic"}}>💾 Draft auto-saved</span>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 2fr",gap:12}}>
           <div>
             <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>Semaine</label>
             <input value={weekLabel} onChange={e=>setWeekLabel(e.target.value)} placeholder="ex: S23"
@@ -7356,7 +7358,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
       </div>
 
       {/* Auto data preview */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(4,1fr)",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"repeat(4,1fr)",gap:12}}>
         {/* Orders KPI — expandable */}
         <div style={{background:"#fff",borderRadius:C.r,border:`2px solid ${showOrders?C.blue:C.b}`,boxShadow:C.sh,padding:"14px 16px",cursor:"pointer",transition:"border-color .15s"}}
           onClick={()=>setShowOrders(o=>!o)}>
@@ -7490,7 +7492,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
         </div>
         <div style={{padding:"12px 18px",display:"flex",flexDirection:"column",gap:8}}>
           {expectedOrders.map((item:any,idx:number)=>(
-            <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 2fr 120px 32px",gap:8,alignItems:"center"}}>
+            <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 2fr 120px 32px",gap:8,alignItems:"center"}}>
               <input value={item.client} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,client:e.target.value}:x))}
                 placeholder="Customer" style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit"}}/>
               <input value={item.project} onChange={e=>setExpectedOrders((p:any)=>p.map((x:any,i:number)=>i===idx?{...x,project:e.target.value}:x))}
@@ -8305,7 +8307,7 @@ function CatEditModal({product,allProducts,onSave,onClose}:any){
         {/* Body */}
         <div style={{overflowY:"auto",flex:1,padding:"18px 22px",display:"flex",flexDirection:"column",gap:14}}>
           {/* PN + Description */}
-          <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 2fr",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr)":"1fr 2fr",gap:10}}>
             <div>
               <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Part Number</label>
               <input value={pn} onChange={e=>setPn(e.target.value)}
@@ -9937,7 +9939,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
             <div style={{fontSize:12,fontWeight:600,color:C.t1,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>
               <i className="ti ti-file-text" style={{fontSize:14,color:C.blue}} aria-hidden="true"/> Informations du devis
             </div>
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr 1fr",gap:10}}>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 1fr 1fr 1fr",gap:10}}>
               <div>
                 <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Référence</label>
                 <input value={qRef} onChange={e=>setQRef(e.target.value)}
@@ -10184,7 +10186,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
           )}
 
           {/* Notes + generate */}
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"2fr 1fr",gap:14}}>
             <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 18px"}}>
               <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:".05em"}}>Notes / Conditions</label>
               <textarea value={qNotes} onChange={e=>setQNotes(e.target.value)} rows={3}
@@ -10647,7 +10649,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
             </div>
           ):(
             <>
-              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10}}>
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"repeat(3,1fr)",gap:10}}>
                 {[["A",C.green,C.greenL,"Priorité maximale (≤80% de la valeur)"],["B",C.amber,C.amberL,"Priorité modérée (80-95%)"],["C",C.t3,"#F1F5F9","Faible priorité (95-100%)"]].map(([cls,color,bg,desc])=>(
                   <div key={cls as string} style={{background:bg as string,borderRadius:C.rLg,padding:"14px 16px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
@@ -11034,7 +11036,7 @@ function DocumentsPage({isMobile}:any){
                 {syncMsg&&<span style={{marginLeft:10,color:syncMsg.startsWith("✓")?"#86EFAC":syncMsg.startsWith("⚠")?"#FCA5A5":"#93C5FD"}}>{syncMsg}</span>}
               </p>
             </div>
-            <div style={{display:"flex",gap:8}}>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               <button onClick={()=>loadFromCloud(false)} disabled={syncing} title="Synchroniser"
                 style={{display:"flex",alignItems:"center",gap:5,background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",
                   border:"1px solid rgba(255,255,255,.15)",borderRadius:C.r,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
@@ -11609,7 +11611,7 @@ function ProjectModal({project,otherProjects,onSave,onClose}:any){
               <i className="ti ti-device-floppy" style={{fontSize:13,marginRight:6}} aria-hidden="true"/>{isEdit?"Enregistrer":"Créer le projet"}
             </button>
           </>}>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 1fr",gap:12}}>
             <Fld label="ID opportunity" value={f.oppId} onChange={(v:any)=>s("oppId",v)} placeholder="ex: OPP-2026-0142"/>
             <Fld label="Nom / Référence du projet" value={f.name} onChange={(v:any)=>s("name",v)} placeholder="ex: Station de pompage Abidjan Port"/>
             <Fld label="Description" value={f.description} onChange={(v:any)=>s("description",v)} placeholder="Contexte, périmètre, spécificités…" rows={3} span={2}/>
@@ -12251,7 +12253,7 @@ function ProjectsPage({isMobile}:any){
       )}
 
       {/* Charts row */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 1fr",gap:12}}>
         {/* Forecast: PO & invoices to come */}
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
           <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:4}}>📅 Prévisionnel commandes & facturation</div>
@@ -12390,7 +12392,7 @@ function ProjectsPage({isMobile}:any){
 
       {/* Win-Loss Analysis */}
       {closedP.length>0&&(
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 1fr",gap:12}}>
           <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"14px 16px"}}>
             <div style={{fontSize:12,fontWeight:700,color:C.t1,marginBottom:4}}>🏆 Analyse Gagné / Perdu</div>
             <div style={{fontSize:10,color:C.t3,marginBottom:12}}>{closedP.length} opportunité{closedP.length>1?"s":""} clôturée{closedP.length>1?"s":""} · {winRate}% de réussite</div>
@@ -14546,7 +14548,7 @@ function TresoreriePage({getAllOrders,clients,lang,isMobile}:any){
       </div>
 
       {/* Bar chart + table side by side */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.2fr 1fr",gap:16,alignItems:"start"}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1.2fr 1fr",gap:16,alignItems:"start"}}>
 
         {/* Bar chart */}
         <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,padding:"18px 20px"}}>
@@ -14801,7 +14803,7 @@ function TargetsModal({clients,targets,onSave,onClose,year}:any){
 
       <div style={{background:C.blueL,border:`1px solid ${C.blue}`,borderRadius:C.rSm,padding:"12px 14px",marginBottom:14}}>
         <div style={{fontSize:11,fontWeight:700,color:C.blueDk,marginBottom:8,display:"flex",alignItems:"center",gap:5}}><i className="ti ti-world" style={{fontSize:13}} aria-hidden="true"/> Objectif GLOBAL {selYear}</div>
-        <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr)":"1fr 1fr",gap:10}}>
           <div>
             <label style={{fontSize:10,color:C.t3,fontWeight:700,textTransform:"uppercase"}}>Cible Open Orders (€)</label>
             <input type="number" value={draft.global.po} onChange={(e:any)=>setDraft((p:any)=>({...p,global:{...p.global,po:e.target.value}}))} placeholder="ex: 2000000"
@@ -15638,7 +15640,7 @@ function ReportModal({clients,data,configs,onClose,lang="fr",isAdmin=true}:any){
           <div style={{fontSize:10.5,color:C.t3,marginTop:6}}>« Prêtes » n'est pas affecté par cette fenêtre — c'est un état actuel (tout ce qui reste à livrer est déjà disponible).</div>
         </div>
       ):(
-        <div style={{display:"grid",gridTemplateColumns:isMobileV?"1fr":"1fr 1fr",gap:14,marginBottom:14}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr)":"1fr 1fr",gap:14,marginBottom:14}}>
           <Fld label="Date de début" type="date" value={fromDate} onChange={setFromDate}/>
           <Fld label="Date de fin" type="date" value={toDate} onChange={setToDate}/>
         </div>
