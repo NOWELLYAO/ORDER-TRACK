@@ -5082,10 +5082,10 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
       style={{background:"#fff",borderRadius:C.rLg,boxShadow:focusOrderId===order.id?`0 0 0 3px ${C.blue}40,${C.shMd}`:isExp?C.shMd:C.sh,
         border:`1px solid ${focusOrderId===order.id?C.blue:isExp?C.blue+"70":nbEchues>0?C.red+"50":nbUpcoming>0?C.amber+"40":C.b}`,
         borderLeft:`4px solid ${isExp?C.blue:nbEchues>0?C.red:nbUpcoming>0?C.amber:"transparent"}`,
-        overflow:"hidden",transition:"box-shadow .2s,border-color .2s"}}
+        overflow:"hidden",transition:"box-shadow .2s,border-color .2s",maxWidth:"100%",boxSizing:"border-box"}}
       onMouseEnter={(e:any)=>e.currentTarget.style.boxShadow=C.shMd}
       onMouseLeave={(e:any)=>e.currentTarget.style.boxShadow=focusOrderId===order.id?`0 0 0 3px ${C.blue}40,${C.shMd}`:isExp?C.shMd:C.sh}>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",flexWrap:"wrap",background:isExp?C.blueL+"90":"transparent",transition:"background .15s"}}
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",cursor:"pointer",flexWrap:"wrap",background:isExp?C.blueL+"90":"transparent",transition:"background .15s",width:"100%",maxWidth:"100%",boxSizing:"border-box"}}
         onMouseDown={(e:any)=>{mouseDownPos.current={x:e.clientX,y:e.clientY};}}
         onClick={(e:any)=>{if(wasDrag(e))return;tgl(order.id);if(focusOrderId===order.id&&onClearFocus)onClearFocus();}}>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
@@ -5132,7 +5132,7 @@ function OrderCard({order,client,exp,tgl,onAddInv,onAddBulkInv,onEditOrder,onDel
               </span>
             );
           })()}
-          <div style={{display:"flex",gap:4}} onClick={(e:any)=>e.stopPropagation()}>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",minWidth:0}} onClick={(e:any)=>e.stopPropagation()}>
             <IBtn icon="ti-file-type-pdf" title="Rapport PDF" c={C.red} bg={C.redL} onClick={()=>printOrderReport(order,client)}/>
             <IBtn icon="ti-file-spreadsheet" title="Rapport Excel" c={C.green} bg={C.greenL} onClick={()=>exportOrderExcel(order,client)}/>
             <IBtn icon="ti-chart-pie" title="Analyse par type de produit" c={C.purple} bg={C.purpleL} onClick={()=>{
