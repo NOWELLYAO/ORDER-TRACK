@@ -4877,7 +4877,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
   const[tab,setTab]=useState<"orders"|"invoices"|"payments">("orders");
   const[search,setSearch]=useState("");
   const[showAll,setShowAll]=useState(false);
-  const[viewBucket,setViewBucket]=useState<"ready"|"active"|"awaiting_payment"|"archived">("active");
+  const[viewBucket,setViewBucket]=useState<"ready"|"active"|"awaiting_payment"|"overdue"|"archived">("active");
   const DEFAULT_SHOWN=4;
 
   // ── lot scope (only affects the "Commandes" tab, and cascades to the
@@ -4898,14 +4898,14 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
   useEffect(()=>{
     if(expandedOrderId){
       const o=orders.find((x:any)=>x.id===expandedOrderId);
-      if(o)setPinnedOrder(prev=>prev&&prev.id===expandedOrderId?prev:{id:expandedOrderId,bucket:bucketOf(o)});
+      if(o)setPinnedOrder(prev=>prev&&prev.id===expandedOrderId?prev:{id:expandedOrderId,bucket:viewBucket});
     } else {
       setPinnedOrder(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[expandedOrderId]);
   const isPinnedInBucket=(id:string,bucket:string)=>!!pinnedOrder&&pinnedOrder.id===id&&pinnedOrder.bucket===bucket;
-  const BUCKET_LABEL:any={ready:"Prêtes",active:"Actives",awaiting_payment:"En attente paiement",archived:"Archivées"};
+  const BUCKET_LABEL:any={ready:"Prêtes",active:"Actives",awaiting_payment:"En attente paiement",overdue:"Échues",archived:"Archivées"};
   // Libellé affiché sur la carte quand une commande épinglée a réellement
   // changé de catégorie pendant qu'on la modifiait — explique pourquoi elle
   // n'a pas encore bougé, plutôt que de laisser croire à un bug d'affichage.
@@ -4918,7 +4918,21 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
   const nbAwaitingPay=orders.filter((o:any)=>bucketOf(o)==="awaiting_payment").length;
   const nbArchived=orders.filter((o:any)=>bucketOf(o)==="archived").length;
   const archivableOrders=orders.filter((o:any)=>isOrderArchivable(o));
-  const scopedOrders=orders.filter((o:any)=>bucketOf(o)===viewBucket||isPinnedInBucket(o.id,viewBucket));
+  // ── Factures échues : rangées automatiquement dans leur propre case ────
+  // Une facture échue (échéance dépassée, solde non réglé) reste auparavant
+  // mélangée dans "En attente paiement" avec toutes les autres factures pas
+  // encore échues — invisible sans trier/chercher manuellement. Elle prend
+  // ici le pas sur le lot de sa commande (même une commande "Active" ou
+  // "Prête" peut avoir une facture déjà émise et déjà échue), et sort donc
+  // de "En attente paiement" pour cette case dédiée à la place.
+  const isInvoiceOverdue=(inv:any)=>{
+    if(!inv?.dueDate||inv.dueDate>=todayStr())return false;
+    const paid=(inv.payments||[]).reduce((s:number,p:any)=>s+(+p.amount||0),0);
+    return paid<(+inv.amount||0)*0.99;
+  };
+  const orderHasOverdueInvoice=(o:any)=>(o.invoices||[]).some((i:any)=>isInvoiceOverdue(i));
+  const nbOverdueInvoices=orders.reduce((s:number,o:any)=>s+(o.invoices||[]).filter((i:any)=>isInvoiceOverdue(i)).length,0);
+  const scopedOrders=orders.filter((o:any)=>(viewBucket==="overdue"?orderHasOverdueInvoice(o):bucketOf(o)===viewBucket)||isPinnedInBucket(o.id,viewBucket));
   const archiveAllReady=()=>{
     if(!onToggleArchive||archivableOrders.length===0)return;
     if(!window.confirm(`Archiver ${archivableOrders.length} commande${archivableOrders.length>1?"s":""} "Full" et soldée${archivableOrders.length>1?"s":""} ?`))return;
@@ -4939,6 +4953,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
     return paid>=(+inv.amount||0)*0.99;
   };
   const invoiceEffectiveBucket=(order:any,inv:any)=>{
+    if(isInvoiceOverdue(inv))return"overdue";
     const ob=bucketOf(order);
     if(ob==="archived"&&!isInvoicePaidFull(inv))return"awaiting_payment";
     return ob;
@@ -5024,6 +5039,11 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
               <i className="ti ti-hourglass" style={{fontSize:13}} aria-hidden="true"/> En attente paiement
               {nbAwaitingPay>0&&<span style={{marginLeft:2,background:viewBucket==="awaiting_payment"?"rgba(255,255,255,.25)":C.amberL,color:viewBucket==="awaiting_payment"?"#fff":C.amberDk,fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99}}>{nbAwaitingPay}</span>}
             </button>
+            <button onClick={()=>{setViewBucket("overdue");setSearch("");setShowAll(false);}}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"9px 14px",border:"none",borderRight:`1px solid ${C.b}`,background:viewBucket==="overdue"?C.redDk:"transparent",color:viewBucket==="overdue"?"#fff":C.t2,fontWeight:viewBucket==="overdue"?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+              <i className="ti ti-clock-exclamation" style={{fontSize:13}} aria-hidden="true"/> Échues
+              {nbOverdueInvoices>0&&<span style={{marginLeft:2,background:viewBucket==="overdue"?"rgba(255,255,255,.25)":C.redL,color:viewBucket==="overdue"?"#fff":C.redDk,fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99}}>{nbOverdueInvoices}</span>}
+            </button>
             <button onClick={()=>{setViewBucket("archived");setSearch("");setShowAll(false);}}
               style={{display:"flex",alignItems:"center",gap:6,padding:"9px 14px",border:"none",background:viewBucket==="archived"?"#0D1B2A":"transparent",color:viewBucket==="archived"?"#fff":C.t2,fontWeight:viewBucket==="archived"?700:400,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
               <i className="ti ti-archive" style={{fontSize:13}} aria-hidden="true"/> Archivées
@@ -5051,7 +5071,7 @@ function OrderTabsPanel({client,orders,exp,tgl,onAddInv,onAddBulkInv,onEditOrder
         const hiddenCount=filterOrders.length-DEFAULT_SHOWN;
         return(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{viewBucket==="archived"?"Aucune commande archivée":viewBucket==="awaiting_payment"?"Aucune commande en attente de paiement":viewBucket==="ready"?"Aucune commande prête pour l'instant":"Aucune commande trouvée"}</div>}
+            {visible.length===0&&<div style={{padding:"28px",textAlign:"center",color:C.t3,fontSize:12,background:"#fff",borderRadius:C.r,border:`1px dashed ${C.b}`}}>{viewBucket==="archived"?"Aucune commande archivée":viewBucket==="awaiting_payment"?"Aucune commande en attente de paiement":viewBucket==="overdue"?"Aucune commande avec une facture échue":viewBucket==="ready"?"Aucune commande prête pour l'instant":"Aucune commande trouvée"}</div>}
             {visible.map((order:any)=><OrderCard key={order.id} order={order} client={client} exp={exp} tgl={tgl} onAddInv={onAddInv} onAddBulkInv={onAddBulkInv} onEditOrder={onEditOrder} onDelOrder={onDelOrder} onToggleArchive={onToggleArchive} onToggleInvoiceBilledNotDelivered={onToggleInvoiceBilledNotDelivered} onAddPay={onAddPay} onEditPay={onEditPay} onDelPay={onDelPay} onEditInv={onEditInv} onDelInv={onDelInv} focusOrderId={focusOrderId} onClearFocus={onClearFocus} lang={lang} onSaveOrder={onSaveOrder} perms={perms} isMobile={isMobile} pendingBucketLabel={pendingBucketLabel(order)}/>)}
             {!search&&!showAll&&hiddenCount>0&&(
               <button onClick={()=>setShowAll(true)} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",background:"#fff",border:`1.5px dashed ${C.b}`,borderRadius:C.r,color:C.blue,fontWeight:600,fontSize:12,cursor:"pointer",transition:"all .15s"}}
