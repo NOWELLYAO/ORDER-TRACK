@@ -4606,18 +4606,50 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
   const s=(k:string,v:any)=>setF(p=>({...p,[k]:v}));
   const already=(order.invoices||[]).filter((i:any)=>i.id!==invoice?.id).reduce((ss:number,i:any)=>ss+(+i.amount||0),0);
   const remaining=Math.max(0,(+order.amount||0)-already);
+  // ── Garde-fou : le "Montant" facturé (utilisé pour le suivi financier de
+  // la commande — Facturé/Reste, bascule d'onglet Prêtes → En attente
+  // paiement, etc.) et le détail ligne par ligne (utilisé pour le suivi
+  // article par article — Facturé/Restant sur chaque PN) sont DEUX champs
+  // indépendants qui ne se synchronisent jamais automatiquement l'un
+  // l'autre, ni à l'import PDF/Excel (si le Montant n'était pas vide), ni
+  // en utilisant "Facturer tout le restant" ou la saisie manuelle de
+  // quantité par ligne. Résultat observé en pratique : une facture où
+  // toutes les lignes affichent "✓ Facturé" alors que son Montant réel est
+  // resté inférieur (ex : les frais de transport ajoutés aux lignes après
+  // coup, jamais reportés dans le Montant) — la commande reste alors
+  // coincée dans le mauvais onglet (Prêtes au lieu de En attente paiement)
+  // puisque son calcul se base sur le Montant, pas sur les lignes.
+  // Ce bandeau rend l'écart visible et propose un correctif en un clic,
+  // au lieu de laisser les deux valeurs diverger silencieusement.
+  const linesTotal=round2((f.lines||[]).reduce((sum:number,l:any)=>sum+(+l.qtyInvoiced||0)*(+l.unitPrice||0),0));
+  const hasLines=(f.lines||[]).length>0;
+  const amountMismatch=hasLines&&Math.abs(linesTotal-(+f.amount||0))>0.01;
   return(
     <Modal title={invoice?tr("edit_invoice"):tr("new_invoice")} sub={`Commande : ${order.poNumber}`} width={520} onClose={onClose}
-      footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon="ti-check" label={invoice?tr("save_invoice"):tr("create_invoice")} onClick={()=>{if(!f.invoiceNumber||!f.amount){alert("Invoice # et montant requis");return;}const dd=f.overrideDueDate?f.dueDate:autoDate(f.date);onSave({...f,dueDate:dd});}} variant="primary"/></>}>
+      footer={<><button onClick={onClose}>{tr("cancel")}</button><Btn icon="ti-check" label={invoice?tr("save_invoice"):tr("create_invoice")} onClick={()=>{if(!f.invoiceNumber||!f.amount){alert("Invoice # et montant requis");return;}if(amountMismatch&&!window.confirm(`Le montant saisi (${fmt(+f.amount)} €) ne correspond pas au total des lignes (${fmt(linesTotal)} €) — écart de ${fmt(Math.abs(linesTotal-(+f.amount||0)))} €.\n\nEnregistrer quand même avec cet écart ?`))return;const dd=f.overrideDueDate?f.dueDate:autoDate(f.date);onSave({...f,dueDate:dd});}} variant="primary"/></>}>
       <div style={{display:"flex",gap:14,background:C.blueL,borderRadius:C.rSm,padding:"10px 14px",marginBottom:16,fontSize:12}}>
         <span style={{color:C.blueDk}}>PO : <strong>{fmt(order.amount)} €</strong></span>
         <span style={{color:C.teal}}>Déjà facturé : <strong>{fmt(already)} €</strong></span>
         <span style={{color:C.amberDk}}>Reste : <strong>{fmt(remaining)} €</strong></span>
       </div>
+      {amountMismatch&&(
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:C.amberL,border:`1px solid ${C.amber}60`,borderRadius:C.rSm,padding:"10px 14px",marginBottom:16,fontSize:12}}>
+          <i className="ti ti-alert-triangle" style={{fontSize:16,color:C.amberDk,flexShrink:0}} aria-hidden="true"/>
+          <span style={{color:C.amberDk,flex:1,minWidth:200}}>
+            <strong>Le Montant ({fmt(+f.amount||0)} €) ne correspond pas au total des lignes ({fmt(linesTotal)} €).</strong> Les lignes seront pourtant marquées "Facturé" telles quelles — la commande risque de rester dans le mauvais onglet.
+          </span>
+          <button onClick={()=>s("amount",linesTotal)} style={{background:C.amberDk,color:"#fff",border:"none",borderRadius:C.rSm,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+            Ajuster à {fmt(linesTotal)} €
+          </button>
+        </div>
+      )}
       <div style={{display:"grid",gridTemplateColumns:isMobileV?"minmax(0,1fr)":"1fr 1fr",gap:14}}>
         <Fld label="Invoice # *" value={f.invoiceNumber} onChange={(v:any)=>s("invoiceNumber",v)} placeholder="ex: INV-2026-001"/>
         <Fld label="Date facture *" type="date" value={f.date} onChange={(v:any)=>{s("date",v);if(!f.overrideDueDate)s("dueDate",autoDate(v));}}/>
-        <Fld label="Montant (€) *" type="number" value={f.amount} onChange={(v:any)=>s("amount",v)} placeholder="0.00"/>
+        <div>
+          <Fld label="Montant (€) *" type="number" value={f.amount} onChange={(v:any)=>s("amount",v)} placeholder="0.00"/>
+          {hasLines&&!amountMismatch&&<div style={{fontSize:10.5,color:C.greenDk,marginTop:4,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-check" style={{fontSize:11}} aria-hidden="true"/> Cohérent avec le total des lignes ({fmt(linesTotal)} €)</div>}
+        </div>
         <Sel label="Mode expédition" value={f.shippingMode} onChange={(v:any)=>s("shippingMode",v)} options={DELIVERY_MODES}/>
         <div style={{gridColumn:"span 2"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
