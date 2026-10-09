@@ -1,5 +1,12 @@
 // @ts-nocheck
 import React, { useState, useEffect, Fragment, useRef } from "react";
+import {
+  diffSummary, mergePayloads, countPayload, fmtCounts,
+  saveSnapshot, listSnapshots, getSnapshot,
+  markSyncOk, hoursSinceSyncOk, daysSinceBackup, daysSinceFirstSeen,
+  snoozeBackupReminder, isBackupReminderSnoozed,
+  getAutoBackup, setAutoBackup, downloadBackupFile,
+} from "./dataSafety";
 
 // ─── ACTIVITY LOG (defined early — used by multiple components) ──────────────
 const LOG_KEY="ordertrack-activitylog";
@@ -1178,7 +1185,7 @@ function UserManager({session,clients,onClose,embedded,focusClient,onFocusHandle
   );
 }
 
-function AdminPage({session,clients,configs,getConfig,getAllOrders,setModal,delCustomer,appSettings,saveAppSettings,lang,isMobile,data,onRestoreBackup}:any){
+function AdminPage({session,clients,configs,getConfig,getAllOrders,setModal,delCustomer,appSettings,saveAppSettings,lang,isMobile,data,onRestoreBackup,onMergeApply}:any){
   const[tab,setTab]=useState<"users"|"clients"|"settings"|"logs">("users");
   const TABS=[
     {id:"users",label:"Utilisateurs & accès",icon:"ti-users"},
@@ -1202,15 +1209,59 @@ function AdminPage({session,clients,configs,getConfig,getAllOrders,setModal,delC
   const backupFileRef=useRef<HTMLInputElement>(null);
   const[backupMsg,setBackupMsg]=useState<{ok:boolean,text:string}|null>(null);
   const downloadBackup=()=>{
-    const payload={clients,orders:data,configs,exportedAt:new Date().toISOString()};
-    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");
-    a.href=url;a.download=`ordertrack-sauvegarde-${new Date().toISOString().slice(0,10)}.json`;
-    document.body.appendChild(a);a.click();document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBackupFile({clients,orders:data,configs});
     setBackupMsg({ok:true,text:"✓ Sauvegarde téléchargée."});
     setTimeout(()=>setBackupMsg(null),4000);
+  };
+  // ── Fusion depuis un fichier : ajoute seulement ce qui manque, sans rien
+  // remplacer de ce qui existe déjà (contrairement à « Restaurer »).
+  const mergeFileRef=useRef<HTMLInputElement>(null);
+  const[autoBackupOn,setAutoBackupOn]=useState(getAutoBackup());
+  const[snaps,setSnaps]=useState<any[]>([]);
+  const refreshSnaps=()=>{listSnapshots().then(setSnaps);};
+  useEffect(()=>{if(tab==="settings")refreshSnaps();},[tab]);
+  const onMergeFileSelected=(e:any)=>{
+    const file=e.target.files?.[0];
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=()=>{
+      try{
+        let json=JSON.parse(reader.result as string);
+        // Accepte aussi les fichiers de la sauvegarde nocturne GitHub ({user_key,payload:{...}})
+        if(json&&typeof json==="object"&&json.payload&&!json.orders)json=json.payload;
+        if(!json||typeof json!=="object"||!json.orders||!json.clients){
+          setBackupMsg({ok:false,text:"Fichier invalide — ce n'est pas une sauvegarde OrderTrack reconnaissable (.json)."});
+          return;
+        }
+        const current={clients,orders:data,configs};
+        const r=mergePayloads(current,json);
+        if(r.addedTotal===0&&r.added.clients===0){
+          setBackupMsg({ok:true,text:"Rien à ajouter : ce fichier ne contient aucune commande, facture ou paiement absent de l'appli."});
+          return;
+        }
+        if(!window.confirm(`Fusion : ce fichier va AJOUTER ${r.added.orders} commande(s), ${r.added.invoices} facture(s) et ${r.added.payments} paiement(s) qui n'existent pas encore dans l'appli.\n\nRien de ce qui existe déjà ne sera modifié ni supprimé. Une copie de sécurité de l'état actuel est faite juste avant.\n\nContinuer ?`))return;
+        onMergeApply(r.merged,current);
+        setBackupMsg({ok:true,text:`✓ Fusion terminée : +${r.added.orders} commande(s), +${r.added.invoices} facture(s), +${r.added.payments} paiement(s).`});
+      }catch{
+        setBackupMsg({ok:false,text:"Fichier invalide — impossible de le lire comme du JSON."});
+      }finally{
+        if(mergeFileRef.current)mergeFileRef.current.value="";
+        setTimeout(()=>setBackupMsg(null),8000);
+      }
+    };
+    reader.readAsText(file);
+  };
+  const downloadSnapshot=async(id:string)=>{
+    const p=await getSnapshot(id);
+    if(p)downloadBackupFile(p);
+  };
+  const restoreSnapshot=async(s:any)=>{
+    if(!window.confirm(`Revenir à la copie du ${new Date(s.at).toLocaleString("fr-FR")} (${fmtCounts(s.counts)}) ?\n\nL'état actuel sera lui-même sauvegardé juste avant, donc vous pourrez revenir en arrière.`))return;
+    const p=await getSnapshot(s.id);
+    if(!p){setBackupMsg({ok:false,text:"Copie introuvable."});return;}
+    onRestoreBackup(p);
+    setBackupMsg({ok:true,text:"✓ Copie restaurée et synchronisée."});
+    setTimeout(()=>{setBackupMsg(null);refreshSnaps();},4000);
   };
   const onBackupFileSelected=(e:any)=>{
     const file=e.target.files?.[0];
@@ -1218,14 +1269,16 @@ function AdminPage({session,clients,configs,getConfig,getAllOrders,setModal,delC
     const reader=new FileReader();
     reader.onload=()=>{
       try{
-        const json=JSON.parse(reader.result as string);
+        let json=JSON.parse(reader.result as string);
+        // Accepte aussi les fichiers de la sauvegarde nocturne GitHub ({user_key,payload:{...}})
+        if(json&&typeof json==="object"&&json.payload&&!json.orders)json=json.payload;
         if(!json||typeof json!=="object"||!json.orders||!json.clients){
           setBackupMsg({ok:false,text:"Fichier invalide — ce n'est pas une sauvegarde OrderTrack reconnaissable (.json)."});
           return;
         }
         const nbClients=Array.isArray(json.clients)?json.clients.length:0;
         const nbOrders=Object.values(json.orders||{}).reduce((s:number,arr:any)=>s+(Array.isArray(arr)?arr.length:0),0);
-        if(!window.confirm(`Restaurer cette sauvegarde va REMPLACER toutes les données actuelles (${nbClients} client(s), ${nbOrders} commande(s) dans le fichier) — sur cet appareil ET sur le cloud, donc pour tout le monde dès la prochaine synchro des autres appareils.\n\nCette action n'est pas réversible directement (tu peux réimporter une sauvegarde plus ancienne si tu en as une). Continuer ?`)){
+        if(!window.confirm(`Restaurer cette sauvegarde va REMPLACER toutes les données actuelles (${nbClients} client(s), ${nbOrders} commande(s) dans le fichier) — sur cet appareil ET sur le cloud, donc pour tout le monde dès la prochaine synchro des autres appareils.\n\nUne copie de sécurité de l'état actuel est faite juste avant (visible plus bas dans « Copies de sécurité automatiques »). Si tu veux seulement COMPLÉTER l'appli avec les données manquantes d'un ancien fichier, annule et utilise plutôt « Fusionner depuis un fichier ». Continuer ?`)){
           if(backupFileRef.current)backupFileRef.current.value="";
           return;
         }
@@ -1366,9 +1419,47 @@ function AdminPage({session,clients,configs,getConfig,getAllOrders,setModal,delC
               <button onClick={()=>backupFileRef.current?.click()} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",color:C.t2,border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
                 <i className="ti ti-upload" style={{fontSize:15}} aria-hidden="true"/> Restaurer depuis un fichier
               </button>
+              <button onClick={()=>mergeFileRef.current?.click()} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",color:C.t2,border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                <i className="ti ti-git-merge" style={{fontSize:15}} aria-hidden="true"/> Fusionner depuis un fichier
+              </button>
               <input ref={backupFileRef} type="file" accept="application/json" style={{display:"none"}} onChange={onBackupFileSelected}/>
+              <input ref={mergeFileRef} type="file" accept="application/json" style={{display:"none"}} onChange={onMergeFileSelected}/>
+            </div>
+            <div style={{fontSize:11,color:C.t3,marginTop:10,lineHeight:1.5}}>
+              <b>Restaurer</b> remplace tout par le contenu du fichier. <b>Fusionner</b> ajoute seulement les commandes, factures et paiements absents de l'appli, sans rien modifier ni supprimer de l'existant.
             </div>
             {backupMsg&&<div style={{fontSize:12,marginTop:10,fontWeight:600,color:backupMsg.ok?C.greenDk:C.redDk}}>{backupMsg.text}</div>}
+          </div>
+
+          <div style={{borderTop:`1px solid ${C.b}`,paddingTop:14}}>
+            <Label t="Sauvegarde hebdomadaire automatique"/>
+            <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:12,color:C.t2,lineHeight:1.5,cursor:"pointer"}}>
+              <input type="checkbox" checked={autoBackupOn} onChange={e=>{setAutoBackup(e.target.checked);setAutoBackupOn(e.target.checked);}} style={{marginTop:3}}/>
+              <span>Télécharger automatiquement un fichier de sauvegarde si la dernière date de plus de 7 jours (déclenché au premier clic après l'ouverture de l'appli ; fonctionne sur ordinateur, pas sur iPhone où il faut utiliser le bouton).</span>
+            </label>
+          </div>
+
+          <div style={{borderTop:`1px solid ${C.b}`,paddingTop:14}}>
+            <Label t="Copies de sécurité automatiques (sur cet appareil)"/>
+            <div style={{fontSize:11,color:C.t3,marginBottom:10,lineHeight:1.5}}>
+              L'appli garde en mémoire les {25} dernières versions de vos données, et en crée une automatiquement juste avant toute opération qui remplace des données (synchronisation, restauration, fusion). Si quelque chose est écrasé par erreur, vous pouvez revenir en arrière ici.
+            </div>
+            {snaps.length===0
+              ?<div style={{fontSize:12,color:C.t3}}>Aucune copie pour l'instant — la première sera créée automatiquement après vos prochaines modifications.</div>
+              :<div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:260,overflowY:"auto"}}>
+                {snaps.map((s:any)=>(
+                  <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap",border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"7px 10px"}}>
+                    <div style={{fontSize:12,color:C.t2,minWidth:0}}>
+                      <div style={{fontWeight:700}}>{new Date(s.at).toLocaleString("fr-FR")}</div>
+                      <div style={{fontSize:11,color:C.t3}}>{s.reason==="auto"?"Copie automatique":s.reason} · {fmtCounts(s.counts)}</div>
+                    </div>
+                    <div style={{display:"flex",gap:6}}>
+                      <button onClick={()=>downloadSnapshot(s.id)} style={{fontSize:11,background:"#fff",border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"5px 9px",cursor:"pointer",color:C.t2,fontWeight:600}}>Télécharger</button>
+                      <button onClick={()=>restoreSnapshot(s)} style={{fontSize:11,background:C.blue,border:"none",borderRadius:C.rSm,padding:"5px 9px",cursor:"pointer",color:"#fff",fontWeight:700}}>Restaurer</button>
+                    </div>
+                  </div>
+                ))}
+              </div>}
           </div>
         </div>
       )}
@@ -1440,6 +1531,10 @@ export default function App(){
   const[syncStatus,setSyncStatus]=useState<"idle"|"syncing"|"ok"|"offline"|"error">("idle");
   const[lastSync,setLastSync]=useState<string|null>(null);
   const[focusOrderId,setFocusOrderId]=useState<string|null>(null);
+  // Divergence détectée au démarrage entre cet appareil et le cloud (voir SyncConflictModal)
+  const[syncConflict,setSyncConflict]=useState<any>(null);
+  const persistSeq=useRef(0);
+  const conflictRef=useRef<any>(null);
 
   // ── Offline detection ────────────────────────────────────────────────────
   const[isOnline,setIsOnline]=useState(navigator.onLine);
@@ -1481,7 +1576,7 @@ export default function App(){
   useEffect(()=>{
     (async()=>{
       setSyncStatus("syncing");
-      // 1. Try cloud first — compare timestamps
+      // 1. Try cloud first — compare timestamps AND contents
       try {
         const result = await cloudLoad();
         if(result?.payload){
@@ -1494,26 +1589,70 @@ export default function App(){
           const localIsNewer=localTs&&cloudTs&&(new Date(localTs)>new Date(cloudTs));
           const localHasData=localParsed?.orders&&Object.values(localParsed.orders).some((arr:any)=>arr?.length>0);
           const cloudHasData=cloud.orders&&Object.values(cloud.orders).some((arr:any)=>arr?.length>0);
+          // « Modifications locales non envoyées au cloud » : drapeau posé par
+          // persist(). Sur un appareil qui n'a pas encore le drapeau (première
+          // ouverture après cette mise à jour), on le déduit de l'horodatage.
+          const dirtyFlag=localStorage.getItem(KEY+"_dirty");
+          const isDirty=dirtyFlag==="1"||(dirtyFlag===null&&!!localIsNewer);
+
+          // ── Protection anti-perte : les deux côtés ont chacun des éléments
+          // que l'autre n'a pas → l'un des deux va forcément écraser l'autre.
+          // On garde une copie de CHACUN, puis on laisse la personne décider.
+          if(localHasData&&cloudHasData){
+            const d=diffSummary(localParsed,cloud);
+            if(isDirty&&d.onlyA.total>0){
+              saveSnapshot(localParsed,"Avant synchronisation (version de cet appareil)");
+              saveSnapshot(cloud,"Avant synchronisation (version du cloud)");
+              if(d.onlyB.total>0){
+                // Divergence réelle → fenêtre de choix, rien n'est écrasé d'ici là.
+                setCustomers(localParsed.clients||DEFAULT_CLIENTS);
+                setData(migrateRDT(localParsed.orders||{}));
+                setConfigs(localParsed.configs||{});
+                setSyncConflict({local:localParsed,cloud,cloudTs,diff:d});
+                setSyncStatus("offline");
+                return;
+              }
+              if(!localIsNewer){
+                // Le cloud est un sous-ensemble de cet appareil : on envoie le tout (fusion = cet appareil).
+                const m=mergePayloads(cloud,localParsed).merged;
+                setCustomers(m.clients||DEFAULT_CLIENTS);
+                setData(migrateRDT(m.orders||{}));
+                setConfigs(m.configs||{});
+                localStorage.setItem(KEY,JSON.stringify(m));
+                localStorage.setItem(KEY+"_ts",new Date().toISOString());
+                localStorage.setItem(KEY+"_dirty","1");
+                cloudSave(m).then(ok=>{
+                  setSyncStatus(ok?"ok":"offline");
+                  if(ok){localStorage.setItem(KEY+"_dirty","0");setLastSync(new Date().toLocaleTimeString("fr-FR"));}
+                });
+                return;
+              }
+            }
+          }
+
           if(localIsNewer && localHasData){
             // Local is newer — load local and push to cloud
+            if(cloudHasData)saveSnapshot(cloud,"Avant envoi des données de cet appareil");
             setCustomers(localParsed.clients||DEFAULT_CLIENTS);
             setData(migrateRDT(localParsed.orders||{}));
             setConfigs(localParsed.configs||{});
             setSyncStatus("syncing");
             cloudSave(localParsed).then(ok=>{
               setSyncStatus(ok?"ok":"offline");
-              if(ok)setLastSync(new Date().toLocaleTimeString("fr-FR"));
+              if(ok){localStorage.setItem(KEY+"_dirty","0");setLastSync(new Date().toLocaleTimeString("fr-FR"));}
             });
             return;
           }
           if(cloudHasData||!localHasData){
             // Cloud is newer or local is empty — use cloud
+            if(localHasData)saveSnapshot(localParsed,"Avant remplacement par le cloud");
             setCustomers(cloud.clients||DEFAULT_CLIENTS);
             setData(migrateRDT(cloud.orders||{}));
             setConfigs(cloud.configs||migrateAccounts(cloud.accounts));
             try{
               localStorage.setItem(KEY,JSON.stringify(cloud));
               localStorage.setItem(KEY+"_ts",cloudTs);
+              localStorage.setItem(KEY+"_dirty","0");
             }catch{}
             lastCloudUpdate.current=new Date(cloudTs).toISOString();
             setSyncStatus("ok");
@@ -1586,8 +1725,10 @@ export default function App(){
   useEffect(()=>{
     const interval=setInterval(async()=>{
       try{
+        if(conflictRef.current)return; // fenêtre de choix ouverte : on ne touche à rien
         const remoteUpdatedAt=await cloudCheckUpdatedAt();
         if(!remoteUpdatedAt)return;
+        markSyncOk(); // le cloud répond → la synchro est vivante
         if(lastCloudUpdate.current&&new Date(remoteUpdatedAt)<=new Date(lastCloudUpdate.current))return;
         // Un changement est détecté — SEULEMENT dans ce cas on télécharge le
         // payload complet.
@@ -1599,10 +1740,31 @@ export default function App(){
         lastCloudUpdate.current=new Date(result.updatedAt).toISOString();
         const cloud=result.payload;
         if(!cloud.orders)return;
+        // Protection : si cet appareil a des modifications pas encore envoyées
+        // (envoi échoué / hors ligne), on ne les écrase PAS par la version du
+        // cloud — on fusionne les deux, puis on renvoie le tout.
+        try{
+          if(localStorage.getItem(KEY+"_dirty")==="1"){
+            const ls=localStorage.getItem(KEY);
+            const lp=ls?JSON.parse(ls):null;
+            if(lp&&diffSummary(lp,cloud).onlyA.total>0){
+              saveSnapshot(lp,"Avant fusion automatique (version de cet appareil)");
+              saveSnapshot(cloud,"Avant fusion automatique (version du cloud)");
+              const m=mergePayloads(cloud,lp).merged;
+              lastCloudUpdate.current=new Date(result.updatedAt).toISOString();
+              persist(m.clients,migrateRDT(m.orders||{}),m.configs||{});
+              setUpdateAlert("🔄 Vos modifications non envoyées ont été fusionnées avec celles d'un autre appareil.");
+              setTimeout(()=>setUpdateAlert(null),10000);
+              return;
+            }
+          }
+        }catch(e){console.warn("[Poll] fusion",e);}
         setCustomers(c=>JSON.stringify(c)===JSON.stringify(cloud.clients)?c:(cloud.clients||DEFAULT_CLIENTS));
         setData(migrateRDT(cloud.orders||{}));
         setConfigs(cloud.configs||{});
         localStorage.setItem(KEY,JSON.stringify(cloud));
+        localStorage.setItem(KEY+"_ts",new Date(result.updatedAt).toISOString());
+        localStorage.setItem(KEY+"_dirty","0");
         setSyncStatus("ok");
         setLastSync(new Date().toLocaleTimeString("fr-FR"));
         // Show update alert (not on first load)
@@ -1621,16 +1783,19 @@ export default function App(){
     setCustomers(c);setData(d);setConfigs(f);
     const ts=new Date().toISOString();
     const payload={clients:c,orders:d,configs:f};
+    const seq=++persistSeq.current;
     // Local save — instant with timestamp
     try{
       localStorage.setItem(KEY,JSON.stringify(payload));
       localStorage.setItem(KEY+"_ts",ts);
+      localStorage.setItem(KEY+"_dirty","1"); // modifications locales pas encore confirmées par le cloud
     }catch{}
     // Cloud save with auto-retry (3 attempts)
     setSyncStatus("syncing");
     const trySave=(attempt:number)=>{
       cloudSave(payload).then(ok=>{
         if(ok){
+          if(seq===persistSeq.current){try{localStorage.setItem(KEY+"_dirty","0");}catch{}}
           setSyncStatus("ok");
           setLastSync(new Date().toLocaleTimeString("fr-FR"));
           lastCloudUpdate.current=new Date(ts).toISOString();
@@ -1643,6 +1808,80 @@ export default function App(){
       });
     };
     trySave(1);
+  };
+
+  // ── Sécurité des données ───────────────────────────────────────────────
+  conflictRef.current=syncConflict;
+  // (1) Mémorise chaque synchro réussie → alimente le bandeau d'alerte.
+  useEffect(()=>{if(syncStatus==="ok")markSyncOk();},[syncStatus]);
+
+  // (2) Copie de sécurité locale automatique, 20 s après la dernière
+  //     modification (limitée à 1 / 30 min et ignorée si rien n'a changé).
+  useEffect(()=>{
+    if(!data||syncConflict)return;
+    const t=setTimeout(()=>{saveSnapshot({clients,orders:data,configs},"auto");},20000);
+    return()=>clearTimeout(t);
+  },[clients,data,configs,syncConflict]);
+
+  // (3) Sauvegarde hebdomadaire automatique (option activée dans Administration),
+  //     déclenchée au premier clic pour que le navigateur accepte le téléchargement.
+  useEffect(()=>{
+    if(!data||session?.role!=="admin")return;
+    const go=()=>{
+      window.removeEventListener("pointerdown",go);
+      const d=daysSinceBackup();
+      if(getAutoBackup()&&(d===null||d>=7)&&data&&Object.values(data).some((a:any)=>a?.length>0)){
+        downloadBackupFile({clients,orders:data,configs});
+        setBackupTick(x=>x+1);
+      }
+    };
+    window.addEventListener("pointerdown",go);
+    return()=>window.removeEventListener("pointerdown",go);
+  },[data,session?.role]);
+  const[backupTick,setBackupTick]=useState(0);
+
+  const downloadBackupNow=()=>{
+    downloadBackupFile({clients,orders:data,configs});
+    setBackupTick(x=>x+1);
+  };
+  const onRestoreBackupSafe=(json:any)=>{
+    saveSnapshot({clients,orders:data,configs},"Avant restauration d'un fichier");
+    persist(json.clients,migrateRDT(json.orders||{}),json.configs);
+  };
+  const onMergeApply=(merged:any,current:any)=>{
+    saveSnapshot(current,"Avant fusion d'un fichier");
+    persist(merged.clients,migrateRDT(merged.orders||{}),merged.configs);
+  };
+  const retrySyncNow=async()=>{
+    setSyncStatus("syncing");
+    const result=await cloudLoad();
+    if(result?.payload){
+      // On ne remplace rien ici : on repasse par la même logique que le
+      // démarrage en rechargeant la page (conflits détectés, copies prises).
+      window.location.reload();
+    } else setSyncStatus("offline");
+  };
+  // Résolution de la fenêtre de conflit
+  const resolveConflict=(choice:"merge"|"cloud"|"local")=>{
+    const sc=syncConflict;if(!sc)return;
+    setSyncConflict(null);
+    if(choice==="cloud"){
+      setCustomers(sc.cloud.clients||DEFAULT_CLIENTS);
+      setData(migrateRDT(sc.cloud.orders||{}));
+      setConfigs(sc.cloud.configs||{});
+      try{
+        localStorage.setItem(KEY,JSON.stringify(sc.cloud));
+        localStorage.setItem(KEY+"_ts",sc.cloudTs||new Date().toISOString());
+        localStorage.setItem(KEY+"_dirty","0");
+      }catch{}
+      lastCloudUpdate.current=new Date(sc.cloudTs||Date.now()).toISOString();
+      setSyncStatus("ok");setLastSync(new Date().toLocaleTimeString("fr-FR"));
+    } else if(choice==="local"){
+      persist(sc.local.clients,migrateRDT(sc.local.orders||{}),sc.local.configs||{});
+    } else {
+      const m=mergePayloads(sc.cloud,sc.local).merged;
+      persist(m.clients,migrateRDT(m.orders||{}),m.configs||{});
+    }
   };
 
   const getOrders=(c:string)=>data?.[c]||[];
@@ -2151,6 +2390,8 @@ export default function App(){
             <span style={{fontSize:12,fontWeight:600,color:"#FDE68A"}}>Hors ligne — données locales uniquement</span>
           </div>
         )}
+        {syncConflict&&<SyncConflictModal conflict={syncConflict} onResolve={resolveConflict}/>}
+        <SafetyBanner syncStatus={syncStatus} isAdmin={isAdmin} tick={backupTick} onBackup={downloadBackupNow} onRetry={retrySyncNow}/>
         {/* Update notification from another device */}
         {updateAlert&&(
           <div style={{background:"#1D4ED8",padding:"8px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,animation:"slideIn .3s ease-out"}}>
@@ -2170,7 +2411,7 @@ export default function App(){
         {page==="documents"&&!restrictedClient&&<DocumentsPage isMobile={isMobile}/>}
         {page==="projects"&&!restrictedClient&&<ProjectsPage isMobile={isMobile}/>}
         {page==="logs"&&<ActivityLogsPage session={session}/>}
-        {page==="admin"&&session?.role==="admin"&&<AdminPage session={session} clients={clients} configs={configs} getConfig={getConfig} getAllOrders={getAllOrders} setModal={setModal} delCustomer={delCustomer} appSettings={appSettings} saveAppSettings={saveAppSettings} lang={lang} isMobile={isMobile} data={data} onRestoreBackup={(json:any)=>persist(json.clients,json.orders,json.configs)}/>}
+        {page==="admin"&&session?.role==="admin"&&<AdminPage session={session} clients={clients} configs={configs} getConfig={getConfig} getAllOrders={getAllOrders} setModal={setModal} delCustomer={delCustomer} appSettings={appSettings} saveAppSettings={saveAppSettings} lang={lang} isMobile={isMobile} data={data} onRestoreBackup={onRestoreBackupSafe} onMergeApply={onMergeApply}/>}
         {!special.includes(page)&&(!restrictedClient||page===restrictedClient)&&(
           <CustomerPage client={page} cfg={getConfig(page)} orders={getOrders(page)} stats={getStats(page)}
             focusOrderId={focusOrderId} onClearFocus={()=>setFocusOrderId(null)} lang={lang} isMobile={isMobile}
@@ -2242,6 +2483,79 @@ function SyncBadge({status,lastSync,lang,onRefresh}:any){
           {lang==="fr"?"Réessayer":"Retry"}
         </button>
       )}
+    </div>
+  );
+}
+
+// ─── SAFETY BANNER : synchro cloud en panne / sauvegarde à faire ─────────────
+function SafetyBanner({syncStatus,isAdmin,tick,onBackup,onRetry}:any){
+  const[,force]=useState(0);
+  useEffect(()=>{const t=setInterval(()=>force((x:number)=>x+1),60000);return()=>clearInterval(t);},[]);
+  const[snoozed,setSnoozed]=useState(isBackupReminderSnoozed());
+  const hrs=hoursSinceSyncOk();
+  const syncDown=(syncStatus==="offline"||syncStatus==="error")&&hrs>=24;
+  const days=daysSinceBackup();
+  const needBackup=isAdmin&&!snoozed&&(days===null?daysSinceFirstSeen()>=3:days>=7);
+  void tick;
+  if(!syncDown&&!needBackup)return null;
+  const dur=hrs>=48?`${Math.floor(hrs/24)} jours`:`${Math.floor(hrs)} h`;
+  const btn:any={fontSize:12,fontWeight:700,borderRadius:6,padding:"5px 12px",cursor:"pointer",whiteSpace:"nowrap"};
+  return(
+    <>
+      {syncDown&&(
+        <div style={{background:"#991B1B",padding:"9px 20px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",flexShrink:0}}>
+          <span style={{flex:"1 1 260px",fontSize:12.5,fontWeight:600,color:"#FEE2E2",lineHeight:1.45,minWidth:0}}>
+            ⚠️ Vos données ne sont plus envoyées au cloud depuis {dur}. Elles ne sont enregistrées que sur cet appareil : faites une sauvegarde et vérifiez la connexion.
+          </span>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {isAdmin&&<button onClick={onBackup} style={{...btn,background:"#fff",color:"#991B1B",border:"none"}}>Télécharger une sauvegarde</button>}
+            <button onClick={onRetry} style={{...btn,background:"transparent",color:"#FEE2E2",border:"1px solid #FCA5A5"}}>Réessayer</button>
+          </div>
+        </div>
+      )}
+      {!syncDown&&needBackup&&(
+        <div style={{background:"#92400E",padding:"8px 20px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",flexShrink:0}}>
+          <span style={{flex:"1 1 260px",fontSize:12.5,fontWeight:600,color:"#FEF3C7",lineHeight:1.45,minWidth:0}}>
+            💾 {days===null?"Aucune sauvegarde (fichier) n'a encore été faite sur cet appareil.":`Dernière sauvegarde (fichier) il y a ${Math.floor(days)} jour${Math.floor(days)>1?"s":""}.`} Une sauvegarde régulière protège de toute panne.
+          </span>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={onBackup} style={{...btn,background:"#FEF3C7",color:"#92400E",border:"none"}}>Télécharger maintenant</button>
+            <button onClick={()=>{snoozeBackupReminder();setSnoozed(true);}} style={{...btn,background:"transparent",color:"#FDE68A",border:"1px solid #D97706"}}>Plus tard</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── SYNC CONFLICT MODAL : cet appareil et le cloud ont divergé ──────────────
+function SyncConflictModal({conflict,onResolve}:any){
+  const a=conflict.diff.onlyA, b=conflict.diff.onlyB;
+  const L=countPayload(conflict.local), Cl=countPayload(conflict.cloud);
+  const opt:any={textAlign:"left",width:"100%",borderRadius:10,padding:"11px 14px",cursor:"pointer",fontSize:13,lineHeight:1.45,border:"1px solid #E5E7EB",background:"#fff",color:"#111827"};
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:"#fff",borderRadius:14,maxWidth:520,width:"100%",maxHeight:"92vh",overflowY:"auto",padding:"22px 22px 18px",boxShadow:"0 20px 50px rgba(0,0,0,.35)"}}>
+        <div style={{fontSize:17,fontWeight:800,color:"#111827",marginBottom:8}}>⚠️ Les données de cet appareil et du cloud sont différentes</div>
+        <div style={{fontSize:13,color:"#374151",lineHeight:1.55,marginBottom:12}}>
+          Chacun contient des éléments que l'autre n'a pas. Rien n'a été écrasé pour l'instant, et une copie de sécurité des deux versions vient d'être faite (Administration → Paramètres généraux → Copies de sécurité).
+        </div>
+        <div style={{fontSize:12.5,color:"#374151",lineHeight:1.6,background:"#F9FAFB",border:"1px solid #E5E7EB",borderRadius:8,padding:"9px 12px",marginBottom:14}}>
+          <div><b>Cet appareil</b> : {fmtCounts(L)}<br/>dont <b>{a.orders} commande(s), {a.invoices} facture(s), {a.payments} paiement(s)</b> absents du cloud.</div>
+          <div style={{marginTop:6}}><b>Cloud</b> : {fmtCounts(Cl)}<br/>dont <b>{b.orders} commande(s), {b.invoices} facture(s), {b.payments} paiement(s)</b> absents de cet appareil.</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <button onClick={()=>onResolve("merge")} style={{...opt,border:"2px solid #2563EB",background:"#EFF6FF"}}>
+            <b>Fusionner les deux (recommandé)</b><br/><span style={{color:"#4B5563"}}>Garde tout : les éléments des deux côtés sont réunis. Pour un élément présent des deux côtés, la version du cloud est conservée.</span>
+          </button>
+          <button onClick={()=>onResolve("cloud")} style={opt}>
+            <b>Garder uniquement le cloud</b><br/><span style={{color:"#4B5563"}}>Les éléments propres à cet appareil sont retirés de l'affichage (ils restent dans les copies de sécurité).</span>
+          </button>
+          <button onClick={()=>onResolve("local")} style={opt}>
+            <b>Garder uniquement cet appareil</b><br/><span style={{color:"#4B5563"}}>Remplace le cloud par cet appareil, donc pour tous les appareils. Les éléments propres au cloud restent dans les copies de sécurité.</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
