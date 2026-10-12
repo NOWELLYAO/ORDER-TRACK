@@ -9902,6 +9902,36 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
   };
   const totalHT=qLines.reduce((s:number,l:any)=>s+(+l.qty||0)*(+l.unitPrice||0),0);
 
+  // ── Ajout automatique au catalogue des articles saisis dans un devis ───────
+  const syncQuoteLinesToCatalogue=async(lines:any[],ref:string,qd:string)=>{
+    try{
+      const valid=(lines||[]).filter((l:any)=>l.pn&&String(l.pn).trim());
+      if(valid.length===0)return;
+      const date=(qd&&/^\d{4}-\d{2}-\d{2}$/.test(qd))?qd:todayStr();
+      const next=[...products];
+      const idx=new Map<string,number>();
+      next.forEach((p:any,i:number)=>idx.set(String(p.pn||"").trim().toUpperCase(),i));
+      let added=0,filled=0;
+      valid.forEach((l:any)=>{
+        const pn=String(l.pn).trim(),key=pn.toUpperCase();
+        const desc=String(l.desc||"").trim();
+        if(idx.has(key)){
+          const i=idx.get(key) as number;
+          if(desc&&!String(next[i].description||"").trim()){next[i]={...next[i],description:desc,lastUpdated:date};filled++;}
+          return;
+        }
+        next.push({pn,description:desc,
+          prices:(+l.unitPrice>0)?[{price:+l.unitPrice,date,source:"Devis "+ref}]:[],
+          lastUpdated:date});
+        idx.set(key,next.length-1);added++;
+      });
+      if(added+filled===0)return;
+      await saveProducts(next);
+      setSyncStatus("ok");
+      setSyncMsg(`✓ ${added>0?added+" nouvel"+(added>1?"s":"")+" article"+(added>1?"s":"")+" ajouté"+(added>1?"s":"")+" au catalogue depuis le devis":""}${added>0&&filled>0?" · ":""}${filled>0?filled+" description(s) complétée(s)":""}`);
+    }catch(e){console.warn("[syncQuoteLinesToCatalogue]",e);}
+  };
+
   // ── Generate DRAFT quote (no header) ────────────────────────────────────────
   const generateDraftQuote=async()=>{
     const effectiveCustomer=useManualCustomer?qCustomerManual:qCustomer;
@@ -9916,6 +9946,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
       createdAt:new Date().toISOString()
     };
     await saveQuotes([quoteToSave,...quotes.filter((q:any)=>q.number!==qRef)].slice(0,50));
+    await syncQuoteLinesToCatalogue(quoteToSave.lines,qRef,qDate);
     // FIX: pas de validation avail pour le draft — affiche TBC si vide
     const validLines=qLines.filter((l:any)=>l.pn);
     const dateStr=new Date(qDate).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
@@ -10036,6 +10067,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
       createdAt:new Date().toISOString()
     };
     await saveQuotes([quoteToSave,...quotes.filter((q:any)=>q.number!==qRef)].slice(0,50));
+    await syncQuoteLinesToCatalogue(quoteToSave.lines,qRef,qDate);
     const validLines=qLines.filter((l:any)=>l.pn);
     const dateStr=new Date(qDate).toLocaleDateString('fr-FR');
     const fileName=`Draft_${effectiveCustomer}_${qRef}_${qDate}.xlsx`;
@@ -10201,6 +10233,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
       createdAt:new Date().toISOString()
     };
     await saveQuotes([quote,...quotes].slice(0,50));
+    await syncQuoteLinesToCatalogue(quote.lines,qRef,qDate);
     // Print
     const w=window.open("","_blank","width=900,height=700");
     if(!w)return;
