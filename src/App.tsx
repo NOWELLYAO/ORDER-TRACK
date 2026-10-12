@@ -3745,10 +3745,10 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <label style={{fontSize:11,color:C.t3}}>Du</label>
-            <input type="date" value={typeAnalysisFrom} onChange={(e:any)=>setTypeAnalysisFrom(e.target.value)}
+            <DateInput value={typeAnalysisFrom} onChange={(e:any)=>setTypeAnalysisFrom(e.target.value)}
               style={{padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12}}/>
             <label style={{fontSize:11,color:C.t3}}>au</label>
-            <input type="date" value={typeAnalysisTo} onChange={(e:any)=>setTypeAnalysisTo(e.target.value)}
+            <DateInput value={typeAnalysisTo} onChange={(e:any)=>setTypeAnalysisTo(e.target.value)}
               style={{padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12}}/>
           </div>
           <button onClick={runPeriodTypeAnalysis}
@@ -3768,10 +3768,10 @@ function CompilPage({getStats,clients,configs,setPage,setModal,selYear,setSelYea
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <label style={{fontSize:11,color:C.t3}}>Du</label>
-            <input type="date" value={journalFrom} onChange={(e:any)=>setJournalFrom(e.target.value)}
+            <DateInput value={journalFrom} onChange={(e:any)=>setJournalFrom(e.target.value)}
               style={{padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12}}/>
             <label style={{fontSize:11,color:C.t3}}>au</label>
-            <input type="date" value={journalTo} onChange={(e:any)=>setJournalTo(e.target.value)}
+            <DateInput value={journalTo} onChange={(e:any)=>setJournalTo(e.target.value)}
               style={{padding:"6px 8px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:12}}/>
           </div>
           <button onClick={runJournal} disabled={journalLoading}
@@ -4230,10 +4230,10 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <label style={{fontSize:11,color:C.t3}}>Du</label>
-            <input type="date" value={typeAnalysisFrom} onChange={(e:any)=>setTypeAnalysisFrom(e.target.value)}
+            <DateInput value={typeAnalysisFrom} onChange={(e:any)=>setTypeAnalysisFrom(e.target.value)}
               style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:11}}/>
             <label style={{fontSize:11,color:C.t3}}>au</label>
-            <input type="date" value={typeAnalysisTo} onChange={(e:any)=>setTypeAnalysisTo(e.target.value)}
+            <DateInput value={typeAnalysisTo} onChange={(e:any)=>setTypeAnalysisTo(e.target.value)}
               style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:11}}/>
           </div>
           <button onClick={runClientPeriodTypeAnalysis}
@@ -4252,10 +4252,10 @@ function CustomerPage({client,cfg,orders,stats,onAdd,onEditOrder,onDelOrder,onTo
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <label style={{fontSize:11,color:C.t3}}>Du</label>
-            <input type="date" value={journalFrom} onChange={(e:any)=>setJournalFrom(e.target.value)}
+            <DateInput value={journalFrom} onChange={(e:any)=>setJournalFrom(e.target.value)}
               style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:11}}/>
             <label style={{fontSize:11,color:C.t3}}>au</label>
-            <input type="date" value={journalTo} onChange={(e:any)=>setJournalTo(e.target.value)}
+            <DateInput value={journalTo} onChange={(e:any)=>setJournalTo(e.target.value)}
               style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:6,fontSize:11}}/>
           </div>
           <button onClick={runClientJournal} disabled={journalLoading}
@@ -4797,13 +4797,49 @@ function RapportIntelligent({title,context,contextLoader,label,floating,autoGene
   </>);
 }
 
+/* Champ date au format JJ/MM/AAAA (stocke toujours en ISO AAAA-MM-JJ) */
+const _isoToFr=(v:any)=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(v||"");return m?`${m[3]}/${m[2]}/${m[1]}`:"";};
+const _frToIso=(t:string)=>{const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);if(!m)return null;const d=+m[1],mo=+m[2],y=+m[3];const dt=new Date(Date.UTC(y,mo-1,d));if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==mo-1||dt.getUTCDate()!==d)return null;return `${m[3]}-${m[2]}-${m[1]}`;};
+function DateInput({value,onChange,style,min,max,placeholder,disabled}:any){
+  const [draft,setDraft]=useState(_isoToFr(value));
+  useEffect(()=>{ if(_frToIso(draft)!==(value||null)&&!(draft===""&&!value)) setDraft(_isoToFr(value)); // eslint-disable-next-line
+  },[value]);
+  const emit=(iso:string)=>onChange&&onChange({target:{value:iso}});
+  const onText=(e:any)=>{
+    let d=String(e.target.value).replace(/[^\d]/g,"").slice(0,8);
+    let t=d;
+    if(d.length>4)t=d.slice(0,2)+"/"+d.slice(2,4)+"/"+d.slice(4);
+    else if(d.length>2)t=d.slice(0,2)+"/"+d.slice(2);
+    setDraft(t);
+    if(t==="")emit("");
+    else{const iso=_frToIso(t);if(iso)emit(iso);}
+  };
+  const onBlur=()=>{ if(draft!==""&&!_frToIso(draft))setDraft(_isoToFr(value)); };
+  const st:any={...(style||{})};
+  const w=st.width;
+  return(
+    <span style={{position:"relative",display:"inline-block",width:w,maxWidth:"100%",verticalAlign:"middle"}}>
+      <input type="text" inputMode="numeric" value={draft} onChange={onText} onBlur={onBlur} placeholder={placeholder||"jj/mm/aaaa"} disabled={disabled} size={10}
+        style={{...st,width:"100%",boxSizing:"border-box",paddingRight:24}}/>
+      <span title="Calendrier" style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",width:18,height:18,overflow:"hidden",cursor:"pointer",fontSize:12,lineHeight:"18px",textAlign:"center"}}>
+        📅
+        <input type="date" tabIndex={-1} aria-label="Calendrier" value={value||""} min={min} max={max} disabled={disabled}
+          onChange={(e:any)=>{ if(e.target.value&&e.target.value.length===10&&+e.target.value.slice(0,4)>=1000){setDraft(_isoToFr(e.target.value));emit(e.target.value);} }}
+          style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:0,cursor:"pointer",padding:0,border:0}}/>
+      </span>
+    </span>
+  );
+}
+
 function Fld({label,type="text",value,onChange,placeholder,span,rows,min,max}:any){
   return(
     <div style={{gridColumn:span?`span ${span}`:undefined}}>
       <Label t={label}/>
       {rows
         ?<textarea value={value} onChange={(e:any)=>onChange(e.target.value)} placeholder={placeholder} rows={rows} style={{width:"100%",resize:"vertical",boxSizing:"border-box",fontFamily:"inherit",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,color:C.t1,outline:"none"}}/>
-        :<input type={type} value={value} onChange={(e:any)=>onChange(e.target.value)} placeholder={placeholder} min={min} max={max} style={{width:"100%",boxSizing:"border-box"}}/>
+        :type==="date"
+          ?<DateInput value={value} onChange={(e:any)=>onChange(e.target.value)} min={min} max={max} style={{width:"100%"}}/>
+          :<input type={type} value={value} onChange={(e:any)=>onChange(e.target.value)} placeholder={placeholder} min={min} max={max} style={{width:"100%",boxSizing:"border-box"}}/>
       }
     </div>
   );
@@ -4974,7 +5010,7 @@ function InvoiceModal({client,order,invoice,cfg,onSave,onClose,lang="fr"}:any){
             </label>
           </div>
           {f.overrideDueDate
-            ?<input type="date" value={f.dueDate} onChange={(e:any)=>s("dueDate",e.target.value)} style={{width:"100%",boxSizing:"border-box"}}/>
+            ?<DateInput value={f.dueDate} onChange={(e:any)=>s("dueDate",e.target.value)} style={{width:"100%",boxSizing:"border-box"}}/>
             :<div style={{display:"flex",alignItems:"center",gap:8,background:"#F8FAFC",border:`1px solid ${C.b}`,borderRadius:C.rSm,padding:"8px 12px"}}>
               <i className="ti ti-calendar-check" style={{color:C.blue,fontSize:14}} aria-hidden="true"/>
               <span style={{fontSize:13,color:C.t1,fontWeight:500}}>{fmtD(f.dueDate)}</span>
@@ -5132,7 +5168,7 @@ function BulkInvoiceModal({client,order,cfg,lang="fr",checkDuplicate,onSaveAll,o
                     </div>
                     <div>
                       <label style={{fontSize:9,color:C.t3,fontWeight:700,textTransform:"uppercase"}}>Date</label>
-                      <input type="date" value={it.date} onChange={(e:any)=>updateItem(it._id,"date",e.target.value)}
+                      <DateInput value={it.date} onChange={(e:any)=>updateItem(it._id,"date",e.target.value)}
                         style={{width:"100%",padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:11,boxSizing:"border-box"}}/>
                     </div>
                     <div>
@@ -5940,7 +5976,7 @@ function PoLinesPanel({order,onSave,canEdit}:any){
                     {isFeeLine?(
                       <span style={{color:C.t3,fontSize:10}}>— N/A (frais)</span>
                     ):canEdit?(
-                      <input type="date" value={l.availDate||""} onChange={(e:any)=>setAvailDate(e.target.value)}
+                      <DateInput value={l.availDate||""} onChange={(e:any)=>setAvailDate(e.target.value)}
                         style={{padding:"3px 5px",border:`1px solid ${availLate?C.red:C.b}`,borderRadius:4,fontSize:10,color:availLate?C.redDk:C.t2,width:118}}/>
                     ):(
                       l.availDate?<span style={{color:availLate?C.redDk:C.t2,fontWeight:availLate?700:400}}>{fmtD(l.availDate)}{availLate?" ⚠":""}</span>
@@ -6139,7 +6175,7 @@ function InvoiceLinesPanel({order,invoiceId,lines,onChange,onMetaConfirmed}:any)
               </div>
               <div>
                 <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:3,textTransform:"uppercase"}}>Date de facture détectée</label>
-                <input type="date" value={draftMeta.date} onChange={(e:any)=>setDraftMeta((p:any)=>({...p,date:e.target.value}))} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:12,width:"100%",boxSizing:"border-box"}}/>
+                <DateInput value={draftMeta.date} onChange={(e:any)=>setDraftMeta((p:any)=>({...p,date:e.target.value}))} style={{padding:"5px 7px",border:`1px solid ${C.b}`,borderRadius:4,fontSize:12,width:"100%",boxSizing:"border-box"}}/>
               </div>
             </div>
           )}
@@ -8188,12 +8224,12 @@ tr:nth-child(even) td{background:#F8FAFC;}
         <div style={{padding:"14px 18px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
             <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Start date</label>
-            <input type="date" value={yearlyFrom} onChange={e=>setYearlyFrom(e.target.value)}
+            <DateInput value={yearlyFrom} onChange={e=>setYearlyFrom(e.target.value)}
               style={{padding:"7px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit"}}/>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
             <label style={{fontSize:11,color:C.t3,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>End date</label>
-            <input type="date" value={yearlyTo} onChange={e=>setYearlyTo(e.target.value)}
+            <DateInput value={yearlyTo} onChange={e=>setYearlyTo(e.target.value)}
               style={{padding:"7px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:13,fontFamily:"inherit"}}/>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -8710,7 +8746,7 @@ function ManualProductEntry({products,saveProducts}:any){
           {/* Date */}
           <div>
             <label style={{fontSize:10,color:C.t3,fontWeight:700,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".06em"}}>Date</label>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+            <DateInput value={date} onChange={e=>setDate(e.target.value)}
               style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
           {/* Add button */}
@@ -8866,7 +8902,7 @@ function CatEditModal({product,allProducts,onSave,onClose}:any){
               </div>
               <div>
                 <label style={{fontSize:10,color:C.t3,fontWeight:600,display:"block",marginBottom:3}}>Date</label>
-                <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)}
+                <DateInput value={newDate} onChange={e=>setNewDate(e.target.value)}
                   style={{width:"100%",padding:"7px 8px",border:`1px solid ${C.b}`,borderRadius:5,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
               </div>
               <div>
@@ -10468,7 +10504,7 @@ function CataloguePage({clients,restrictedClient,isAdmin=true,getAllOrders,lang,
               </div>
               <div>
                 <label style={{fontSize:11,color:C.t3,fontWeight:600,display:"block",marginBottom:4,textTransform:"uppercase",letterSpacing:".05em"}}>Date</label>
-                <input type="date" value={qDate} onChange={e=>setQDate(e.target.value)}
+                <DateInput value={qDate} onChange={e=>setQDate(e.target.value)}
                   style={{width:"100%",padding:"8px 10px",border:`1px solid ${C.b}`,borderRadius:C.rSm,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
               </div>
               <div>
