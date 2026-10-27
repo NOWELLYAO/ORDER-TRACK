@@ -6393,7 +6393,7 @@ function FileAttachments({files,entityId,entityType,onAdd,onDel,canEdit=true}:an
 const PRIORITIES_LIST=["HIGH","MEDIUM","LOW"];
 const STATUSES_LIST=["📋","🔄","✅","🎓","⚠️"];
 
-function ActivityTable({items,onAdd,onUpdate,onRemove,title,color,isMobile}:any){
+function ActivityTable({items,onAdd,onUpdate,onRemove,onMove,title,color,isMobile}:any){
   return(
     <div style={{background:"#fff",borderRadius:C.rLg,border:`1px solid ${C.b}`,boxShadow:C.sh,overflow:"hidden"}}>
       <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.b}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -6404,7 +6404,7 @@ function ActivityTable({items,onAdd,onUpdate,onRemove,title,color,isMobile}:any)
       </div>
       <div style={{padding:"12px 18px",display:"flex",flexDirection:"column",gap:8}}>
         {items.map((item:any,idx:number)=>(
-          <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 2fr 80px 32px",gap:8,alignItems:"center"}}>
+          <div key={idx} style={{display:"grid",gridTemplateColumns:isMobile?"minmax(0,1fr)":"1fr 2fr 80px 100px",gap:8,alignItems:"center"}}>
             <input value={item.client} onChange={e=>onUpdate(idx,"client",e.target.value)}
               placeholder="Customer / Prospect"
               style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:12,fontFamily:"inherit",width:"100%",boxSizing:"border-box"}}/>
@@ -6415,10 +6415,22 @@ function ActivityTable({items,onAdd,onUpdate,onRemove,title,color,isMobile}:any)
               style={{padding:"6px 8px",borderRadius:5,border:`1px solid ${C.b}`,fontSize:14,textAlign:"center"}}>
               {STATUSES_LIST.map(s=><option key={s} value={s}>{s}</option>)}
             </select>
-            <button onClick={()=>onRemove(idx)}
-              style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
-            </button>
+            <div style={{display:"flex",gap:4,alignItems:"center"}}>
+              {onMove&&<>
+                <button title="Monter cette ligne" aria-label="Monter" disabled={idx===0} onClick={()=>onMove(idx,-1)}
+                  style={{background:C.page,color:C.t2,border:`1px solid ${C.b}`,borderRadius:5,width:28,height:32,cursor:idx===0?"default":"pointer",opacity:idx===0?.35:1,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>
+                  <i className="ti ti-arrow-up" style={{fontSize:14}} aria-hidden="true"/>
+                </button>
+                <button title="Descendre cette ligne" aria-label="Descendre" disabled={idx===items.length-1} onClick={()=>onMove(idx,1)}
+                  style={{background:C.page,color:C.t2,border:`1px solid ${C.b}`,borderRadius:5,width:28,height:32,cursor:idx===items.length-1?"default":"pointer",opacity:idx===items.length-1?.35:1,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>
+                  <i className="ti ti-arrow-down" style={{fontSize:14}} aria-hidden="true"/>
+                </button>
+              </>}
+              <button title="Supprimer" onClick={()=>onRemove(idx)}
+                style={{background:C.redL,color:C.redDk,border:"none",borderRadius:5,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <i className="ti ti-trash" style={{fontSize:13}} aria-hidden="true"/>
+              </button>
+            </div>
           </div>
         ))}
         {items.length===0&&<div style={{textAlign:"center",padding:"20px",color:C.t3,fontSize:12}}>Aucune activité — cliquez sur "+ Ajouter"</div>}
@@ -8190,6 +8202,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
         onAdd={()=>setLastWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
         onUpdate={(idx:number,field:string,val:string)=>setLastWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
         onRemove={(idx:number)=>setLastWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
+        onMove={(idx:number,dir:number)=>setLastWeekItems(p=>{const j=idx+dir;if(j<0||j>=p.length)return p;const n=[...p];[n[idx],n[j]]=[n[j],n[idx]];return n;})}
         title="📋 Last Week — Field Activity" color={C.purple} isMobile={isMobile}/>
 
       <div style={{display:"flex",justifyContent:"center",margin:"-4px 0"}}>
@@ -8213,6 +8226,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
         onAdd={()=>setThisWeekItems(p=>[...p,{priority:"MEDIUM",client:"",action:"",status:"📋"}])}
         onUpdate={(idx:number,field:string,val:string)=>setThisWeekItems(p=>p.map((item:any,i:number)=>i===idx?{...item,[field]:val}:item))}
         onRemove={(idx:number)=>setThisWeekItems(p=>p.filter((_:any,i:number)=>i!==idx))}
+        onMove={(idx:number,dir:number)=>setThisWeekItems(p=>{const j=idx+dir;if(j<0||j>=p.length)return p;const n=[...p];[n[idx],n[j]]=[n[j],n[idx]];return n;})}
         title="📋 Semaine en cours — Planned Activity" color={C.green} isMobile={isMobile}/>
 
       {/* Period selector for custom report */}
