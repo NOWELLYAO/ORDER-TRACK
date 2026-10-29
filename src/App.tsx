@@ -6397,15 +6397,24 @@ const STATUSES_LIST=["📋","🔄","✅","🎓","⚠️"];
 // Génère un .pptx 16:9 (pptxgenjs chargé à la demande depuis le CDN, comme
 // ExcelJS). Toutes les données arrivent déjà formatées dans `d`.
 async function buildWeeklyPptx(d:any){
-  const load=():Promise<any>=>new Promise((resolve,reject)=>{
-    if((window as any).PptxGenJS){resolve((window as any).PptxGenJS);return;}
+  // Essaie d'abord la copie hébergée avec l'appli (/pptxgen.bundle.js, marche
+  // aussi hors ligne), puis deux CDN en secours.
+  const SOURCES=["/pptxgen.bundle.js",
+    "https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js",
+    "https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"];
+  const loadOne=(src:string):Promise<any>=>new Promise((resolve,reject)=>{
     const s=document.createElement("script");
-    s.src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js";
-    s.crossOrigin="anonymous";
-    s.onload=()=>resolve((window as any).PptxGenJS);
-    s.onerror=()=>reject(new Error("Chargement de pptxgenjs impossible (connexion internet requise)"));
+    s.src=src;
+    s.onload=()=>(window as any).PptxGenJS?resolve((window as any).PptxGenJS):reject(new Error("invalide"));
+    s.onerror=()=>{s.remove();reject(new Error("indisponible"));};
     document.head.appendChild(s);
   });
+  const load=async():Promise<any>=>{
+    if((window as any).PptxGenJS)return (window as any).PptxGenJS;
+    for(const src of SOURCES){try{return await loadOne(src);}catch{}}
+    throw new Error("Chargement de la bibliothèque PowerPoint impossible. Ajoutez le fichier pptxgen.bundle.js dans le dossier public/ du projet, ou vérifiez la connexion/VPN/bloqueur de publicités.");
+  };
   const PptxGenJS=await load();
   const pptx=new PptxGenJS();
   pptx.layout="LAYOUT_WIDE"; // 13.33 x 7.5 in
