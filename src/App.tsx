@@ -6616,11 +6616,25 @@ async function buildWeeklyPptx(d:any){
     const s=frame("2 · Invoicing","Facturation par client",`Invoices issued over the last ${d.invoicePeriodLabel} · ${d.invoiceSince}`,TEAL);
     card(s,0.6,1.85,6.2,5.05);card(s,7.0,1.85,5.73,5.05);
     chartTitle(s,"Répartition du facturé",0.9,2.0,5,TEAL);
-    if(d.invoicedByClient.labels.length)
-      s.addChart(pptx.charts.DOUGHNUT,[{name:"K€",labels:d.invoicedByClient.labels,values:d.invoicedByClient.values}],
-        {x:0.8,y:2.45,w:5.8,h:4.35,holeSize:58,chartColors:PALETTE,showLegend:true,legendPos:"r",legendFontSize:11,legendFontFace:F,
-         showPercent:true,showValue:false,dataLabelColor:"FFFFFF",dataLabelFontSize:10,dataLabelFontBold:true,dataBorder:{pt:2,color:"FFFFFF"}});
-    else empty(s,"No invoices for this period",0.8,2.45,5.8,4.35);
+    if(d.invoicedByClient.labels.length){
+      // Répartition : barre empilée proportionnelle + légende (formes simples,
+      // pas de graphique « anneau » : plus robuste dans toutes les versions de PowerPoint)
+      const vals=d.invoicedByClient.values.map((v:any)=>+v||0);
+      const tot=vals.reduce((a:number,b:number)=>a+b,0)||1;
+      let cx=0.9;const bw=5.6;
+      vals.forEach((v:number,i:number)=>{
+        const w=Math.max(0.04,bw*v/tot);
+        s.addShape(pptx.ShapeType.rect,{x:cx,y:2.6,w,h:0.6,fill:{color:PALETTE[i%PALETTE.length]},line:{color:"FFFFFF",width:1.5}});
+        cx+=w;
+      });
+      vals.slice(0,8).forEach((v:number,i:number)=>{
+        const y=3.5+i*0.42;
+        s.addShape(pptx.ShapeType.roundRect,{x:0.95,y:y+0.07,w:0.22,h:0.22,fill:{color:PALETTE[i%PALETTE.length]},line:{color:PALETTE[i%PALETTE.length]},rectRadius:0.04});
+        s.addText(String(d.invoicedByClient.labels[i]),{x:1.3,y,w:2.9,h:0.36,fontFace:F,fontSize:12,color:INK,margin:0,valign:"middle",fit:"shrink"});
+        s.addText(v.toLocaleString("en",{maximumFractionDigits:1})+" K€",{x:4.1,y,w:1.4,h:0.36,fontFace:F,fontSize:12,bold:true,color:INK,align:"right",margin:0,valign:"middle"});
+        s.addText(Math.round(v/tot*100)+"%",{x:5.6,y,w:0.9,h:0.36,fontFace:F,fontSize:12,bold:true,color:TEAL,align:"right",margin:0,valign:"middle"});
+      });
+    }else empty(s,"No invoices for this period",0.8,2.45,5.8,4.35);
     chartTitle(s,"Facturé par client (K€)",7.3,2.0,5,TEAL);
     if(d.invoicedByClient.labels.length)
       s.addChart(pptx.charts.BAR,[{name:"K€",labels:d.invoicedByClient.labels,values:d.invoicedByClient.values}],barOpts(7.2,2.5,5.4,4.3,TEAL));
