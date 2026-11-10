@@ -6394,11 +6394,12 @@ const PRIORITIES_LIST=["HIGH","MEDIUM","LOW"];
 const STATUSES_LIST=["📋","🔄","✅","🎓","⚠️"];
 
 // ─── Export PowerPoint du Weekly Report ─────────────────────────────────────
-// Génère un .pptx 16:9 (pptxgenjs chargé à la demande depuis le CDN, comme
-// ExcelJS). Toutes les données arrivent déjà formatées dans `d`.
+// Génère un .pptx 16:9 « présentation de direction » : couverture, points
+// clés, tableau de bord, graphiques natifs (modifiables dans PowerPoint),
+// créances en retard, activités. La bibliothèque pptxgenjs est hébergée avec
+// l'appli (/pptxgen.bundle.js) avec des CDN en secours. Les données arrivent
+// déjà calculées dans `d`.
 async function buildWeeklyPptx(d:any){
-  // Essaie d'abord la copie hébergée avec l'appli (/pptxgen.bundle.js, marche
-  // aussi hors ligne), puis deux CDN en secours.
   const SOURCES=["/pptxgen.bundle.js",
     "https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js",
     "https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js",
@@ -6420,118 +6421,268 @@ async function buildWeeklyPptx(d:any){
   pptx.layout="LAYOUT_WIDE"; // 13.33 x 7.5 in
   pptx.title=`Weekly Report ${d.weekLabel} — ${d.period}`;
   pptx.company="OrderTrack";
-  const NAVY="0D1B2A",BLUE="2563EB",TEAL="0D9488",AMBER="D97706",PURPLE="7C3AED",RED="DC2626",GREEN="059669",
-        GREY="64748B",LIGHT="F1F5F9",LINE="E2E8F0",INK="1E293B";
-  const F="Calibri";
-  const W=13.33;
-  let pageNo=0;
 
-  const frame=(title:string,sub:string,accent:string,tag:string)=>{
+  const NAVY="0B1F3A",NAVY2="12305A",BLUE="2563EB",TEAL="0D9488",AMBER="F59E0B",PURPLE="7C3AED",RED="DC2626",GREEN="16A34A",
+        INK="0F172A",GREY="64748B",MUTE="94A3B8",LINE="E2E8F0",BG="F4F7FB",SKY="7DD3FC";
+  const F="Calibri",FH="Calibri";
+  const PALETTE=[BLUE,TEAL,AMBER,PURPLE,"EC4899","0EA5E9","84CC16","F97316"];
+  let pageNo=0;
+  const shadow={type:"outer",color:"0B1F3A",opacity:0.10,blur:8,offset:2,angle:90};
+
+  // ── briques ──
+  const card=(s:any,x:number,y:number,w:number,h:number,fill="FFFFFF")=>
+    s.addShape(pptx.ShapeType.roundRect,{x,y,w,h,fill:{color:fill},line:{color:LINE,width:0.75},rectRadius:0.10,shadow});
+  const frame=(kicker:string,title:string,sub:string,accent:string)=>{
     const s=pptx.addSlide();pageNo++;
-    s.background={color:"FFFFFF"};
-    s.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.22,h:7.5,fill:{color:accent},line:{color:accent}});
-    s.addText(tag,{x:0.6,y:0.32,w:6,h:0.3,fontFace:F,fontSize:11,bold:true,color:accent,charSpacing:3});
-    s.addText(title,{x:0.6,y:0.6,w:9.4,h:0.7,fontFace:F,fontSize:28,bold:true,color:NAVY,margin:0});
-    if(sub)s.addText(sub,{x:0.6,y:1.28,w:9.6,h:0.35,fontFace:F,fontSize:13,color:GREY,margin:0});
-    s.addText(`${d.weekLabel} · ${d.period}`,{x:9.9,y:0.45,w:2.95,h:0.4,fontFace:F,fontSize:12,bold:true,color:accent,align:"center",
-      fill:{color:LIGHT},line:{color:LINE,width:0.75}});
-    s.addText("West Africa",{x:9.9,y:0.9,w:2.95,h:0.3,fontFace:F,fontSize:11,color:GREY,align:"center"});
-    s.addShape(pptx.ShapeType.line,{x:0.6,y:1.72,w:12.25,h:0,line:{color:LINE,width:1}});
-    s.addText(`Weekly Report — ${d.weekLabel} · ${d.period}`,{x:0.6,y:7.05,w:8,h:0.3,fontFace:F,fontSize:9,color:"94A3B8"});
-    s.addText(String(pageNo),{x:11.85,y:7.05,w:1,h:0.3,fontFace:F,fontSize:9,color:"94A3B8",align:"right"});
+    s.background={color:BG};
+    s.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.33,h:0.09,fill:{color:accent},line:{color:accent}});
+    s.addText(kicker.toUpperCase(),{x:0.6,y:0.34,w:7,h:0.3,fontFace:F,fontSize:11,bold:true,color:accent,charSpacing:4,margin:0});
+    s.addText(title,{x:0.6,y:0.64,w:9.2,h:0.62,fontFace:FH,fontSize:28,bold:true,color:INK,margin:0,fit:"shrink"});
+    if(sub)s.addText(sub,{x:0.6,y:1.26,w:9.4,h:0.32,fontFace:F,fontSize:13,color:GREY,margin:0});
+    s.addText(`${d.weekLabel}  ·  ${d.period}`,{x:10.0,y:0.4,w:2.75,h:0.4,fontFace:F,fontSize:12,bold:true,color:"FFFFFF",align:"center",valign:"middle",
+      fill:{color:accent},rectRadius:0.2,shape:pptx.ShapeType.roundRect});
+    s.addText("West Africa",{x:10.0,y:0.84,w:2.75,h:0.26,fontFace:F,fontSize:10,color:GREY,align:"center",margin:0});
+    s.addText(`OrderTrack  ·  Weekly Report ${d.weekLabel}`,{x:0.6,y:7.08,w:8,h:0.28,fontFace:F,fontSize:9,color:MUTE,margin:0});
+    s.addText(String(pageNo),{x:11.85,y:7.08,w:0.9,h:0.28,fontFace:F,fontSize:9,color:MUTE,align:"right",margin:0});
     return s;
   };
-
-  const kpiCards=(s:any,cards:any[],y=1.95)=>{
-    const n=cards.length,gap=0.3,w=(12.25-gap*(n-1))/n;
-    cards.forEach((c:any,i:number)=>{
-      const x=0.6+i*(w+gap);
-      s.addShape(pptx.ShapeType.roundRect,{x,y,w,h:1.45,fill:{color:"FFFFFF"},line:{color:LINE,width:1},rectRadius:0.08,
-        shadow:{type:"outer",color:"000000",opacity:0.08,blur:6,offset:2,angle:90}});
-      s.addShape(pptx.ShapeType.rect,{x,y:y+0.12,w:0.08,h:1.21,fill:{color:c.color},line:{color:c.color}});
-      s.addText(c.label,{x:x+0.28,y:y+0.14,w:w-0.4,h:0.3,fontFace:F,fontSize:11,bold:true,color:GREY,charSpacing:1});
-      s.addText(c.value,{x:x+0.28,y:y+0.46,w:w-0.4,h:0.6,fontFace:F,fontSize:30,bold:true,color:c.color,margin:0});
-      s.addText(c.sub,{x:x+0.28,y:y+1.06,w:w-0.4,h:0.3,fontFace:F,fontSize:11,color:GREY});
-    });
+  const kpi=(s:any,x:number,y:number,w:number,h:number,c:any)=>{
+    card(s,x,y,w,h);
+    s.addShape(pptx.ShapeType.rect,{x:x+0.02,y:y+0.18,w:0.09,h:h-0.36,fill:{color:c.color},line:{color:c.color}});
+    s.addText(c.label.toUpperCase(),{x:x+0.3,y:y+0.14,w:w-0.45,h:0.28,fontFace:F,fontSize:10,bold:true,color:GREY,charSpacing:2,margin:0});
+    s.addText(c.value,{x:x+0.3,y:y+0.42,w:w-0.45,h:h-0.95,fontFace:FH,fontSize:c.size||32,bold:true,color:c.color,margin:0,valign:"middle",fit:"shrink"});
+    s.addText(c.sub||"",{x:x+0.3,y:y+h-0.5,w:w-0.45,h:0.34,fontFace:F,fontSize:11,color:GREY,margin:0});
   };
+  const barOpts=(x:number,y:number,w:number,h:number,color:string,horizontal=true)=>({
+    x,y,w,h,barDir:horizontal?"bar":"col",chartColors:[color],showLegend:false,
+    catAxisLabelFontFace:F,catAxisLabelFontSize:11,catAxisLabelColor:INK,
+    valAxisLabelFontFace:F,valAxisLabelFontSize:10,valAxisLabelColor:GREY,valAxisLabelFormatCode:"#,##0",
+    valGridLine:{color:LINE,size:0.5},catGridLine:{style:"none"},valAxisLineShow:false,catAxisLineShow:false,
+    showValue:true,dataLabelFontSize:10,dataLabelFontBold:true,dataLabelColor:INK,dataLabelFormatCode:"#,##0.0",
+    dataLabelPosition:"outEnd",barGapWidthPct:45,catAxisOrientation:horizontal?"maxMin":"minMax",
+  });
+  const chartTitle=(s:any,t:string,x:number,y:number,w:number,color:string)=>{
+    s.addText(t,{x,y,w,h:0.34,fontFace:F,fontSize:13,bold:true,color:INK,margin:0});
+    s.addShape(pptx.ShapeType.rect,{x,y:y+0.36,w:0.5,h:0.04,fill:{color},line:{color}});
+  };
+  const empty=(s:any,msg:string,x:number,y:number,w:number,h:number)=>
+    s.addText(msg,{x,y,w,h,fontFace:F,fontSize:13,italic:true,color:MUTE,align:"center",valign:"middle"});
 
   // Tableau paginé. rows: [{cells:[string], group?:bool, total?:bool}]
   const tableSlides=(o:any)=>{
     const per=o.per||9;
     const pages=Math.max(1,Math.ceil(o.rows.length/per));
     for(let p=0;p<pages;p++){
-      const s=frame(o.title+(pages>1?` (${p+1}/${pages})`:""),o.sub,o.accent,o.tag);
+      const s=frame(o.kicker,o.title+(pages>1?` (${p+1}/${pages})`:""),o.sub,o.accent);
       const slice=o.rows.slice(p*per,(p+1)*per);
+      card(s,0.6,1.85,12.13,Math.min(5.05,0.35+(Math.max(slice.length,1)+1)*0.44+0.3));
       const head=o.head.map((h:string,i:number)=>({text:h.toUpperCase(),options:{bold:true,color:"FFFFFF",fill:{color:o.accent},fontSize:11,fontFace:F,align:(o.align&&o.align[i])||"left",valign:"middle"}}));
       const body:any[]=slice.map((r:any,ri:number)=>r.cells.map((c:string,i:number)=>({text:String(c),options:{
         fontFace:F,fontSize:r.group||r.total?13:12,bold:!!(r.group||r.total),
         color:r.total?"FFFFFF":r.group?o.accent:INK,
-        fill:{color:r.total?NAVY:r.group?"F8FAFC":(ri%2?"FAFBFD":"FFFFFF")},
+        fill:{color:r.total?NAVY:r.group?"EEF3FA":(ri%2?"F8FAFC":"FFFFFF")},
         align:(o.align&&o.align[i])||"left",valign:"middle"}})));
-      if(slice.length===0)body.push(o.head.map((_:any,i:number)=>({text:i===0?(o.empty||"—"):"",options:{fontFace:F,fontSize:12,color:GREY,italic:true,fill:{color:"FFFFFF"}}})));
-      s.addTable([head,...body],{x:0.6,y:1.95,w:12.25,colW:o.colW,rowH:0.44,
+      if(slice.length===0)body.push(o.head.map((_:any,i:number)=>({text:i===0?(o.empty||"—"):"",options:{fontFace:F,fontSize:12,color:MUTE,italic:true,fill:{color:"FFFFFF"}}})));
+      s.addTable([head,...body],{x:0.75,y:2.0,w:11.83,colW:o.colW,rowH:0.44,
         border:{type:"solid",pt:0.5,color:LINE},margin:[0.04,0.12,0.04,0.12]});
     }
   };
 
-  // 1. Couverture
+  const divider=(num:string,title:string,desc:string,color:string,stats:any[])=>{
+    const s=pptx.addSlide();pageNo++;
+    s.background={color:NAVY};
+    s.addShape(pptx.ShapeType.ellipse,{x:8.2,y:-1.8,w:8,h:8,fill:{color:color,transparency:82},line:{color:color,transparency:100}});
+    s.addShape(pptx.ShapeType.ellipse,{x:10.2,y:3.4,w:5,h:5,fill:{color:color,transparency:70},line:{color:color,transparency:100}});
+    s.addText(num,{x:0.8,y:1.2,w:6,h:2.2,fontFace:FH,fontSize:130,bold:true,color:color,margin:0});
+    s.addText(title,{x:0.8,y:3.4,w:9,h:0.9,fontFace:FH,fontSize:44,bold:true,color:"FFFFFF",margin:0});
+    s.addText(desc,{x:0.8,y:4.3,w:8,h:0.5,fontFace:F,fontSize:16,color:"CBD5E1",margin:0});
+    stats.forEach((st:any,i:number)=>{
+      const x=0.8+i*3.3;
+      s.addShape(pptx.ShapeType.line,{x,y:5.45,w:2.9,h:0,line:{color:color,width:2}});
+      s.addText(st.v,{x,y:5.55,w:2.9,h:0.6,fontFace:FH,fontSize:26,bold:true,color:"FFFFFF",margin:0});
+      s.addText(st.l,{x,y:6.15,w:2.9,h:0.3,fontFace:F,fontSize:11,color:SKY,margin:0});
+    });
+    s.addText(String(pageNo),{x:11.85,y:7.08,w:0.9,h:0.28,fontFace:F,fontSize:9,color:MUTE,align:"right",margin:0});
+  };
+
+  // ══ 1. Couverture ══
   {
     const s=pptx.addSlide();pageNo++;
     s.background={color:NAVY};
-    s.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.35,h:7.5,fill:{color:BLUE},line:{color:BLUE}});
-    s.addShape(pptx.ShapeType.rect,{x:0.35,y:0,w:0.12,h:7.5,fill:{color:TEAL},line:{color:TEAL}});
-    s.addText("ORDERTRACK · WEST AFRICA",{x:1.1,y:1.3,w:9,h:0.4,fontFace:F,fontSize:14,bold:true,color:"7DD3FC",charSpacing:6});
-    s.addText("Weekly Report",{x:1.1,y:2.0,w:11,h:1.3,fontFace:F,fontSize:60,bold:true,color:"FFFFFF",margin:0});
-    s.addText(`${d.weekLabel} · ${d.period}`,{x:1.1,y:3.4,w:11,h:0.7,fontFace:F,fontSize:28,color:"93C5FD",margin:0});
-    s.addShape(pptx.ShapeType.line,{x:1.1,y:4.4,w:3,h:0,line:{color:TEAL,width:3}});
-    s.addText(["Order intake","Invoicing","Field activity"].join("   ·   "),{x:1.1,y:4.65,w:11,h:0.4,fontFace:F,fontSize:16,color:"CBD5E1"});
-    s.addText(`Généré le ${d.generatedOn}`,{x:1.1,y:6.6,w:8,h:0.3,fontFace:F,fontSize:11,color:"94A3B8"});
+    s.addShape(pptx.ShapeType.ellipse,{x:7.6,y:-2.4,w:9,h:9,fill:{color:BLUE,transparency:78},line:{color:BLUE,transparency:100}});
+    s.addShape(pptx.ShapeType.ellipse,{x:9.6,y:1.6,w:6,h:6,fill:{color:TEAL,transparency:72},line:{color:TEAL,transparency:100}});
+    s.addShape(pptx.ShapeType.ellipse,{x:6.4,y:3.6,w:3.2,h:3.2,fill:{color:PURPLE,transparency:70},line:{color:PURPLE,transparency:100}});
+    s.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.28,h:7.5,fill:{color:BLUE},line:{color:BLUE}});
+    s.addShape(pptx.ShapeType.rect,{x:0.28,y:0,w:0.1,h:7.5,fill:{color:TEAL},line:{color:TEAL}});
+    s.addText("ORDERTRACK  ·  WEST AFRICA",{x:1.1,y:0.9,w:9,h:0.4,fontFace:F,fontSize:14,bold:true,color:SKY,charSpacing:6,margin:0});
+    s.addText("Weekly Report",{x:1.1,y:1.7,w:9,h:1.3,fontFace:FH,fontSize:66,bold:true,color:"FFFFFF",margin:0});
+    s.addText(`${d.weekLabel}  ·  ${d.period}`,{x:1.1,y:3.05,w:9,h:0.7,fontFace:FH,fontSize:30,color:"93C5FD",margin:0});
+    s.addShape(pptx.ShapeType.rect,{x:1.1,y:3.95,w:1.6,h:0.07,fill:{color:TEAL},line:{color:TEAL}});
+    s.addText("Orders  ·  Invoicing  ·  Receivables  ·  Field activity",{x:1.1,y:4.15,w:9,h:0.4,fontFace:F,fontSize:16,color:"CBD5E1",margin:0});
+    const hero=[{l:"ORDERS RECEIVED",v:d.kpi.orders,c:"93C5FD"},{l:"INVOICED",v:d.kpi.invoiced,c:"5EEAD4"},{l:"OPEN ORDERS",v:d.kpi.open,c:"C4B5FD"}];
+    hero.forEach((h:any,i:number)=>{
+      const x=1.1+i*3.55;
+      s.addShape(pptx.ShapeType.roundRect,{x,y:5.2,w:3.3,h:1.3,fill:{color:"FFFFFF",transparency:90},line:{color:"FFFFFF",transparency:75,width:0.75},rectRadius:0.1});
+      s.addText(h.l,{x:x+0.25,y:5.32,w:2.9,h:0.3,fontFace:F,fontSize:10,bold:true,color:"CBD5E1",charSpacing:2,margin:0});
+      s.addText(h.v,{x:x+0.25,y:5.62,w:2.9,h:0.75,fontFace:FH,fontSize:32,bold:true,color:h.c,margin:0,fit:"shrink"});
+    });
+    s.addText(`Généré le ${d.generatedOn}`,{x:1.1,y:6.95,w:6,h:0.3,fontFace:F,fontSize:10,color:MUTE,margin:0});
   }
 
-  // 2. Synthèse
+  // ══ 2. Points clés ══
   {
-    const s=frame("Executive Summary","Key figures at a glance",BLUE,"OVERVIEW");
-    kpiCards(s,[
-      {label:`ORDERS RECEIVED (${d.periodLabel.toUpperCase()})`,value:d.kpi.orders,sub:d.kpi.ordersSub,color:BLUE},
-      {label:`INVOICED (${d.invoicePeriodLabel.toUpperCase()})`,value:d.kpi.invoiced,sub:d.kpi.invoicedSub,color:TEAL},
-      {label:"OPEN ORDERS",value:d.kpi.open,sub:"Remaining to invoice",color:PURPLE},
-    ]);
-    kpiCards(s,[
-      {label:`TOTAL ${d.year} (YTD)`,value:d.kpi.ytdOrders,sub:"Orders since January 1st",color:GREEN},
-      {label:`INVOICED ${d.year} (YTD)`,value:d.kpi.ytdInv,sub:"Invoiced since January 1st",color:BLUE},
-      {label:"OVERDUE INVOICES",value:d.kpi.overdue,sub:d.kpi.overdueSub,color:d.kpi.overdueN>0?RED:GREEN},
-    ],3.6);
-    s.addShape(pptx.ShapeType.roundRect,{x:0.6,y:5.3,w:12.25,h:1.5,fill:{color:"F8FAFC"},line:{color:LINE,width:1},rectRadius:0.06});
-    s.addShape(pptx.ShapeType.rect,{x:0.6,y:5.3,w:0.08,h:1.5,fill:{color:BLUE},line:{color:BLUE}});
-    s.addText("SUMMARY",{x:0.9,y:5.38,w:4,h:0.28,fontFace:F,fontSize:10,bold:true,color:BLUE,charSpacing:2});
-    s.addText(d.summary,{x:0.9,y:5.66,w:11.7,h:1.1,fontFace:F,fontSize:13,color:"374151",valign:"top",margin:0,fit:"shrink"});
+    const s=frame("Highlights","Points clés de la semaine","Ce qu'il faut retenir en un coup d'œil",BLUE);
+    const ins=d.insights.slice(0,4);
+    ins.forEach((it:any,i:number)=>{
+      const x=0.6+(i%2)*6.17,y=1.95+Math.floor(i/2)*2.5,w=5.96,h=2.28;
+      card(s,x,y,w,h);
+      s.addShape(pptx.ShapeType.rect,{x:x+0.02,y:y+0.2,w:0.09,h:h-0.4,fill:{color:it.color},line:{color:it.color}});
+      s.addShape(pptx.ShapeType.ellipse,{x:x+0.35,y:y+0.3,w:0.75,h:0.75,fill:{color:it.color,transparency:85},line:{color:it.color,transparency:100}});
+      s.addText(it.icon,{x:x+0.35,y:y+0.3,w:0.75,h:0.75,fontSize:24,align:"center",valign:"middle",margin:0});
+      s.addText(it.title,{x:x+1.3,y:y+0.3,w:w-1.5,h:0.45,fontFace:FH,fontSize:17,bold:true,color:INK,margin:0,valign:"middle",fit:"shrink"});
+      s.addText(it.big||"",{x:x+1.3,y:y+0.75,w:w-1.5,h:0.5,fontFace:FH,fontSize:26,bold:true,color:it.color,margin:0,valign:"middle",fit:"shrink"});
+      s.addText(it.text,{x:x+0.35,y:y+1.3,w:w-0.6,h:0.85,fontFace:F,fontSize:12.5,color:"475569",margin:0,valign:"top",fit:"shrink"});
+    });
   }
 
-  // 3. Order intake
-  tableSlides({title:"Order Intake",sub:`Orders received over the last ${d.periodLabel}`,accent:BLUE,tag:"1 · ORDER INTAKE",
-    head:["Customer","S/O Number","Date","Amount (K€)"],colW:[4.6,3.0,2.25,2.4],align:["left","left","center","right"],
-    rows:[...d.orders.map((o:any)=>({cells:[o.client,o.so,o.date,o.amt]})),...(d.orders.length?[{total:true,cells:["TOTAL","","",d.kpi.ordersK]}]:[])],
-    empty:"No orders this period"});
-  if(d.expected.length>0)tableSlides({title:"Expected Orders",sub:"Pipeline of orders to come",accent:AMBER,tag:"1 · ORDER INTAKE",
-    head:["Customer","Project","Est. (K€)"],colW:[4.2,6.0,2.05],align:["left","left","right"],
-    rows:[...d.expected.map((e:any)=>({cells:[e.client,e.project,e.est]})),...(d.expectedTotal?[{total:true,cells:["TOTAL EXPECTED","",d.expectedTotal]}]:[])]});
+  // ══ 3. Tableau de bord ══
+  {
+    const s=frame("Overview","Tableau de bord","Indicateurs clés de la période",BLUE);
+    const k=[
+      {label:`Orders received (${d.periodLabel})`,value:d.kpi.orders,sub:d.kpi.ordersSub,color:BLUE},
+      {label:`Invoiced (${d.invoicePeriodLabel})`,value:d.kpi.invoiced,sub:d.kpi.invoicedSub,color:TEAL},
+      {label:"Open orders",value:d.kpi.open,sub:"Remaining to invoice",color:PURPLE},
+      {label:`Orders ${d.year} (YTD)`,value:d.kpi.ytdOrders,sub:"Since January 1st",color:GREEN},
+      {label:`Invoiced ${d.year} (YTD)`,value:d.kpi.ytdInv,sub:"Since January 1st",color:BLUE},
+      {label:"Overdue invoices",value:d.kpi.overdue,sub:d.kpi.overdueSub,color:d.kpi.overdueN>0?RED:GREEN},
+    ];
+    k.forEach((c:any,i:number)=>kpi(s,0.6+(i%3)*4.1,1.95+Math.floor(i/3)*1.75,3.93,1.55,c));
+    card(s,0.6,5.5,12.13,1.4);
+    s.addShape(pptx.ShapeType.rect,{x:0.62,y:5.68,w:0.09,h:1.04,fill:{color:BLUE},line:{color:BLUE}});
+    s.addText("SUMMARY",{x:0.95,y:5.6,w:4,h:0.28,fontFace:F,fontSize:10,bold:true,color:BLUE,charSpacing:3,margin:0});
+    s.addText(d.summary,{x:0.95,y:5.9,w:11.6,h:0.9,fontFace:F,fontSize:13,color:"374151",valign:"top",margin:0,fit:"shrink"});
+  }
 
-  // 4. Facturation
-  tableSlides({title:"Invoices Issued",sub:`Over the last ${d.invoicePeriodLabel}`,accent:TEAL,tag:"2 · INVOICING",
-    head:["Customer / Invoice #","PO #","Date","Amount (K€)"],colW:[4.6,3.0,2.25,2.4],align:["left","left","center","right"],per:10,
-    rows:[...d.invoices,...(d.invoices.length?[{total:true,cells:["PERIOD TOTAL","","",d.kpi.invoicedK]}]:[])],
-    empty:"No invoices for this period"});
-  tableSlides({title:"Expected Invoicing",sub:d.plannedLabel,accent:AMBER,tag:"2 · INVOICING",
-    head:["Customer","PO #","S/O #","Planned (K€)"],colW:[4.6,3.0,2.25,2.4],align:["left","left","left","right"],per:10,
-    rows:[...d.planned,...(d.planned.length?[{total:true,cells:["PLANNED TOTAL","","",d.plannedTotal]}]:[])],
-    empty:"No planned invoices"});
+  // ══ 4. Order intake ══
+  divider("01","Order Intake","Commandes reçues et pipeline attendu",BLUE,
+    [{v:d.kpi.orders,l:`Received · ${d.periodLabel}`},{v:String(d.kpi.ordersCount),l:"Orders"},{v:d.kpi.expectedTotal,l:"Expected pipeline"}]);
+  {
+    const s=frame("1 · Order intake","Commandes par client",`Orders received over the last ${d.periodLabel} (K€)`,BLUE);
+    card(s,0.6,1.85,7.2,5.05);card(s,8.0,1.85,4.73,5.05);
+    chartTitle(s,"Montant par client (K€)",0.9,2.0,5,BLUE);
+    if(d.ordersByClient.labels.length)
+      s.addChart(pptx.charts.BAR,[{name:"K€",labels:d.ordersByClient.labels,values:d.ordersByClient.values}],barOpts(0.8,2.5,6.8,4.3,BLUE));
+    else empty(s,"No orders this period",0.8,2.5,6.8,4.3);
+    chartTitle(s,"Top commandes",8.3,2.0,4,BLUE);
+    const top=d.orders.slice(0,6);
+    top.forEach((o:any,i:number)=>{
+      const y=2.6+i*0.7;
+      s.addShape(pptx.ShapeType.ellipse,{x:8.3,y:y+0.05,w:0.46,h:0.46,fill:{color:BLUE,transparency:88},line:{color:BLUE,transparency:100}});
+      s.addText(String(i+1),{x:8.3,y:y+0.05,w:0.46,h:0.46,fontFace:FH,fontSize:13,bold:true,color:BLUE,align:"center",valign:"middle",margin:0});
+      s.addText(o.client,{x:8.9,y,w:2.5,h:0.32,fontFace:F,fontSize:12,bold:true,color:INK,margin:0,fit:"shrink"});
+      s.addText(`${o.so} · ${o.date}`,{x:8.9,y:y+0.3,w:2.5,h:0.26,fontFace:F,fontSize:10,color:GREY,margin:0,fit:"shrink"});
+      s.addText(o.amt,{x:11.3,y,w:1.25,h:0.56,fontFace:FH,fontSize:14,bold:true,color:BLUE,align:"right",valign:"middle",margin:0});
+    });
+    if(!top.length)empty(s,"—",8.3,2.6,4.1,3);
+  }
+  {
+    const s=frame("1 · Order intake","Tendance sur 6 mois","Commandes reçues vs facturation (K€)",BLUE);
+    card(s,0.6,1.85,8.6,5.05);card(s,9.4,1.85,3.33,5.05);
+    chartTitle(s,"Commandes vs facturé (K€)",0.9,2.0,6,BLUE);
+    s.addChart(pptx.charts.BAR,[
+      {name:"Orders",labels:d.monthly.labels,values:d.monthly.orders},
+      {name:"Invoiced",labels:d.monthly.labels,values:d.monthly.invoiced}],
+      {x:0.8,y:2.5,w:8.2,h:4.3,barDir:"col",barGrouping:"clustered",chartColors:[BLUE,TEAL],showLegend:true,legendPos:"b",legendFontSize:11,legendFontFace:F,
+       catAxisLabelFontSize:11,catAxisLabelFontFace:F,valAxisLabelFontSize:10,valAxisLabelColor:GREY,valAxisLabelFormatCode:"#,##0",
+       valGridLine:{color:LINE,size:0.5},catGridLine:{style:"none"},valAxisLineShow:false,
+       showValue:true,dataLabelFontSize:9,dataLabelColor:INK,dataLabelFormatCode:"#,##0",dataLabelPosition:"outEnd",barGapWidthPct:60});
+    s.addText("LECTURE",{x:9.7,y:2.05,w:2.8,h:0.3,fontFace:F,fontSize:10,bold:true,color:BLUE,charSpacing:3,margin:0});
+    s.addText(d.monthly.reading,{x:9.7,y:2.4,w:2.8,h:2.4,fontFace:F,fontSize:13,color:"374151",valign:"top",margin:0,fit:"shrink"});
+    s.addShape(pptx.ShapeType.line,{x:9.7,y:5.0,w:2.7,h:0,line:{color:LINE,width:1}});
+    s.addText(d.monthly.bestLabel,{x:9.7,y:5.1,w:2.8,h:0.3,fontFace:F,fontSize:10,color:GREY,margin:0});
+    s.addText(d.monthly.bestValue,{x:9.7,y:5.4,w:2.8,h:0.6,fontFace:FH,fontSize:26,bold:true,color:BLUE,margin:0});
+  }
+  if(d.orders.length>6)tableSlides({kicker:"1 · Order intake",title:"Détail des commandes",sub:`Orders received over the last ${d.periodLabel}`,accent:BLUE,
+    head:["Customer","S/O Number","Date","Amount (K€)"],colW:[4.6,3.0,2.25,1.98],align:["left","left","center","right"],per:10,
+    rows:[...d.orders.map((o:any)=>({cells:[o.client,o.so,o.date,o.amt]})),{total:true,cells:["TOTAL","","",d.kpi.ordersK]}]});
+  if(d.expected.length>0)tableSlides({kicker:"1 · Order intake",title:"Commandes attendues",sub:"Pipeline of orders to come",accent:AMBER,
+    head:["Customer","Project","Est. (K€)"],colW:[4.2,6.0,1.63],align:["left","left","right"],
+    rows:[...d.expected.map((e:any)=>({cells:[e.client,e.project,e.est]})),...(d.expectedTotal2?[{total:true,cells:["TOTAL EXPECTED","",d.expectedTotal2]}]:[])]});
 
-  // 5. Activités
-  const activity=(title:string,sub:string,accent:string,tag:string,items:any[])=>tableSlides({title,sub,accent,tag,
-    head:["Customer / Prospect","Activity","Status"],colW:[3.6,7.6,1.05],align:["left","left","center"],per:9,
-    rows:items.map((i:any)=>({cells:[i.client,i.action,i.status]})),empty:"No activity"});
-  activity("Last Week — Field Activity","What was done",PURPLE,"3 · FIELD ACTIVITY",d.lastWeek);
-  activity("This Week — Planned Activity","What is planned",GREEN,"3 · FIELD ACTIVITY",d.thisWeek);
+  // ══ 5. Facturation ══
+  divider("02","Invoicing","Facturation émise, prévue et créances",TEAL,
+    [{v:d.kpi.invoiced,l:`Invoiced · ${d.invoicePeriodLabel}`},{v:String(d.kpi.invoicesCount),l:"Invoices"},{v:d.kpi.overdue,l:"Overdue"}]);
+  {
+    const s=frame("2 · Invoicing","Facturation par client",`Invoices issued over the last ${d.invoicePeriodLabel} · ${d.invoiceSince}`,TEAL);
+    card(s,0.6,1.85,6.2,5.05);card(s,7.0,1.85,5.73,5.05);
+    chartTitle(s,"Répartition du facturé",0.9,2.0,5,TEAL);
+    if(d.invoicedByClient.labels.length)
+      s.addChart(pptx.charts.DOUGHNUT,[{name:"K€",labels:d.invoicedByClient.labels,values:d.invoicedByClient.values}],
+        {x:0.8,y:2.45,w:5.8,h:4.35,holeSize:58,chartColors:PALETTE,showLegend:true,legendPos:"r",legendFontSize:11,legendFontFace:F,
+         showPercent:true,showValue:false,dataLabelColor:"FFFFFF",dataLabelFontSize:10,dataLabelFontBold:true,dataBorder:{pt:2,color:"FFFFFF"}});
+    else empty(s,"No invoices for this period",0.8,2.45,5.8,4.35);
+    chartTitle(s,"Facturé par client (K€)",7.3,2.0,5,TEAL);
+    if(d.invoicedByClient.labels.length)
+      s.addChart(pptx.charts.BAR,[{name:"K€",labels:d.invoicedByClient.labels,values:d.invoicedByClient.values}],barOpts(7.2,2.5,5.4,4.3,TEAL));
+  }
+  tableSlides({kicker:"2 · Invoicing",title:"Factures émises",sub:`Over the last ${d.invoicePeriodLabel}, grouped by customer`,accent:TEAL,
+    head:["Customer / Invoice #","PO #","Date","Amount (K€)"],colW:[4.6,3.0,2.25,1.98],align:["left","left","center","right"],per:10,
+    rows:[...d.invoices,...(d.invoices.length?[{total:true,cells:["PERIOD TOTAL","","",d.kpi.invoicedK]}]:[])],empty:"No invoices for this period"});
+  // Créances en retard
+  {
+    const s=frame("2 · Invoicing","Créances en retard",d.kpi.overdueN>0?`${d.kpi.overdueN} facture(s) échue(s) · ${d.kpi.overdue} à recouvrer`:"Aucune facture échue",d.kpi.overdueN>0?RED:GREEN);
+    card(s,0.6,1.85,5.4,5.05);card(s,6.2,1.85,6.53,5.05);
+    chartTitle(s,"Ancienneté du retard (K€)",0.9,2.0,5,RED);
+    if(d.kpi.overdueN>0)
+      s.addChart(pptx.charts.BAR,[{name:"K€",labels:d.aging.labels,values:d.aging.values}],
+        {...barOpts(0.8,2.5,5.0,4.3,RED,false),chartColors:["F59E0B","F97316","EF4444","991B1B"]});
+    else empty(s,"✅  Aucun impayé échu",0.8,2.5,5.0,4.3);
+    chartTitle(s,"Plus gros retards",6.5,2.0,5,RED);
+    if(d.overdueRows.length){
+      const head=["Customer","Invoice","Due","Days","Amount"].map((h,i)=>({text:h.toUpperCase(),options:{bold:true,color:"FFFFFF",fill:{color:RED},fontSize:10,fontFace:F,align:i>=3?"right":"left"}}));
+      const body=d.overdueRows.map((r:any,ri:number)=>[r.client,r.inv,r.due,r.days+" d",r.amt].map((c:string,i:number)=>({text:String(c),options:{
+        fontFace:F,fontSize:11,color:i===3?RED:INK,bold:i===3||i===4,fill:{color:ri%2?"F8FAFC":"FFFFFF"},align:i>=3?"right":"left",valign:"middle"}})));
+      s.addTable([head,...body],{x:6.4,y:2.55,w:6.15,colW:[1.9,1.3,1.1,0.75,1.1],rowH:0.46,border:{type:"solid",pt:0.5,color:LINE},margin:[0.03,0.08,0.03,0.08]});
+    }else empty(s,"—",6.5,2.55,6,3);
+  }
+  tableSlides({kicker:"2 · Invoicing",title:"Facturation prévue",sub:d.plannedLabel,accent:AMBER,
+    head:["Customer","PO #","S/O #","Planned (K€)"],colW:[4.6,3.0,2.25,1.98],align:["left","left","left","right"],per:10,
+    rows:[...d.planned,...(d.planned.length?[{total:true,cells:["PLANNED TOTAL","","",d.plannedTotal]}]:[])],empty:"No planned invoices"});
+
+  // ══ 6. Activités ══
+  divider("03","Field Activity","Ce qui a été fait · ce qui est prévu",PURPLE,
+    [{v:String(d.lastWeek.length),l:"Last week"},{v:String(d.thisWeek.length),l:"Planned this week"},{v:d.weekLabel,l:d.period}]);
+  {
+    const per=6,pages=Math.max(1,Math.ceil(Math.max(d.lastWeek.length,d.thisWeek.length)/per));
+    for(let p=0;p<pages;p++){
+      const s=frame("3 · Field activity","Activités terrain"+(pages>1?` (${p+1}/${pages})`:""),"Semaine écoulée et semaine en cours",PURPLE);
+      [{t:"LAST WEEK",c:PURPLE,items:d.lastWeek,x:0.6},{t:"THIS WEEK — PLANNED",c:GREEN,items:d.thisWeek,x:6.77}].forEach((col:any)=>{
+        s.addText(col.t,{x:col.x,y:1.85,w:5.9,h:0.34,fontFace:F,fontSize:12,bold:true,color:col.c,charSpacing:3,margin:0});
+        const part=col.items.slice(p*per,(p+1)*per);
+        if(!part.length&&p===0)empty(s,"No activity",col.x,2.4,5.96,2);
+        part.forEach((it:any,i:number)=>{
+          const y=2.3+i*0.76,w=5.96;
+          card(s,col.x,y,w,0.68);
+          s.addShape(pptx.ShapeType.rect,{x:col.x+0.02,y:y+0.12,w:0.08,h:0.44,fill:{color:col.c},line:{color:col.c}});
+          s.addText(it.client||"—",{x:col.x+0.25,y:y+0.05,w:w-1.0,h:0.28,fontFace:F,fontSize:12,bold:true,color:INK,margin:0,fit:"shrink"});
+          s.addText(it.action||"",{x:col.x+0.25,y:y+0.32,w:w-1.0,h:0.32,fontFace:F,fontSize:11,color:GREY,margin:0,valign:"top",fit:"shrink"});
+          s.addText(it.status||"",{x:col.x+w-0.7,y:y+0.05,w:0.55,h:0.58,fontSize:18,align:"center",valign:"middle",margin:0});
+        });
+      });
+    }
+  }
+
+  // ══ 7. Clôture ══
+  {
+    const s=pptx.addSlide();pageNo++;
+    s.background={color:NAVY};
+    s.addShape(pptx.ShapeType.ellipse,{x:-2,y:3.5,w:7,h:7,fill:{color:TEAL,transparency:80},line:{color:TEAL,transparency:100}});
+    s.addShape(pptx.ShapeType.ellipse,{x:8.5,y:-2.5,w:7,h:7,fill:{color:BLUE,transparency:78},line:{color:BLUE,transparency:100}});
+    s.addText("Merci",{x:0.9,y:2.0,w:11,h:1.4,fontFace:FH,fontSize:72,bold:true,color:"FFFFFF",margin:0});
+    s.addText(`Weekly Report ${d.weekLabel} · ${d.period}`,{x:0.9,y:3.45,w:11,h:0.6,fontFace:FH,fontSize:24,color:"93C5FD",margin:0});
+    s.addShape(pptx.ShapeType.rect,{x:0.9,y:4.3,w:1.6,h:0.07,fill:{color:TEAL},line:{color:TEAL}});
+    s.addText("OrderTrack  ·  West Africa",{x:0.9,y:4.55,w:8,h:0.4,fontFace:F,fontSize:15,color:"CBD5E1",margin:0});
+  }
 
   await pptx.writeFile({fileName:`Weekly_Report_${d.weekLabel}_${d.fileStamp}.pptx`});
 }
@@ -7552,6 +7703,52 @@ tr:nth-child(even) td{background:#F8FAFC;}
       const MN=["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
       const keep=(a:any[])=>a.filter((i:any)=>i.client||i.action);
       const ytdOrders=allOrders.reduce((s:number,o:any)=>{const dd=o.date?new Date(o.date+"T00:00:00"):null;return dd&&dd.getFullYear()===thisYear?s+(+o.amount||0):s;},0);
+      // ── Données pour les graphiques et les points clés ──
+      const k1=(n:number)=>Math.round(n/100)/10; // € → K€ (1 décimale)
+      const ordersByClient=Object.entries(byClientAmt).sort((a:any,b:any)=>b[1]-a[1]).slice(0,8);
+      const invByClientMap:Record<string,number>={};
+      invoicesInPeriod.forEach((i:any)=>{invByClientMap[i._client]=(invByClientMap[i._client]||0)+(+i.amount||0);});
+      const invSorted=Object.entries(invByClientMap).sort((a:any,b:any)=>b[1]-a[1]);
+      const invTop=invSorted.slice(0,7);
+      const invOthers=invSorted.slice(7).reduce((s2:number,e:any)=>s2+e[1],0);
+      if(invOthers>0)invTop.push(["Others",invOthers]);
+      const monthsShort=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      const mLabels:string[]=[],mOrders:number[]=[],mInv:number[]=[];
+      for(let m=5;m>=0;m--){
+        const ref=new Date(today.getFullYear(),today.getMonth()-m,1);
+        const y=ref.getFullYear(),mo=ref.getMonth();
+        mLabels.push(`${monthsShort[mo]} ${String(y).slice(2)}`);
+        const inM=(dt:string)=>{if(!dt)return false;const x=new Date(dt+"T00:00:00");return x.getFullYear()===y&&x.getMonth()===mo;};
+        mOrders.push(k1(allOrders.filter((o:any)=>inM(o.date)).reduce((s2:number,o:any)=>s2+(+o.amount||0),0)));
+        mInv.push(k1(allInvoices.filter((i:any)=>inM(i.date)).reduce((s2:number,i:any)=>s2+(+i.amount||0),0)));
+      }
+      const bestIdx=mOrders.indexOf(Math.max(...mOrders));
+      const prevAvg=mOrders.slice(0,5).reduce((a:number,b:number)=>a+b,0)/5;
+      const curO=mOrders[5];
+      const reading=prevAvg>0
+        ?`${monthsShort[today.getMonth()]}: orders at ${curO.toLocaleString("en")} K€, ${curO>=prevAvg?"above":"below"} the 5-month average of ${Math.round(prevAvg).toLocaleString("en")} K€ (${curO>=prevAvg?"+":""}${Math.round((curO-prevAvg)/prevAvg*100)}%). Invoiced this month: ${mInv[5].toLocaleString("en")} K€.`
+        :`Orders this month: ${curO.toLocaleString("en")} K€. Invoiced: ${mInv[5].toLocaleString("en")} K€.`;
+      // Créances en retard : ancienneté
+      const todayMs=new Date(todayStr()+"T00:00:00").getTime();
+      const odList=od.map((i:any)=>{
+        const ps=payStatus(i);
+        const days=i.dueDate?Math.max(0,Math.floor((todayMs-new Date(i.dueDate+"T00:00:00").getTime())/86400000)):0;
+        return{client:i._client,inv:i.invoiceNumber||"—",due:enDate(i.dueDate),days,rem:ps.rem};
+      }).sort((a:any,b:any)=>b.rem-a.rem);
+      const bucket=(lo:number,hi:number)=>odList.filter((x:any)=>x.days>=lo&&x.days<=hi).reduce((s2:number,x:any)=>s2+x.rem,0);
+      const aging={labels:["0-30 d","31-60 d","61-90 d","90+ d"],values:[bucket(0,30),bucket(31,60),bucket(61,90),bucket(91,99999)].map(k1)};
+      const oldest=odList.reduce((m:number,x:any)=>Math.max(m,x.days),0);
+      const planTot=planned.reduce((s2:number,p:any)=>s2+(+p.amount||0),0);
+      const insights=[
+        {icon:"📦",color:"2563EB",title:"Prise de commandes",big:fmtK(recentOrdersAmt)+" €",
+          text:recentOrders.length>0?`${recentOrders.length} order${recentOrders.length>1?"s":""} over the past ${periodLabel}.${top?` Top contributor: ${top[0]} (${fmtK(top[1] as number)} €).`:""}${biggest&&recentOrders.length>1?` Largest order: ${biggest._client} (${fmtK(+biggest.amount||0)} €).`:""}`:`No new orders over the past ${periodLabel}.`},
+        {icon:"🧾",color:"0D9488",title:"Facturation",big:trend!==null?`${trend>=0?"▲":"▼"} ${Math.abs(trend)}%`:fmtK(invoicedThisMonth)+" €",
+          text:trend!==null?`Invoicing this month is ${trend>=0?"up":"down"} ${Math.abs(trend)}% vs ${MONTH_NAMES[prevMonth]} (${fmtK(invoicedThisMonth)} € vs ${fmtK(invoicedPrevMonth)} €). ${invoicesInPeriod.length} invoice(s) over the last ${invoicePeriodLabel}, ${fmtK(invoicedInPeriod)} €.`:`${fmtK(invoicedThisMonth)} € invoiced so far this month. ${invoicesInPeriod.length} invoice(s) over the last ${invoicePeriodLabel}.`},
+        {icon:od.length>0?"⚠️":"✅",color:od.length>0?"DC2626":"16A34A",title:"Créances échues",big:fmtK(odAmt)+" €",
+          text:od.length>0?`${od.length} overdue invoice${od.length>1?"s":""}. Oldest is ${oldest} days past due${odList[0]?`; largest: ${odList[0].client} (${fmtK(odList[0].rem)} €)`:""}.`:"No overdue invoices at this time."},
+        {icon:"🎯",color:"7C3AED",title:"Pipeline à facturer",big:fmtK(openOrders)+" €",
+          text:`${fmtK(openOrders)} € of open orders remain to be invoiced${planTot>0?`, of which ${fmtK(planTot)} € is planned for ${MN[thisMonth].toLowerCase()} / ${MN[thisMonth===11?0:thisMonth+1].toLowerCase()}`:""}.${expTot>0?` Expected new orders: ${fmtK(expTot)} €.`:""}`},
+      ];
       await buildWeeklyPptx({
         weekLabel,period,periodLabel,invoicePeriodLabel,year,
         generatedOn:new Date().toLocaleDateString("fr-FR"),
@@ -7559,17 +7756,25 @@ tr:nth-child(even) td{background:#F8FAFC;}
         invoiceSince:`Since ${invPeriodStart.toLocaleDateString("en-GB",{day:"numeric",month:"long"})}`,
         plannedLabel:`${MN[thisMonth]} / ${MN[thisMonth===11?0:thisMonth+1]}`,
         summary:parts.join(" "),
+        insights,
+        monthly:{labels:mLabels,orders:mOrders,invoiced:mInv,reading,
+          bestLabel:`Best month: ${mLabels[bestIdx]}`,bestValue:mOrders[bestIdx].toLocaleString("en")+" K€"},
+        ordersByClient:{labels:ordersByClient.map((e:any)=>e[0]),values:ordersByClient.map((e:any)=>k1(e[1]))},
+        invoicedByClient:{labels:invTop.map((e:any)=>e[0]),values:invTop.map((e:any)=>k1(e[1]))},
+        aging,
+        overdueRows:odList.slice(0,8).map((x:any)=>({client:x.client,inv:x.inv,due:x.due,days:x.days,amt:fmtK(x.rem)})),
         kpi:{
-          orders:fmtK(recentOrdersAmt)+" €",ordersK:fmtK(recentOrdersAmt),ordersSub:`${recentOrders.length} order${recentOrders.length>1?"s":""} in the last ${periodLabel}`,
-          invoiced:fmtK(invoicedInPeriod)+" €",invoicedK:fmtK(invoicedInPeriod),invoicedSub:`${invoicesInPeriod.length} invoice${invoicesInPeriod.length>1?"s":""} over the period`,
+          orders:fmtK(recentOrdersAmt)+" €",ordersK:fmtK(recentOrdersAmt),ordersSub:`${recentOrders.length} order${recentOrders.length>1?"s":""} in the last ${periodLabel}`,ordersCount:recentOrders.length,
+          invoiced:fmtK(invoicedInPeriod)+" €",invoicedK:fmtK(invoicedInPeriod),invoicedSub:`${invoicesInPeriod.length} invoice${invoicesInPeriod.length>1?"s":""} over the period`,invoicesCount:invoicesInPeriod.length,
           open:fmtK(openOrders)+" €",ytdOrders:fmtK(ytdOrders)+" €",ytdInv:fmtK(ytdInvoiced)+" €",
           overdue:fmtK(odAmt)+" €",overdueN:od.length,overdueSub:`${od.length} invoice${od.length>1?"s":""} past due`,
+          expectedTotal:expTot>0?fmtK(expTot)+" €":"—",
         },
         orders:recentOrders.map((o:any)=>({client:o._client,so:o.soNumber||"—",date:enDate(o.date),amt:fmtK(+o.amount||0)})),
         expected:expF.map((e:any)=>({client:e.client||"—",project:e.project||"—",est:e.est?fmtK(+e.est*1000):"—"})),
-        expectedTotal:expTot>0?fmtK(expTot):"",
+        expectedTotal2:expTot>0?fmtK(expTot):"",
         invoices:invRows,planned:plRows,
-        plannedTotal:fmtK(planned.reduce((s:number,p:any)=>s+(+p.amount||0),0)),
+        plannedTotal:fmtK(planTot),
         lastWeek:keep(lastWeekItems),thisWeek:keep(thisWeekItems),
       });
     }catch(e:any){alert("Export PowerPoint impossible : "+(e?.message||e));}
