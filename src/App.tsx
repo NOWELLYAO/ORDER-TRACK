@@ -6417,6 +6417,7 @@ async function buildWeeklyPptx(d:any){
     throw new Error("Chargement de la bibliothèque PowerPoint impossible. Ajoutez le fichier pptxgen.bundle.js dans le dossier public/ du projet, ou vérifiez la connexion/VPN/bloqueur de publicités.");
   };
   const PptxGenJS=await load();
+  const T=(fr:string,en:string)=>d.lang==="fr"?fr:en;
   const pptx=new PptxGenJS();
   pptx.layout="LAYOUT_WIDE"; // 13.33 x 7.5 in
   pptx.title=`Weekly Report ${d.weekLabel} — ${d.period}`;
@@ -6526,12 +6527,12 @@ async function buildWeeklyPptx(d:any){
       s.addText(h.l,{x:x+0.25,y:5.32,w:2.9,h:0.3,fontFace:F,fontSize:10,bold:true,color:"CBD5E1",charSpacing:2,margin:0});
       s.addText(h.v,{x:x+0.25,y:5.62,w:2.9,h:0.75,fontFace:FH,fontSize:32,bold:true,color:h.c,margin:0,fit:"shrink"});
     });
-    s.addText(`Généré le ${d.generatedOn}`,{x:1.1,y:6.95,w:6,h:0.3,fontFace:F,fontSize:10,color:MUTE,margin:0});
+    s.addText(`${T("Généré le","Generated on")} ${d.generatedOn}`,{x:1.1,y:6.95,w:6,h:0.3,fontFace:F,fontSize:10,color:MUTE,margin:0});
   }
 
   // ══ 2. Points clés ══
   {
-    const s=frame("Highlights","Points clés de la semaine","Ce qu'il faut retenir en un coup d'œil",BLUE);
+    const s=frame("Highlights",T("Points clés de la semaine","Key points of the week"),T("Ce qu'il faut retenir en un coup d'œil","What to remember at a glance"),BLUE);
     const ins=d.insights.slice(0,4);
     ins.forEach((it:any,i:number)=>{
       const x=0.6+(i%2)*6.17,y=1.95+Math.floor(i/2)*2.5,w=5.96,h=2.28;
@@ -6547,7 +6548,7 @@ async function buildWeeklyPptx(d:any){
 
   // ══ 3. Tableau de bord ══
   {
-    const s=frame("Overview","Tableau de bord","Indicateurs clés de la période",BLUE);
+    const s=frame("Overview",T("Tableau de bord","Dashboard"),T("Indicateurs clés de la période","Key indicators for the period"),BLUE);
     const k=[
       {label:`Orders received (${d.periodLabel})`,value:d.kpi.orders,sub:d.kpi.ordersSub,color:BLUE},
       {label:`Invoiced (${d.invoicePeriodLabel})`,value:d.kpi.invoiced,sub:d.kpi.invoicedSub,color:TEAL},
@@ -6564,16 +6565,16 @@ async function buildWeeklyPptx(d:any){
   }
 
   // ══ 4. Order intake ══
-  divider("01","Order Intake","Commandes reçues et pipeline attendu",BLUE,
+  divider("01","Order Intake",T("Commandes reçues et pipeline attendu","Orders received and expected pipeline"),BLUE,
     [{v:d.kpi.orders,l:`Received · ${d.periodLabel}`},{v:String(d.kpi.ordersCount),l:"Orders"},{v:d.kpi.expectedTotal,l:"Expected pipeline"}]);
   {
-    const s=frame("1 · Order intake","Commandes par client",`Orders received over the last ${d.periodLabel} (K€)`,BLUE);
+    const s=frame("1 · Order intake",T("Commandes par client","Orders by client"),`Orders received over the last ${d.periodLabel} (K€)`,BLUE);
     card(s,0.6,1.85,7.2,5.05);card(s,8.0,1.85,4.73,5.05);
-    chartTitle(s,"Montant par client (K€)",0.9,2.0,5,BLUE);
+    chartTitle(s,T("Montant par client (K€)","Amount by client (K€)"),0.9,2.0,5,BLUE);
     if(d.ordersByClient.labels.length)
       s.addChart(pptx.charts.BAR,[{name:"K€",labels:d.ordersByClient.labels,values:d.ordersByClient.values}],barOpts(0.8,2.5,6.8,4.3,BLUE));
     else empty(s,"No orders this period",0.8,2.5,6.8,4.3);
-    chartTitle(s,"Top commandes",8.3,2.0,4,BLUE);
+    chartTitle(s,T("Top commandes","Top orders"),8.3,2.0,4,BLUE);
     const top=d.orders.slice(0,6);
     top.forEach((o:any,i:number)=>{
       const y=2.6+i*0.7;
@@ -6586,9 +6587,9 @@ async function buildWeeklyPptx(d:any){
     if(!top.length)empty(s,"—",8.3,2.6,4.1,3);
   }
   {
-    const s=frame("1 · Order intake","Tendance sur 6 mois","Commandes reçues vs facturation (K€)",BLUE);
+    const s=frame("1 · Order intake",T("Tendance sur 6 mois","6-month trend"),T("Commandes reçues vs facturation (K€)","Orders received vs invoicing (K€)"),BLUE);
     card(s,0.6,1.85,8.6,5.05);card(s,9.4,1.85,3.33,5.05);
-    chartTitle(s,"Commandes vs facturé (K€)",0.9,2.0,6,BLUE);
+    chartTitle(s,T("Commandes vs facturé (K€)","Orders vs invoiced (K€)"),0.9,2.0,6,BLUE);
     s.addChart(pptx.charts.BAR,[
       {name:"Orders",labels:d.monthly.labels,values:d.monthly.orders},
       {name:"Invoiced",labels:d.monthly.labels,values:d.monthly.invoiced}],
@@ -6596,26 +6597,26 @@ async function buildWeeklyPptx(d:any){
        catAxisLabelFontSize:11,catAxisLabelFontFace:F,valAxisLabelFontSize:10,valAxisLabelColor:GREY,valAxisLabelFormatCode:"#,##0",
        valGridLine:{color:LINE,size:0.5},catGridLine:{style:"none"},valAxisLineShow:false,
        showValue:true,dataLabelFontSize:9,dataLabelColor:INK,dataLabelFormatCode:"#,##0",dataLabelPosition:"outEnd",barGapWidthPct:60});
-    s.addText("LECTURE",{x:9.7,y:2.05,w:2.8,h:0.3,fontFace:F,fontSize:10,bold:true,color:BLUE,charSpacing:3,margin:0});
+    s.addText(T("LECTURE","INSIGHT"),{x:9.7,y:2.05,w:2.8,h:0.3,fontFace:F,fontSize:10,bold:true,color:BLUE,charSpacing:3,margin:0});
     s.addText(d.monthly.reading,{x:9.7,y:2.4,w:2.8,h:2.4,fontFace:F,fontSize:13,color:"374151",valign:"top",margin:0,fit:"shrink"});
     s.addShape(pptx.ShapeType.line,{x:9.7,y:5.0,w:2.7,h:0,line:{color:LINE,width:1}});
     s.addText(d.monthly.bestLabel,{x:9.7,y:5.1,w:2.8,h:0.3,fontFace:F,fontSize:10,color:GREY,margin:0});
     s.addText(d.monthly.bestValue,{x:9.7,y:5.4,w:2.8,h:0.6,fontFace:FH,fontSize:26,bold:true,color:BLUE,margin:0});
   }
-  if(d.orders.length>6)tableSlides({kicker:"1 · Order intake",title:"Détail des commandes",sub:`Orders received over the last ${d.periodLabel}`,accent:BLUE,
+  if(d.orders.length>6)tableSlides({kicker:"1 · Order intake",title:T("Détail des commandes","Order details"),sub:`Orders received over the last ${d.periodLabel}`,accent:BLUE,
     head:["Customer","S/O Number","Date","Amount (K€)"],colW:[4.6,3.0,2.25,1.98],align:["left","left","center","right"],per:10,
     rows:[...d.orders.map((o:any)=>({cells:[o.client,o.so,o.date,o.amt]})),{total:true,cells:["TOTAL","","",d.kpi.ordersK]}]});
-  if(d.expected.length>0)tableSlides({kicker:"1 · Order intake",title:"Commandes attendues",sub:"Pipeline of orders to come",accent:AMBER,
+  if(d.expected.length>0)tableSlides({kicker:"1 · Order intake",title:T("Commandes attendues","Expected orders"),sub:"Pipeline of orders to come",accent:AMBER,
     head:["Customer","Project","Est. (K€)"],colW:[4.2,6.0,1.63],align:["left","left","right"],
     rows:[...d.expected.map((e:any)=>({cells:[e.client,e.project,e.est]})),...(d.expectedTotal2?[{total:true,cells:["TOTAL EXPECTED","",d.expectedTotal2]}]:[])]});
 
   // ══ 5. Facturation ══
-  divider("02","Invoicing","Facturation émise, prévue et créances",TEAL,
+  divider("02","Invoicing",T("Facturation émise, prévue et créances","Invoices issued, planned and receivables"),TEAL,
     [{v:d.kpi.invoiced,l:`Invoiced · ${d.invoicePeriodLabel}`},{v:String(d.kpi.invoicesCount),l:"Invoices"},{v:d.kpi.overdue,l:"Overdue"}]);
   {
-    const s=frame("2 · Invoicing","Facturation par client",`Invoices issued over the last ${d.invoicePeriodLabel} · ${d.invoiceSince}`,TEAL);
+    const s=frame("2 · Invoicing",T("Facturation par client","Invoicing by client"),`Invoices issued over the last ${d.invoicePeriodLabel} · ${d.invoiceSince}`,TEAL);
     card(s,0.6,1.85,6.2,5.05);card(s,7.0,1.85,5.73,5.05);
-    chartTitle(s,"Répartition du facturé",0.9,2.0,5,TEAL);
+    chartTitle(s,T("Répartition du facturé","Invoiced breakdown"),0.9,2.0,5,TEAL);
     if(d.invoicedByClient.labels.length){
       // Répartition : barre empilée proportionnelle + légende (formes simples,
       // pas de graphique « anneau » : plus robuste dans toutes les versions de PowerPoint)
@@ -6635,23 +6636,23 @@ async function buildWeeklyPptx(d:any){
         s.addText(Math.round(v/tot*100)+"%",{x:5.6,y,w:0.9,h:0.36,fontFace:F,fontSize:12,bold:true,color:TEAL,align:"right",margin:0,valign:"middle"});
       });
     }else empty(s,"No invoices for this period",0.8,2.45,5.8,4.35);
-    chartTitle(s,"Facturé par client (K€)",7.3,2.0,5,TEAL);
+    chartTitle(s,T("Facturé par client (K€)","Invoiced by client (K€)"),7.3,2.0,5,TEAL);
     if(d.invoicedByClient.labels.length)
       s.addChart(pptx.charts.BAR,[{name:"K€",labels:d.invoicedByClient.labels,values:d.invoicedByClient.values}],barOpts(7.2,2.5,5.4,4.3,TEAL));
   }
-  tableSlides({kicker:"2 · Invoicing",title:"Factures émises",sub:`Over the last ${d.invoicePeriodLabel}, grouped by customer`,accent:TEAL,
+  tableSlides({kicker:"2 · Invoicing",title:T("Factures émises","Invoices issued"),sub:`Over the last ${d.invoicePeriodLabel}, grouped by customer`,accent:TEAL,
     head:["Customer / Invoice #","PO #","Date","Amount (K€)"],colW:[4.6,3.0,2.25,1.98],align:["left","left","center","right"],per:10,
     rows:[...d.invoices,...(d.invoices.length?[{total:true,cells:["PERIOD TOTAL","","",d.kpi.invoicedK]}]:[])],empty:"No invoices for this period"});
   // Créances en retard
   {
-    const s=frame("2 · Invoicing","Créances en retard",d.kpi.overdueN>0?`${d.kpi.overdueN} facture(s) échue(s) · ${d.kpi.overdue} à recouvrer`:"Aucune facture échue",d.kpi.overdueN>0?RED:GREEN);
+    const s=frame("2 · Invoicing",T("Créances en retard","Overdue receivables"),d.kpi.overdueN>0?T(`${d.kpi.overdueN} facture(s) échue(s) · ${d.kpi.overdue} à recouvrer`,`${d.kpi.overdueN} overdue invoice(s) · ${d.kpi.overdue} to collect`):T("Aucune facture échue","No overdue invoices"),d.kpi.overdueN>0?RED:GREEN);
     card(s,0.6,1.85,5.4,5.05);card(s,6.2,1.85,6.53,5.05);
-    chartTitle(s,"Ancienneté du retard (K€)",0.9,2.0,5,RED);
+    chartTitle(s,T("Ancienneté du retard (K€)","Days overdue (K€)"),0.9,2.0,5,RED);
     if(d.kpi.overdueN>0)
       s.addChart(pptx.charts.BAR,[{name:"K€",labels:d.aging.labels,values:d.aging.values}],
         {...barOpts(0.8,2.5,5.0,4.3,RED,false),chartColors:["F59E0B","F97316","EF4444","991B1B"]});
-    else empty(s,"✅  Aucun impayé échu",0.8,2.5,5.0,4.3);
-    chartTitle(s,"Plus gros retards",6.5,2.0,5,RED);
+    else empty(s,T("✅  Aucun impayé échu","✅  No overdue payments"),0.8,2.5,5.0,4.3);
+    chartTitle(s,T("Plus gros retards","Largest overdue"),6.5,2.0,5,RED);
     if(d.overdueRows.length){
       const head=["Customer","Invoice","Due","Days","Amount"].map((h,i)=>({text:h.toUpperCase(),options:{bold:true,color:"FFFFFF",fill:{color:RED},fontSize:10,fontFace:F,align:i>=3?"right":"left"}}));
       const body=d.overdueRows.map((r:any,ri:number)=>[r.client,r.inv,r.due,r.days+" d",r.amt].map((c:string,i:number)=>({text:String(c),options:{
@@ -6659,17 +6660,17 @@ async function buildWeeklyPptx(d:any){
       s.addTable([head,...body],{x:6.4,y:2.55,w:6.15,colW:[1.9,1.3,1.1,0.75,1.1],rowH:0.46,border:{type:"solid",pt:0.5,color:LINE},margin:[0.03,0.08,0.03,0.08]});
     }else empty(s,"—",6.5,2.55,6,3);
   }
-  tableSlides({kicker:"2 · Invoicing",title:"Facturation prévue",sub:d.plannedLabel,accent:AMBER,
+  tableSlides({kicker:"2 · Invoicing",title:T("Facturation prévue","Planned invoicing"),sub:d.plannedLabel,accent:AMBER,
     head:["Customer","PO #","S/O #","Planned (K€)"],colW:[4.6,3.0,2.25,1.98],align:["left","left","left","right"],per:10,
     rows:[...d.planned,...(d.planned.length?[{total:true,cells:["PLANNED TOTAL","","",d.plannedTotal]}]:[])],empty:"No planned invoices"});
 
   // ══ 6. Activités ══
-  divider("03","Field Activity","Ce qui a été fait · ce qui est prévu",PURPLE,
+  divider("03","Field Activity",T("Ce qui a été fait · ce qui est prévu","What was done · what is planned"),PURPLE,
     [{v:String(d.lastWeek.length),l:"Last week"},{v:String(d.thisWeek.length),l:"Planned this week"},{v:d.weekLabel,l:d.period}]);
   {
     const per=6,pages=Math.max(1,Math.ceil(Math.max(d.lastWeek.length,d.thisWeek.length)/per));
     for(let p=0;p<pages;p++){
-      const s=frame("3 · Field activity","Activités terrain"+(pages>1?` (${p+1}/${pages})`:""),"Semaine écoulée et semaine en cours",PURPLE);
+      const s=frame("3 · Field activity",T("Activités terrain","Field activities")+(pages>1?` (${p+1}/${pages})`:""),T("Semaine écoulée et semaine en cours","Past week and current week"),PURPLE);
       [{t:"LAST WEEK",c:PURPLE,items:d.lastWeek,x:0.6},{t:"THIS WEEK — PLANNED",c:GREEN,items:d.thisWeek,x:6.77}].forEach((col:any)=>{
         s.addText(col.t,{x:col.x,y:1.85,w:5.9,h:0.34,fontFace:F,fontSize:12,bold:true,color:col.c,charSpacing:3,margin:0});
         const part=col.items.slice(p*per,(p+1)*per);
@@ -6692,7 +6693,7 @@ async function buildWeeklyPptx(d:any){
     s.background={color:NAVY};
     s.addShape(pptx.ShapeType.ellipse,{x:-2,y:3.5,w:7,h:7,fill:{color:TEAL,transparency:80},line:{color:TEAL,transparency:100}});
     s.addShape(pptx.ShapeType.ellipse,{x:8.5,y:-2.5,w:7,h:7,fill:{color:BLUE,transparency:78},line:{color:BLUE,transparency:100}});
-    s.addText("Merci",{x:0.9,y:2.0,w:11,h:1.4,fontFace:FH,fontSize:72,bold:true,color:"FFFFFF",margin:0});
+    s.addText(T("Merci","Thank you"),{x:0.9,y:2.0,w:11,h:1.4,fontFace:FH,fontSize:72,bold:true,color:"FFFFFF",margin:0});
     s.addText(`Weekly Report ${d.weekLabel} · ${d.period}`,{x:0.9,y:3.45,w:11,h:0.6,fontFace:FH,fontSize:24,color:"93C5FD",margin:0});
     s.addShape(pptx.ShapeType.rect,{x:0.9,y:4.3,w:1.6,h:0.07,fill:{color:TEAL},line:{color:TEAL}});
     s.addText("OrderTrack  ·  West Africa",{x:0.9,y:4.55,w:8,h:0.4,fontFace:F,fontSize:15,color:"CBD5E1",margin:0});
@@ -7669,7 +7670,8 @@ tr:nth-child(even) td{background:#F8FAFC;}
 
   };
 
-  const exportPptx=async()=>{
+  const exportPptx=async(lang:"fr"|"en"="fr")=>{
+      const T=(fr:string,en:string)=>lang==="fr"?fr:en;
     try{
       const openKeys=new Set(allOrders.filter((o:any)=>{
         const inv=(o.invoices||[]).reduce((s:number,i:any)=>s+(+i.amount||0),0);
@@ -7695,7 +7697,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
         if(top)parts.push(`${top[0]} was the top contributor with ${fmtK(top[1] as number)} €.`);
         if(biggest&&recentOrders.length>1)parts.push(`Largest single order: ${biggest._client} (${fmtK(+biggest.amount||0)} €).`);
       }else parts.push(`No new orders were received over the past ${periodLabel}.`);
-      if(trend!==null)parts.push(`Invoicing this month is ${trend>=0?"up":"down"} ${Math.abs(trend)}% vs ${MONTH_NAMES[prevMonth]}.`);
+      if(trend!==null)parts.push(`Invoicing this month is ${trend>=0?"up":"down"} ${Math.abs(trend)}% vs ${lang==="fr"?MONTH_NAMES[prevMonth]:["January","February","March","April","May","June","July","August","September","October","November","December"][prevMonth]}.`);
       else if(invoicedThisMonth>0)parts.push(`${fmtK(invoicedThisMonth)} € invoiced so far this month.`);
       parts.push(od.length>0?`${od.length} invoice${od.length>1?"s are":" is"} currently overdue, totaling ${fmtK(odAmt)} €.`:"No overdue invoices at this time.");
 
@@ -7754,17 +7756,17 @@ tr:nth-child(even) td{background:#F8FAFC;}
       const oldest=odList.reduce((m:number,x:any)=>Math.max(m,x.days),0);
       const planTot=planned.reduce((s2:number,p:any)=>s2+(+p.amount||0),0);
       const insights=[
-        {icon:"📦",color:"2563EB",title:"Prise de commandes",big:fmtK(recentOrdersAmt)+" €",
+        {icon:"📦",color:"2563EB",title:T("Prise de commandes","Order intake"),big:fmtK(recentOrdersAmt)+" €",
           text:recentOrders.length>0?`${recentOrders.length} order${recentOrders.length>1?"s":""} over the past ${periodLabel}.${top?` Top contributor: ${top[0]} (${fmtK(top[1] as number)} €).`:""}${biggest&&recentOrders.length>1?` Largest order: ${biggest._client} (${fmtK(+biggest.amount||0)} €).`:""}`:`No new orders over the past ${periodLabel}.`},
-        {icon:"🧾",color:"0D9488",title:"Facturation",big:trend!==null?`${trend>=0?"▲":"▼"} ${Math.abs(trend)}%`:fmtK(invoicedThisMonth)+" €",
-          text:trend!==null?`Invoicing this month is ${trend>=0?"up":"down"} ${Math.abs(trend)}% vs ${MONTH_NAMES[prevMonth]} (${fmtK(invoicedThisMonth)} € vs ${fmtK(invoicedPrevMonth)} €). ${invoicesInPeriod.length} invoice(s) over the last ${invoicePeriodLabel}, ${fmtK(invoicedInPeriod)} €.`:`${fmtK(invoicedThisMonth)} € invoiced so far this month. ${invoicesInPeriod.length} invoice(s) over the last ${invoicePeriodLabel}.`},
-        {icon:od.length>0?"⚠️":"✅",color:od.length>0?"DC2626":"16A34A",title:"Créances échues",big:fmtK(odAmt)+" €",
+        {icon:"🧾",color:"0D9488",title:T("Facturation","Invoicing"),big:trend!==null?`${trend>=0?"▲":"▼"} ${Math.abs(trend)}%`:fmtK(invoicedThisMonth)+" €",
+          text:trend!==null?`Invoicing this month is ${trend>=0?"up":"down"} ${Math.abs(trend)}% vs ${lang==="fr"?MONTH_NAMES[prevMonth]:["January","February","March","April","May","June","July","August","September","October","November","December"][prevMonth]} (${fmtK(invoicedThisMonth)} € vs ${fmtK(invoicedPrevMonth)} €). ${invoicesInPeriod.length} invoice(s) over the last ${invoicePeriodLabel}, ${fmtK(invoicedInPeriod)} €.`:`${fmtK(invoicedThisMonth)} € invoiced so far this month. ${invoicesInPeriod.length} invoice(s) over the last ${invoicePeriodLabel}.`},
+        {icon:od.length>0?"⚠️":"✅",color:od.length>0?"DC2626":"16A34A",title:T("Créances échues","Overdue receivables"),big:fmtK(odAmt)+" €",
           text:od.length>0?`${od.length} overdue invoice${od.length>1?"s":""}. Oldest is ${oldest} days past due${odList[0]?`; largest: ${odList[0].client} (${fmtK(odList[0].rem)} €)`:""}.`:"No overdue invoices at this time."},
-        {icon:"🎯",color:"7C3AED",title:"Pipeline à facturer",big:fmtK(openOrders)+" €",
+        {icon:"🎯",color:"7C3AED",title:T("Pipeline à facturer","Pipeline to invoice"),big:fmtK(openOrders)+" €",
           text:`${fmtK(openOrders)} € of open orders remain to be invoiced${planTot>0?`, of which ${fmtK(planTot)} € is planned for ${MN[thisMonth].toLowerCase()} / ${MN[thisMonth===11?0:thisMonth+1].toLowerCase()}`:""}.${expTot>0?` Expected new orders: ${fmtK(expTot)} €.`:""}`},
       ];
       await buildWeeklyPptx({
-        weekLabel,period,periodLabel,invoicePeriodLabel,year,
+        lang,weekLabel,period,periodLabel,invoicePeriodLabel,year,
         generatedOn:new Date().toLocaleDateString("fr-FR"),
         fileStamp:todayStr(),
         invoiceSince:`Since ${invPeriodStart.toLocaleDateString("en-GB",{day:"numeric",month:"long"})}`,
@@ -8740,10 +8742,15 @@ tr:nth-child(even) td{background:#F8FAFC;}
           <i className="ti ti-printer" style={{fontSize:18}} aria-hidden="true"/>
           Générer & Print le rapport PDF (4 sections)
         </button>
-        <button onClick={exportPptx} title="Télécharger le rapport hebdomadaire en présentation PowerPoint (.pptx)"
+        <button onClick={()=>exportPptx("fr")} title="Télécharger le rapport hebdomadaire en présentation PowerPoint (.pptx)"
           style={{display:"flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,#C2410C,#F59E0B)",color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(194,65,12,.4)"}}>
           <i className="ti ti-presentation" style={{fontSize:18}} aria-hidden="true"/>
-          Exporter en PowerPoint
+          PowerPoint (FR)
+        </button>
+        <button onClick={()=>exportPptx("en")} title="Download the weekly report as a full English PowerPoint presentation (.pptx)"
+          style={{display:"flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,#C2410C,#F59E0B)",color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(194,65,12,.4)"}}>
+          <i className="ti ti-presentation" style={{fontSize:18}} aria-hidden="true"/>
+          PowerPoint (EN) — full English
         </button>
         <button onClick={()=>printMonthlyReport("en")}
           style={{display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,#0D9488,#0369A1)`,color:"#fff",border:"none",borderRadius:C.rLg,padding:"14px 32px",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 20px rgba(13,148,136,.4)"}}>
