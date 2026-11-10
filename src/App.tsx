@@ -8419,7 +8419,7 @@ tr:nth-child(even) td{background:#F8FAFC;}
         onMove={(idx:number,dir:number)=>setLastWeekItems(p=>{const j=idx+dir;if(j<0||j>=p.length)return p;const n=[...p];[n[idx],n[j]]=[n[j],n[idx]];return n;})}
         title="📋 Last Week — Field Activity" color={C.purple} isMobile={isMobile}/>
 
-      <div style={{display:"flex",justifyContent:"center",margin:"-4px 0"}}>
+      <div style={{display:"flex",justifyContent:"center",alignItems:"center",flexWrap:"wrap",gap:8,margin:"-4px 0"}}>
         <button
           title="Fait passer les activités de la semaine en cours (Planned Activity) vers Last Week, et avance le numéro de semaine — à utiliser au début d'une nouvelle semaine"
           onClick={()=>{
@@ -8432,6 +8432,19 @@ tr:nth-child(even) td{background:#F8FAFC;}
           }}
           style={{display:"flex",alignItems:"center",gap:7,background:C.green,color:"#fff",border:"none",borderRadius:99,padding:"9px 20px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 3px 10px rgba(16,185,129,.35)"}}>
           <i className="ti ti-arrow-big-up-lines" style={{fontSize:15}} aria-hidden="true"/> Nouvelle semaine — faire monter en Last Week
+        </button>
+        <button
+          title="Annule / inverse : recopie les activités de Last Week vers la semaine en cours (Planned Activity), et recule le numéro de semaine"
+          onClick={()=>{
+            const nonEmpty=lastWeekItems.filter((item:any)=>item.client||item.action);
+            if(nonEmpty.length===0){alert("Aucune activité dans \"Last Week\" à faire redescendre.");return;}
+            if(!window.confirm(`Faire redescendre ${nonEmpty.length} activité(s) de "Last Week" vers "Planned Activity" ?\n\nLe contenu actuel de "Planned Activity" sera remplacé. "Last Week" restera inchangé.`))return;
+            setThisWeekItems(lastWeekItems);
+            const m=weekLabel.match(/^([A-Za-zÀ-ÿ]*)(\d+)$/);
+            if(m&&+m[2]>1)setWeekLabel(`${m[1]}${(+m[2])-1}`);
+          }}
+          style={{display:"flex",alignItems:"center",gap:7,background:"#fff",color:C.green,border:`2px solid ${C.green}`,borderRadius:99,padding:"7px 18px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+          <i className="ti ti-arrow-big-down-lines" style={{fontSize:15}} aria-hidden="true"/> Faire redescendre en Planned
         </button>
       </div>
 
