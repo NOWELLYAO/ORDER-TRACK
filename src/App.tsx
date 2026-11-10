@@ -6400,6 +6400,8 @@ const STATUSES_LIST=["📋","🔄","✅","🎓","⚠️"];
 // l'appli (/pptxgen.bundle.js) avec des CDN en secours. Les données arrivent
 // déjà calculées dans `d`.
 async function buildWeeklyPptx(d:any){
+  // Nettoie les caractères illégaux en XML (venant d'imports Excel/PDF) qui feraient « réparer » le fichier
+  d=JSON.parse(JSON.stringify(d,(_k:string,v:any)=>typeof v==="string"?v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g,"").replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,""):v));
   const SOURCES=["/pptxgen.bundle.js",
     "https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js",
     "https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js",
@@ -6454,14 +6456,48 @@ async function buildWeeklyPptx(d:any){
     s.addText(c.value,{x:x+0.3,y:y+0.42,w:w-0.45,h:h-0.95,fontFace:FH,fontSize:c.size||32,bold:true,color:c.color,margin:0,valign:"middle",fit:"shrink"});
     s.addText(c.sub||"",{x:x+0.3,y:y+h-0.5,w:w-0.45,h:0.34,fontFace:F,fontSize:11,color:GREY,margin:0});
   };
-  const barOpts=(x:number,y:number,w:number,h:number,color:string,horizontal=true)=>({
-    x,y,w,h,barDir:horizontal?"bar":"col",chartColors:[color],showLegend:false,
-    catAxisLabelFontFace:F,catAxisLabelFontSize:11,catAxisLabelColor:INK,
-    valAxisLabelFontFace:F,valAxisLabelFontSize:10,valAxisLabelColor:GREY,valAxisLabelFormatCode:"#,##0",
-    valGridLine:{color:LINE,size:0.5},catGridLine:{style:"none"},valAxisLineShow:false,catAxisLineShow:false,
-    showValue:true,dataLabelFontSize:10,dataLabelFontBold:true,dataLabelColor:INK,dataLabelFormatCode:"#,##0.0",
-    dataLabelPosition:"outEnd",barGapWidthPct:45,catAxisOrientation:horizontal?"maxMin":"minMax",
-  });
+  // Graphiques dessinés avec de simples formes (rectangles + textes) : aucun
+  // objet « graphique » PowerPoint, donc aucun risque de message de réparation.
+  const num=(v:any)=>{const n=+v;return isFinite(n)?n:0;};
+  const fv=(v:number)=>v.toLocaleString("en",{maximumFractionDigits:1});
+  const hbar=(s:any,x:number,y:number,w:number,h:number,labels:string[],values:any[],color:string)=>{
+    const n=Math.min(labels.length,8);if(n===0)return;
+    const vals=values.slice(0,n).map(num);
+    const mx=Math.max(1,...vals.map((v:number)=>Math.max(v,0)));
+    const rowH=Math.min(0.62,h/n),labW=2.0,valW=0.9,areaW=w-labW-valW-0.15;
+    const top=y+Math.max(0,(h-rowH*n)/2);
+    vals.forEach((v:number,i:number)=>{
+      const ry=top+i*rowH,bh=rowH*0.56,len=Math.max(0.03,areaW*Math.max(v,0)/mx);
+      s.addText(String(labels[i]),{x,y:ry,w:labW-0.1,h:rowH,fontFace:F,fontSize:11,color:INK,align:"right",valign:"middle",margin:0,fit:"shrink"});
+      s.addShape(pptx.ShapeType.rect,{x:x+labW,y:ry+(rowH-bh)/2,w:areaW,h:bh,fill:{color:"EEF2F7"},line:{color:"EEF2F7"}});
+      s.addShape(pptx.ShapeType.rect,{x:x+labW,y:ry+(rowH-bh)/2,w:len,h:bh,fill:{color},line:{color}});
+      s.addText(fv(v),{x:x+labW+areaW+0.1,y:ry,w:valW,h:rowH,fontFace:FH,fontSize:11,bold:true,color:INK,valign:"middle",margin:0});
+    });
+  };
+  const colChart=(s:any,x:number,y:number,w:number,h:number,cats:string[],series:any[],legend:boolean)=>{
+    const n=cats.length;if(n===0)return;
+    const all=series.flatMap((se:any)=>se.values.map(num));
+    const mx=Math.max(1,...all.map((v:number)=>Math.max(v,0)));
+    const legH=legend?0.4:0,labH=0.35,topPad=0.3;
+    const plotY=y+topPad,plotH=h-topPad-labH-legH;
+    const slotW=w/n,k=series.length,gap=slotW*0.18,barW=(slotW-gap*2)/k;
+    s.addShape(pptx.ShapeType.line,{x,y:plotY+plotH,w,h:0,line:{color:LINE,width:1}});
+    cats.forEach((c:string,i:number)=>{
+      series.forEach((se:any,j:number)=>{
+        const v=num(se.values[i]),bh=Math.max(0.02,plotH*Math.max(v,0)/mx);
+        const col=(se.colors&&se.colors[i])||se.color;
+        const bx=x+i*slotW+gap+j*barW;
+        s.addShape(pptx.ShapeType.rect,{x:bx,y:plotY+plotH-bh,w:Math.max(0.05,barW-0.04),h:bh,fill:{color:col},line:{color:col}});
+        s.addText(fv(v),{x:bx-0.1,y:plotY+plotH-bh-0.28,w:barW+0.16,h:0.26,fontFace:F,fontSize:9,bold:true,color:INK,align:"center",margin:0});
+      });
+      s.addText(String(c),{x:x+i*slotW,y:plotY+plotH+0.05,w:slotW,h:labH-0.05,fontFace:F,fontSize:11,color:INK,align:"center",margin:0});
+    });
+    if(legend)series.forEach((se:any,j:number)=>{
+      const lx=x+w/2-series.length*0.9+j*1.8;
+      s.addShape(pptx.ShapeType.rect,{x:lx,y:y+h-0.27,w:0.18,h:0.18,fill:{color:se.color},line:{color:se.color}});
+      s.addText(se.name,{x:lx+0.25,y:y+h-0.32,w:1.4,h:0.28,fontFace:F,fontSize:11,color:INK,margin:0,valign:"middle"});
+    });
+  };
   const chartTitle=(s:any,t:string,x:number,y:number,w:number,color:string)=>{
     s.addText(t,{x,y,w,h:0.34,fontFace:F,fontSize:13,bold:true,color:INK,margin:0});
     s.addShape(pptx.ShapeType.rect,{x,y:y+0.36,w:0.5,h:0.04,fill:{color},line:{color}});
@@ -6572,7 +6608,7 @@ async function buildWeeklyPptx(d:any){
     card(s,0.6,1.85,7.2,5.05);card(s,8.0,1.85,4.73,5.05);
     chartTitle(s,T("Montant par client (K€)","Amount by client (K€)"),0.9,2.0,5,BLUE);
     if(d.ordersByClient.labels.length)
-      s.addChart(pptx.charts.BAR,[{name:"K€",labels:d.ordersByClient.labels,values:d.ordersByClient.values}],barOpts(0.8,2.5,6.8,4.3,BLUE));
+      hbar(s,0.8,2.5,6.8,4.3,d.ordersByClient.labels,d.ordersByClient.values,BLUE);
     else empty(s,"No orders this period",0.8,2.5,6.8,4.3);
     chartTitle(s,T("Top commandes","Top orders"),8.3,2.0,4,BLUE);
     const top=d.orders.slice(0,6);
@@ -6590,13 +6626,7 @@ async function buildWeeklyPptx(d:any){
     const s=frame("1 · Order intake",T("Tendance sur 6 mois","6-month trend"),T("Commandes reçues vs facturation (K€)","Orders received vs invoicing (K€)"),BLUE);
     card(s,0.6,1.85,8.6,5.05);card(s,9.4,1.85,3.33,5.05);
     chartTitle(s,T("Commandes vs facturé (K€)","Orders vs invoiced (K€)"),0.9,2.0,6,BLUE);
-    s.addChart(pptx.charts.BAR,[
-      {name:"Orders",labels:d.monthly.labels,values:d.monthly.orders},
-      {name:"Invoiced",labels:d.monthly.labels,values:d.monthly.invoiced}],
-      {x:0.8,y:2.5,w:8.2,h:4.3,barDir:"col",barGrouping:"clustered",chartColors:[BLUE,TEAL],showLegend:true,legendPos:"b",legendFontSize:11,legendFontFace:F,
-       catAxisLabelFontSize:11,catAxisLabelFontFace:F,valAxisLabelFontSize:10,valAxisLabelColor:GREY,valAxisLabelFormatCode:"#,##0",
-       valGridLine:{color:LINE,size:0.5},catGridLine:{style:"none"},valAxisLineShow:false,
-       showValue:true,dataLabelFontSize:9,dataLabelColor:INK,dataLabelFormatCode:"#,##0",dataLabelPosition:"outEnd",barGapWidthPct:60});
+    colChart(s,0.8,2.5,8.2,4.3,d.monthly.labels,[{name:"Orders",values:d.monthly.orders,color:BLUE},{name:"Invoiced",values:d.monthly.invoiced,color:TEAL}],true);
     s.addText(T("LECTURE","INSIGHT"),{x:9.7,y:2.05,w:2.8,h:0.3,fontFace:F,fontSize:10,bold:true,color:BLUE,charSpacing:3,margin:0});
     s.addText(d.monthly.reading,{x:9.7,y:2.4,w:2.8,h:2.4,fontFace:F,fontSize:13,color:"374151",valign:"top",margin:0,fit:"shrink"});
     s.addShape(pptx.ShapeType.line,{x:9.7,y:5.0,w:2.7,h:0,line:{color:LINE,width:1}});
@@ -6638,7 +6668,7 @@ async function buildWeeklyPptx(d:any){
     }else empty(s,"No invoices for this period",0.8,2.45,5.8,4.35);
     chartTitle(s,T("Facturé par client (K€)","Invoiced by client (K€)"),7.3,2.0,5,TEAL);
     if(d.invoicedByClient.labels.length)
-      s.addChart(pptx.charts.BAR,[{name:"K€",labels:d.invoicedByClient.labels,values:d.invoicedByClient.values}],barOpts(7.2,2.5,5.4,4.3,TEAL));
+      hbar(s,7.2,2.5,5.4,4.3,d.invoicedByClient.labels,d.invoicedByClient.values,TEAL);
   }
   tableSlides({kicker:"2 · Invoicing",title:T("Factures émises","Invoices issued"),sub:`Over the last ${d.invoicePeriodLabel}, grouped by customer`,accent:TEAL,
     head:["Customer / Invoice #","PO #","Date","Amount (K€)"],colW:[4.6,3.0,2.25,1.98],align:["left","left","center","right"],per:10,
@@ -6649,8 +6679,7 @@ async function buildWeeklyPptx(d:any){
     card(s,0.6,1.85,5.4,5.05);card(s,6.2,1.85,6.53,5.05);
     chartTitle(s,T("Ancienneté du retard (K€)","Days overdue (K€)"),0.9,2.0,5,RED);
     if(d.kpi.overdueN>0)
-      s.addChart(pptx.charts.BAR,[{name:"K€",labels:d.aging.labels,values:d.aging.values}],
-        {...barOpts(0.8,2.5,5.0,4.3,RED,false),chartColors:["F59E0B","F97316","EF4444","991B1B"]});
+      colChart(s,0.8,2.5,5.0,4.3,d.aging.labels,[{name:"K€",values:d.aging.values,colors:["F59E0B","F97316","EF4444","991B1B"],color:RED}],false);
     else empty(s,T("✅  Aucun impayé échu","✅  No overdue payments"),0.8,2.5,5.0,4.3);
     chartTitle(s,T("Plus gros retards","Largest overdue"),6.5,2.0,5,RED);
     if(d.overdueRows.length){
